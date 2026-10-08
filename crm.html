@@ -2385,7 +2385,7 @@ let taxaFin=1.25,nextAdminId=1;
 function getAdmin(){return administradoras.find(a=>a.ativa)||administradoras[0]||null;}
 
 let users=[
-  {id:1,nome:'Erick',email:'erick@evolux.com.br',role:'gestor',managerId:null,vendas:0,credito:0,foto:null,meta:500000,hierarquiaId:1,perms:{...DPERMS.gestor},hperms:{...HPERM_DEFAULTS.gestor}},
+  {id:1,nome:'Erick',email:'assessoriaevolux@gmail.com',role:'admin',managerId:null,vendas:0,credito:0,foto:null,meta:500000,hierarquiaId:1,perms:{...DPERMS.gestor},hperms:{...HPERM_DEFAULTS.gestor}},
 ];
 let nextUserId=2;
 let equipes=[];
@@ -4912,7 +4912,7 @@ function renderUserList(){
   list.innerHTML=users.map(u=>{
     const hier=u.hierarquiaId?getHier(u.hierarquiaId):null;
     const eq=u.equipeId?equipes.find(e=>e.id===u.equipeId):null;
-    const avatarStyle=u.foto?`background:url(${u.foto}) center/cover no-repeat`:`background:linear-gradient(135deg,var(--g),var(--gc))`;
+    const avatarStyle=u.foto?`background:url('${u.foto}') center/cover no-repeat`:`background:linear-gradient(135deg,var(--g),var(--gc))`;
     return `<div class="ucard">
       <div class="utop">
         <div class="uav" style="${avatarStyle}">${u.foto?'':u.nome.charAt(0).toUpperCase()}</div>
@@ -6767,11 +6767,10 @@ async function _initCRM(){
   // Aguarda o carregamento de profiles (getSession + fetch profiles)
   try{ await window._profilesLoadPromise; }catch(e){ console.warn('profilesLoad err:',e); }
 
-  // Aplica profiles pendentes ao array users (caso não estivesse pronto antes)
-  if(window._pendingProfiles&&window.users){
-    const data=window._pendingProfiles;
-    delete window._pendingProfiles;
-    data.forEach(function(row,idx){
+  // Helper: aplica um array de rows do Supabase no array users local
+  function applyRows(data){
+    if(!data||!data.length)return;
+    data.forEach(function(row){
       const local=window.users.find(u=>u.sb_id===row.id||u.email===row.email);
       if(local){
         local.nome=row.nome||local.nome;
@@ -6783,6 +6782,8 @@ async function _initCRM(){
         local.hierarquiaId=row.hierarquia_id||local.hierarquiaId;
         local.equipeId=row.equipe_id||local.equipeId;
         local.sb_id=row.id;
+        if(row.perms){try{local.perms=JSON.parse(row.perms);}catch(e){}}
+        if(row.hperms){try{local.hperms=JSON.parse(row.hperms);}catch(e){}}
       } else {
         const maxId=Math.max(...window.users.map(u=>u.id),99);
         const newU={
@@ -6790,13 +6791,26 @@ async function _initCRM(){
           role:row.role||'vendedor', hierarquiaId:row.hierarquia_id||null,
           equipeId:row.equipe_id||null, managerId:null,
           vendas:row.vendas||0, credito:row.credito||0, meta:row.meta||500000,
-          foto:row.foto_url||null, perms:row.perms?JSON.parse(row.perms):{},
+          foto:row.foto_url||null,
+          perms:row.perms?JSON.parse(row.perms):{},
           hperms:row.hperms?JSON.parse(row.hperms):{}
         };
         window.users.push(newU);
         if(window.nextUserId&&window.nextUserId<=newU.id) window.nextUserId=newU.id+1;
       }
     });
+  }
+
+  // Aplica profiles já carregados (via _pendingProfiles)
+  if(window._pendingProfiles){
+    applyRows(window._pendingProfiles);
+    delete window._pendingProfiles;
+  } else {
+    // Fallback: busca direto se _pendingProfiles não chegou
+    try{
+      const {data}=await window._sb.from('profiles').select('*').order('credito',{ascending:false});
+      applyRows(data);
+    }catch(e){console.warn('_initCRM fallback fetch:',e);}
   }
 
   // Agora renderiza com o usuário correto
