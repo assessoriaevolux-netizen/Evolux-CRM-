@@ -45,8 +45,8 @@
   color-scheme: dark;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
-body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--fg);display:flex;align-items:stretch;min-height:100%;-webkit-font-smoothing:antialiased}
+html{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--fg);display:flex;align-items:stretch;min-height:100%;min-height:100dvh;-webkit-font-smoothing:antialiased;overflow-y:auto}
 
 /* ── Painel esquerdo ── */
 .panel-brand{
@@ -54,6 +54,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--f
   background:var(--dark);
   display:flex;flex-direction:column;justify-content:space-between;
   padding:48px 52px;position:relative;overflow:hidden;
+  min-height:100vh;min-height:100dvh;
 }
 .brand-grid{
   position:absolute;inset:0;
@@ -119,6 +120,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--f
   width:440px;flex-shrink:0;background:var(--surface);
   display:flex;flex-direction:column;justify-content:center;
   padding:52px 48px;border-left:1px solid var(--border);
+  min-height:100vh;min-height:100dvh;
 }
 .form-header{margin-bottom:34px}
 .form-header h1{font-size:22px;font-weight:800;color:var(--fg);letter-spacing:-.04em;margin-bottom:5px}
@@ -214,11 +216,11 @@ input.form-input:focus{
 
 @media(max-width:820px){
   body{flex-direction:column}
-  .panel-brand{padding:28px 24px;flex:none}
+  .panel-brand{padding:28px 24px;flex:none;min-height:0}
   .brand-features{flex-direction:row;flex-wrap:wrap;gap:8px 20px;margin-top:20px}
   .brand-headline{font-size:20px;margin-bottom:10px}
   .brand-bottom{display:none}
-  .panel-form{width:100%;padding:32px 20px 44px;border-left:none;border-top:1px solid var(--border)}
+  .panel-form{width:100%;padding:32px 20px 44px;border-left:none;border-top:1px solid var(--border);min-height:0}
 }
 @media(max-width:480px){
   .brand-features{display:none}
