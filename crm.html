@@ -75,6 +75,9 @@
         local.hierarquiaId=row.hierarquia_id||local.hierarquiaId;
         local.equipeId=row.equipe_id||local.equipeId;
         local.sb_id=row.id; // garante linkagem
+        // FIX bug#11: atualiza permissões do Supabase (admin pode alterar em tempo real)
+        if(row.perms){try{local.perms=JSON.parse(row.perms);}catch(e){}}
+        if(row.hperms){try{local.hperms=JSON.parse(row.hperms);}catch(e){}}
       } else {
         // Usuário novo não estava no array local — adiciona
         const maxId=Math.max(...window.users.map(u=>u.id),99);
@@ -110,15 +113,11 @@
     }catch(e){console.warn('Profile upsert:',e);}
 
     // Carrega TODOS os profiles agora (antes do init renderizar)
+    // FIX bug#8: sempre guarda em _pendingProfiles para o init aplicar de forma segura
     try{
       const {data,error}=await window._sb.from('profiles').select('*').order('credito',{ascending:false});
       if(!error&&data&&data.length){
-        // Se users ainda não existe, guarda para aplicar depois
-        if(window.users&&window.users.length){
-          mergeProfilesIntoUsers(data);
-        } else {
-          window._pendingProfiles=data; // aplica no init
-        }
+        window._pendingProfiles=data; // _initCRM vai aplicar após users estar pronto
       }
     }catch(e){console.warn('Load profiles:',e);}
   });
@@ -2531,11 +2530,12 @@ function toggleSidebar(){
 // Mapa: tab id → chave em DPERMS (null = sempre acessível)
 const TAB_PERM_MAP={dashboard:null,funil:'funil',leads:'leads',simulador:'simulador',lances:'lances',ranking:'ranking',relatorios:'relatorios',whatsapp:'whatsapp',calendario:'calendario',configuracoes:'config'};
 function _getMeRole(){
-  return getMe()||users[0]||null;
+  // FIX bug#1: nunca usa users[0] como fallback — retorna null se não identificado
+  return getMe()||null;
 }
 function _hasTabPerm(me,permKey){
   if(!permKey) return true;
-  if(!me) return true;
+  if(!me) return false; // FIX bug#10: usuário não identificado = sem acesso
   // Permissão individual explicitamente negada → bloqueia
   if(me.perms&&me.perms[permKey]===false) return false;
   // Permissão da hierarquia explicitamente negada → bloqueia (a menos que individual seja true)
@@ -2579,7 +2579,7 @@ function renderDashboard(){
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   const meses=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
   const nd=new Date();
-  const meUser=getMe()||users[0];
+  const meUser=getMe(); // FIX bug#5: nunca usa users[0] como fallback
   const meNome=meUser?meUser.nome.split(' ')[0]:'';
   document.getElementById('hero-greeting-txt').textContent=`${saud}${meNome?', '+meNome:''} 👋`;
   document.getElementById('hero-date-txt').textContent=`${dias[nd.getDay()]}, ${nd.getDate()} de ${meses[nd.getMonth()]} de ${nd.getFullYear()}${getAdmin()?` · ${getAdmin().nome}`:''}` ;
@@ -2967,7 +2967,7 @@ function closeModal(){document.getElementById('modal').classList.remove('open');
 function saveLead(){
   const nome=document.getElementById('fNome').value.trim();if(!nome){alert('Informe o nome do lead.');return;}
   const credito=unM(document.getElementById('fCredito').value);
-  const respId=parseInt(document.getElementById('fResp').value)||users[0].id;
+  const respId=parseInt(document.getElementById('fResp').value)||(getMe()||users[0]||{}).id||1;
   const lead={id:nextLeadId++,nome,tel:document.getElementById('fTel').value,tipo:document.getElementById('fTipo2').value,credito,etapa:document.getElementById('fEtapa2').value,origem:document.getElementById('fOrigem2').value,responsavelId:respId,data:toDate(),obs:document.getElementById('fObs').value};
   leads.push(lead);
   const resp=users.find(u=>u.id===respId);
@@ -3372,7 +3372,7 @@ function downloadSimPDF(comDados){
   if(!out||out.includes('Selecione a tabela')){alert('Faça a simulação antes de baixar.');return;}
 
   const data=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
-  const _me=getMe()||users[0]||{};
+  const _me=getMe()||{};
 
   // Foto: tenta o elemento visível, senão pega do objeto users
   const fotoEl=document.getElementById('foto-preview-conta')?.querySelector('img');
@@ -3572,7 +3572,7 @@ function downloadSimPDF(comDados){
 }
 function convertToLead(nome,tipo,credito){
   if(!nome){alert('Preencha o nome do cliente.');return;}
-  leads.push({id:nextLeadId++,nome,tel:'',tipo,credito,etapa:'Novo lead',origem:'Simulador',responsavelId:users[0].id,data:toDate(),obs:'Convertido via simulador.'});
+  leads.push({id:nextLeadId++,nome,tel:'',tipo,credito,etapa:'Novo lead',origem:'Simulador',responsavelId:(getMe()||users[0]||{}).id||1,data:toDate(),obs:'Convertido via simulador.'});
   activities.push({icon:'ti-calculator',text:`${nome} convertido via simulador — ${fmtR(credito)}`,time:'Agora'});
   showTab('leads',document.querySelectorAll('.nb')[2]);
 }
@@ -3678,10 +3678,8 @@ function removeLance(id){if(!confirm('Remover lance?'))return;const l=lances.fin
 // ─── RANKING ──────────────────────────────────────────────────────────────────
 function rankAtualizarSidebar(){
   // Identifica usuário logado
-  const me=window._currentUserId
-    ? users.find(u=>u.sb_id===window._currentUserId)||users[0]
-    : users[0];
-  const isGestor=me&&(me.role==='gestor'||(me.hperms&&me.hperms.vendas_edit));
+  const me=getMe();
+  const isGestor=me&&(me.role==='admin'||me.role==='gestor'||(me.hperms&&me.hperms.vendas_edit));
   const podeAddOutro=isGestor||(me&&me.hperms&&me.hperms.equipe_edit);
 
   // Atualiza subtítulo do card "minha venda"
@@ -3883,10 +3881,8 @@ function renderRanking(){
 function addMinhaVenda(){
   const val=unM(document.getElementById('vval-me').value);
   if(!val){alert('Informe o valor da venda.');return;}
-  // Encontrar user logado: pelo sb_id ou pelo primeiro (fallback)
-  const me=window._currentUserId
-    ? users.find(u=>u.sb_id===window._currentUserId)||users[0]
-    : users[0];
+  // Encontrar user logado
+  const me=getMe();
   if(!me){alert('Usuário não identificado.');return;}
   me.vendas++;
   me.credito+=val;
@@ -4884,7 +4880,7 @@ async function inviteUser(){
     perms:{...DPERMS[role]||DPERMS.vendedor},hperms:selH?{...selH.perms}:{}};
   if(equipeId){const eq=equipes.find(e=>e.id===equipeId);if(eq){eq.membroIds=eq.membroIds||[];if(!eq.membroIds.includes(newU.id))eq.membroIds.push(newU.id);}}
   users.push(newU);
-  if(window._syncUser) window._syncUser(newU);
+  if(window._syncUser) await window._syncUser(newU); // FIX bug#9: await para garantir persistência
 
   // Limpa formulário
   document.getElementById('uNome').value='';
@@ -4902,11 +4898,13 @@ async function inviteUser(){
   renderUserList();populateSelects();
 }
 function togglePerm(userId,perm){
-  const u=users.find(x=>x.id===userId);if(!u||userId===1)return;
+  const u=users.find(x=>x.id===userId);
+  if(!u||u.role==='admin')return; // FIX bug#6: protege por role, não por id
   u.perms[perm]=!u.perms[perm];renderUserList();
 }
 function changeRole(userId,newRole){
-  const u=users.find(x=>x.id===userId);if(!u||userId===1)return;
+  const u=users.find(x=>x.id===userId);
+  if(!u||u.role==='admin')return; // FIX bug#6
   u.role=newRole;u.perms={...DPERMS[newRole]};renderUserList();
 }
 function renderUserList(){
@@ -4919,14 +4917,14 @@ function renderUserList(){
       <div class="utop">
         <div class="uav" style="${avatarStyle}">${u.foto?'':u.nome.charAt(0).toUpperCase()}</div>
         <div style="flex:1;min-width:0">
-          <div class="uname">${u.nome}${u.id===1?' <span style="font-size:10px;color:var(--g);font-weight:700">● Admin</span>':''}</div>
+          <div class="uname">${u.nome}${u.role==='admin'?' <span style="font-size:10px;color:var(--g);font-weight:700">● Admin</span>':''}</div>
           <div class="uemail">${u.email}</div>
           <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap">
             ${hier?`<span style="font-size:10.5px;padding:2px 8px;border-radius:20px;background:rgba(1,107,60,.1);color:var(--g);font-weight:600"><i class="ti ti-sitemap" style="font-size:10px"></i> ${hier.nome}</span>`:''}
             ${eq?`<span style="font-size:10.5px;padding:2px 8px;border-radius:20px;background:rgba(37,99,235,.1);color:#2563eb;font-weight:600"><i class="ti ti-users-group" style="font-size:10px"></i> ${eq.nome}</span>`:''}
           </div>
         </div>
-        ${u.id!==1?`
+        ${u.role!=='admin'?`
           <div style="display:flex;align-items:center;gap:6px">
             <select class="fi ulist-hier-sel" data-uid="${u.id}" style="font-size:11.5px;padding:4px 8px;height:auto">
               <option value="">Hierarquia...</option>
@@ -4954,7 +4952,7 @@ function renderUserList(){
   });
 }
 function changeUserHier(userId,hierIdStr){
-  const u=users.find(x=>x.id===userId);if(!u||userId===1)return;
+  const u=users.find(x=>x.id===userId);if(!u||u.role==='admin')return; // FIX bug#6
   const hid=parseInt(hierIdStr)||null;
   u.hierarquiaId=hid;
   const h=hid?getHier(hid):null;
@@ -5034,13 +5032,13 @@ function cfgRenderSection(){
       <div class="cfg-card-sub">Informações principais da sua conta no Evolux CRM.</div>
       <div style="display:flex;align-items:center;gap:20px;margin-bottom:22px;padding:16px;background:var(--c0);border-radius:var(--radl);border:1px solid var(--c2)">
         <div style="position:relative;flex-shrink:0">
-          <div id="foto-preview-conta" onclick="document.getElementById('foto-input-real').click()" style="width:76px;height:76px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#fff;cursor:pointer;overflow:hidden;box-shadow:0 4px 14px rgba(26,110,60,.3);border:3px solid var(--gb)">${(()=>{const _m=getMe()||users[0];return _m&&_m.foto?`<img src="${_m.foto}" style="width:100%;height:100%;object-fit:cover">`:(_m?_m.nome.charAt(0):'?')})()}</div>
+          <div id="foto-preview-conta" onclick="document.getElementById('foto-input-real').click()" style="width:76px;height:76px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#fff;cursor:pointer;overflow:hidden;box-shadow:0 4px 14px rgba(26,110,60,.3);border:3px solid var(--gb)">${(()=>{const _m=getMe();return _m&&_m.foto?`<img src="${_m.foto}" style="width:100%;height:100%;object-fit:cover">`:(_m?_m.nome.charAt(0):'?')})()}</div>
           <div onclick="document.getElementById('foto-input-real').click()" style="position:absolute;bottom:0;right:0;width:24px;height:24px;background:var(--g);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.2)"><i class="ti ti-camera" style="font-size:12px;color:#fff"></i></div>
           <input type="file" id="foto-input-real" accept="image/*" style="display:none" onchange="uploadFoto(event)">
         </div>
         <div style="flex:1">
-          <div style="font-size:16px;font-weight:800;color:var(--tx)">${(getMe()||users[0]).nome}</div>
-          <div style="font-size:12px;color:var(--tm);margin-top:2px">${(()=>{const _m=getMe()||users[0];return RL[_m.role]+' · '+(_m.email||window._session?.user?.email||'')})()}</div>
+          <div style="font-size:16px;font-weight:800;color:var(--tx)">${(getMe()||{nome:''}).nome}</div>
+          <div style="font-size:12px;color:var(--tm);margin-top:2px">${(()=>{const _m=getMe();const r=_m?_m.role:'vendedor';return (RL[r]||r)+' · '+((_m&&_m.email)||window._session?.user?.email||'')})()}</div>
           <div style="font-size:11px;color:var(--gc);font-weight:700;margin-top:5px">● Online agora</div>
           <div style="font-size:11px;color:var(--tm);margin-top:6px"><i class="ti ti-camera" style="font-size:11px"></i> Clique na foto para alterar</div>
         </div>
@@ -5386,8 +5384,8 @@ function cfgRenderSection(){
   // ── SEÇÃO EQUIPES ──────────────────────────────────────────
   sections.equipes=(()=>{
     // Verificar permissão de criar equipe
-    const meEq=window._currentUserId?users.find(u=>u.sb_id===window._currentUserId)||users[0]:users[0];
-    const podeNovaEq=meEq&&(meEq.role==='gestor'||meEq.role==='administrador'||(meEq.hperms&&meEq.hperms.equipe_add));
+    const meEq=getMe();
+    const podeNovaEq=meEq&&(meEq.role==='admin'||meEq.role==='gestor'||meEq.role==='administrador'||(meEq.hperms&&meEq.hperms.equipe_add));
     const eqAv=(eq)=>{
       if(eq.foto) return `<img src="${eq.foto}" style="width:50px;height:50px;border-radius:12px;object-fit:cover;flex-shrink:0">`;
       const ini=eq.nome.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
@@ -5478,7 +5476,7 @@ function cfgRenderSection(){
   panel.innerHTML=sections[cfgActive]||`<div class="cfg-card"><div class="cfg-card-title">${CFG_SECTIONS.find(s=>s.id===cfgActive)?.label||''}</div><div class="cfg-card-sub">Em desenvolvimento.</div></div>`;
   // Popula campos da seção conta com dados do usuário atual
   if(cfgActive==='conta'){
-    const me=getMe()||users[0];
+    const me=getMe(); // FIX bug#3: nunca usa users[0]
     if(me){
       const parts=me.nome.split(' ');
       const nEl=document.getElementById('accNome');
@@ -5518,10 +5516,9 @@ function cfgRenderSection(){
     // Controla visibilidade do form de adicionar usuário por permissão
     const formWrap=document.getElementById('form-add-user-wrap');
     if(formWrap){
-      const me=window._currentUserId
-        ? users.find(u=>u.sb_id===window._currentUserId)||users[0]
-        : users[0];
-      const podeAdicionar=me&&(me.role==='gestor'||(me.hperms&&me.hperms.equipe_add));
+      // FIX bug#4: usa getMe() seguro + inclui role 'admin'
+      const me=getMe();
+      const podeAdicionar=me&&(me.role==='admin'||me.role==='gestor'||(me.hperms&&me.hperms.equipe_add));
       formWrap.style.display=podeAdicionar?'':'none';
     }
   }
@@ -6102,7 +6099,7 @@ function uploadFoto(e) {
   const reader = new FileReader();
   reader.onload = function(ev) {
     const dataUrl = ev.target.result;
-    (getMe()||users[0]).foto = dataUrl;
+    const _meF=getMe(); if(_meF) _meF.foto = dataUrl; // FIX: nunca acessa users[0]
     // Atualizar preview na seção conta
     const prev = document.getElementById('foto-preview-conta');
     if(prev) prev.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover">`;
@@ -6216,8 +6213,8 @@ function getMe(){
     const byEmail=users.find(u=>u.email===sbEmail);
     if(byEmail) return byEmail;
   }
-  // 3. Último recurso: cria objeto temporário com dados do Supabase
-  // (nunca mostra dados do admin para outro usuário)
+  // 3. Último recurso: cria objeto temporário com dados do Supabase session
+  // FIX bug#2: NUNCA retorna users[0] — dados do admin jamais aparecem para outro usuário
   if(window._session&&window._session.user){
     const u=window._session.user;
     const tempNome=u.user_metadata?.nome||u.email?.split('@')[0]||'Usuário';
@@ -6229,7 +6226,7 @@ function getMe(){
       foto:null, perms:{}, hperms:{}
     };
   }
-  return users[0]||null;
+  return null; // sessão não carregada ainda — retorna null, nunca o admin
 }
 window.getMe=getMe; // expõe globalmente para _loadProfiles poder chamar
 
@@ -6288,7 +6285,7 @@ function salvarConfiguracoesConta(){
   const fotoSrc = fotoImg ? fotoImg.src : '';
 
   // Atualiza usuário logado
-  const me = getMe()||users[0];
+  const me = getMe(); // FIX: nunca usa users[0]
   if(me){
     if(nomeCompleto) me.nome = nomeCompleto;
     if(fotoSrc) me.foto = fotoSrc;
@@ -6620,7 +6617,7 @@ function getNivelHier(u){
 // Gestor vê todos. Representante/Supervisor: vê membros das equipes que supervisiona
 // + membros abaixo na hierarquia. Vendedor: só a si mesmo.
 function getVisiveisParaMim(){
-  const me=users[0];
+  const me=getMe();
   if(!me) return new Set(users.map(u=>u.id));
   const meuNivel=getNivelHier(me);
   // Nível 1 (Gestor) vê todos
@@ -6647,7 +6644,7 @@ function getVisiveisParaMim(){
 
 // Verifica se o usuário logado pode editar/mover um lead
 function podeEditarLead(lead){
-  const me=users[0];if(!me)return false;
+  const me=getMe();if(!me)return false;
   const meuNivel=getNivelHier(me);
   if(meuNivel===1)return true; // gestor pode tudo
   const visiv=getVisiveisParaMim();
