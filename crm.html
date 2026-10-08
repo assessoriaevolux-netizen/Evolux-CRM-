@@ -55,6 +55,7 @@
       credito: row.credito||0,
       meta: row.meta||500000,
       foto: row.foto_url||null,
+      empresaId: row.empresa_id||null,
       perms: row.perms?JSON.parse(row.perms):{},
       hperms: row.hperms?JSON.parse(row.hperms):{}
     };
@@ -75,6 +76,7 @@
         local.hierarquiaId=row.hierarquia_id||local.hierarquiaId;
         local.equipeId=row.equipe_id||local.equipeId;
         local.sb_id=row.id; // garante linkagem
+        local.empresaId=row.empresa_id||local.empresaId;
         // FIX bug#11: atualiza permissões do Supabase (admin pode alterar em tempo real)
         if(row.perms){try{local.perms=JSON.parse(row.perms);}catch(e){}}
         if(row.hperms){try{local.hperms=JSON.parse(row.hperms);}catch(e){}}
@@ -158,6 +160,7 @@
       vendas:u.vendas||0,
       credito:u.credito||0,
       foto_url:u.foto||null,
+      empresa_id:u.empresaId||null,
       perms:u.perms?JSON.stringify(u.perms):null,
       hperms:u.hperms?JSON.stringify(u.hperms):null,
       updated_at:new Date().toISOString()
@@ -1404,6 +1407,7 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
     <button class="nb" onclick="showTab('relatorios',this)" title="Relatórios"><i class="ti ti-chart-bar"></i><span class="nb-label">Relatórios</span></button>
     <button class="nb" onclick="showTab('whatsapp',this)" title="WhatsApp"><i class="ti ti-brand-whatsapp"></i><span class="nb-label">WhatsApp</span></button>
     <button class="nb" onclick="showTab('calendario',this)" title="Calendário"><i class="ti ti-calendar"></i><span class="nb-label">Calendário</span></button>
+    <button class="nb sb-superadmin-only" onclick="showTab('empresas',this)" style="display:none" title="Empresas"><i class="ti ti-building-plus"></i><span class="nb-label">Empresas</span></button>
     <button class="nb" onclick="showTab('configuracoes',this)" title="Configurações"><i class="ti ti-settings"></i><span class="nb-label">Configurações</span></button>
   </nav>
   <div class="sb-user" onclick="showTab('configuracoes',document.querySelectorAll('.nb')[9])" title="Configurações">
@@ -2078,6 +2082,15 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
   </div>
 </div>
 
+<!-- ═══ EMPRESAS (superadmin) ═══ -->
+<div id="tab-empresas" class="content" style="display:none;padding:24px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+    <h2 style="font-size:18px;font-weight:700">Empresas cadastradas</h2>
+    <button class="btn bp" onclick="openNovaEmpresaModal()"><i class="ti ti-building-plus"></i> Nova empresa</button>
+  </div>
+  <div id="empresas-list" style="display:grid;gap:12px"></div>
+</div>
+
 <!-- CONFIGURAÇÕES -->
 <div id="tab-configuracoes" class="content">
 
@@ -2385,7 +2398,7 @@ let taxaFin=1.25,nextAdminId=1;
 function getAdmin(){return administradoras.find(a=>a.ativa)||administradoras[0]||null;}
 
 let users=[
-  {id:1,nome:'Erick',email:'assessoriaevolux@gmail.com',role:'admin',managerId:null,vendas:0,credito:0,foto:null,meta:500000,hierarquiaId:1,perms:{...DPERMS.gestor},hperms:{...HPERM_DEFAULTS.gestor}},
+  {id:1,nome:'Erick',email:'assessoriaevolux@gmail.com',role:'superadmin',managerId:null,vendas:0,credito:0,foto:null,meta:500000,hierarquiaId:1,empresaId:'00000000-0000-0000-0000-000000000001',perms:{...DPERMS.gestor},hperms:{...HPERM_DEFAULTS.gestor}},
 ];
 let nextUserId=2;
 let equipes=[];
@@ -2553,10 +2566,13 @@ function showTab(id,btn){
   document.querySelectorAll('.nb').forEach(el=>el.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
   if(btn) btn.classList.add('active');
-  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,simulador:()=>{syncSim();calcSim();},lances:renderLances,ranking:renderRanking,relatorios:renderRelatorios,whatsapp:renderWhatsapp,calendario:renderCalendario,configuracoes:renderConfig})[id]?.();
+  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,simulador:()=>{syncSim();calcSim();},lances:renderLances,ranking:renderRanking,relatorios:renderRelatorios,whatsapp:renderWhatsapp,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
 }
 // Oculta/mostra botões do nav de acordo com permissões do usuário logado
 function applyNavPermissions(){
+  // Mostra itens exclusivos do superadmin
+  const isSuperAdmin=getMe()&&getMe().role==='superadmin';
+  document.querySelectorAll('.sb-superadmin-only').forEach(el=>{el.style.display=isSuperAdmin?'':'none';});
   const me=_getMeRole();
   if(!me) return;
   Object.entries(TAB_PERM_MAP).forEach(([tabId,permKey])=>{
@@ -4844,6 +4860,7 @@ async function inviteUser(){
         sbUserId=data.user.id;
         criado=true;
         // Salva profile na tabela profiles para o CRM reconhecer
+        const meInvite=getMe();
         await window._sb.from('profiles').upsert({
           id:data.user.id,
           email,
@@ -4852,6 +4869,7 @@ async function inviteUser(){
           meta:metaRaw,
           hierarquia_id:hierarquiaId,
           equipe_id:equipeId||null,
+          empresa_id:meInvite?.empresaId||null,
           vendas:0,
           credito:0
         },{onConflict:'id'});
@@ -4876,7 +4894,8 @@ async function inviteUser(){
   }
 
   // Cria usuário localmente no CRM
-  const newU={id:nextUserId++,nome:nomeVal,email,role,sb_id:sbUserId||null,managerId:null,vendas:0,credito:0,meta:metaRaw,hierarquiaId,equipeId,
+  const _meInv=getMe();
+  const newU={id:nextUserId++,nome:nomeVal,email,role,sb_id:sbUserId||null,managerId:null,vendas:0,credito:0,meta:metaRaw,hierarquiaId,equipeId,empresaId:_meInv?.empresaId||null,
     perms:{...DPERMS[role]||DPERMS.vendedor},hperms:selH?{...selH.perms}:{}};
   if(equipeId){const eq=equipes.find(e=>e.id===equipeId);if(eq){eq.membroIds=eq.membroIds||[];if(!eq.membroIds.includes(newU.id))eq.membroIds.push(newU.id);}}
   users.push(newU);
@@ -6230,6 +6249,42 @@ function getMe(){
 }
 window.getMe=getMe; // expõe globalmente para _loadProfiles poder chamar
 
+// ─── EMPRESAS (superadmin) ────────────────────────────────────────────────────
+let _empresasCache=[];
+async function loadEmpresas(){
+  try{
+    const {data}=await window._sb.from('empresas').select('*').order('criado_em');
+    if(data) _empresasCache=data;
+  }catch(e){console.warn('loadEmpresas:',e);}
+}
+async function renderEmpresas(){
+  await loadEmpresas();
+  const list=document.getElementById('empresas-list');if(!list)return;
+  if(!_empresasCache.length){list.innerHTML='<p style="color:var(--fg2)">Nenhuma empresa cadastrada ainda.</p>';return;}
+  list.innerHTML=_empresasCache.map(e=>`
+    <div style="background:var(--w);border:1px solid var(--c2);border-radius:12px;padding:16px;display:flex;align-items:center;gap:16px">
+      <div style="width:48px;height:48px;border-radius:10px;background:var(--gs);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--g)">${e.nome.charAt(0)}</div>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:14px">${e.nome}</div>
+        <div style="font-size:12px;color:var(--fg2);margin-top:2px">Plano: <strong>${e.plano||'básico'}</strong> · ${e.ativo?'<span style="color:var(--g)">Ativo</span>':'<span style="color:var(--r)">Inativo</span>'}</div>
+      </div>
+      <button class="btn bd bsm" onclick="toggleEmpresaAtivo('${e.id}',${e.ativo})">${e.ativo?'Desativar':'Ativar'}</button>
+    </div>
+  `).join('');
+}
+async function openNovaEmpresaModal(){
+  const nome=prompt('Nome da empresa:');if(!nome||!nome.trim())return;
+  const plano=prompt('Plano (basico / pro / master):','basico')||'basico';
+  const {data,error}=await window._sb.from('empresas').insert({nome:nome.trim(),plano,ativo:true}).select().single();
+  if(error){alert('Erro: '+error.message);return;}
+  alert('Empresa "'+nome+'" criada! ID: '+data.id+'\n\nPasse esse ID para o gestor usar no cadastro.');
+  renderEmpresas();
+}
+async function toggleEmpresaAtivo(id,atual){
+  await window._sb.from('empresas').update({ativo:!atual}).eq('id',id);
+  renderEmpresas();
+}
+
 function updateSbUser(){
   const me = getMe(); if(!me) return;
   const sbAv = document.getElementById('sb-av');
@@ -6618,10 +6673,14 @@ function getNivelHier(u){
 // + membros abaixo na hierarquia. Vendedor: só a si mesmo.
 function getVisiveisParaMim(){
   const me=getMe();
-  if(!me) return new Set(users.map(u=>u.id));
+  if(!me) return new Set();
+  // superadmin vê todos
+  if(me.role==='superadmin') return new Set(users.map(u=>u.id));
+  // filtra usuários da mesma empresa
+  const usersEmpresa=users.filter(u=>u.empresaId===me.empresaId||me.role==='superadmin');
   const meuNivel=getNivelHier(me);
-  // Nível 1 (Gestor) vê todos
-  if(meuNivel===1) return new Set(users.map(u=>u.id));
+  // Nível 1 (Gestor/Admin) vê todos da empresa
+  if(meuNivel===1||me.role==='admin') return new Set(usersEmpresa.map(u=>u.id));
   // Coleta IDs que estão sob a liderança direta:
   // 1. Equipes onde eu sou supervisor
   const minhasEquipes=equipes.filter(e=>e.supervisorId===me.id);
@@ -6630,7 +6689,7 @@ function getVisiveisParaMim(){
   // 2. Usuários com nível hierárquico maior (abaixo) que ainda não estejam em equipe minha
   // — apenas se meu nível ≤ 3 (Representante ou Supervisor)
   if(meuNivel<=3){
-    users.forEach(u=>{
+    usersEmpresa.forEach(u=>{
       if(getNivelHier(u)>meuNivel) idsSubordinados.add(u.id);
     });
   }
@@ -6782,6 +6841,7 @@ async function _initCRM(){
         local.hierarquiaId=row.hierarquia_id||local.hierarquiaId;
         local.equipeId=row.equipe_id||local.equipeId;
         local.sb_id=row.id;
+        local.empresaId=row.empresa_id||local.empresaId;
         if(row.perms){try{local.perms=JSON.parse(row.perms);}catch(e){}}
         if(row.hperms){try{local.hperms=JSON.parse(row.hperms);}catch(e){}}
       } else {
@@ -6792,6 +6852,7 @@ async function _initCRM(){
           equipeId:row.equipe_id||null, managerId:null,
           vendas:row.vendas||0, credito:row.credito||0, meta:row.meta||500000,
           foto:row.foto_url||null,
+          empresaId:row.empresa_id||null,
           perms:row.perms?JSON.parse(row.perms):{},
           hperms:row.hperms?JSON.parse(row.hperms):{}
         };
