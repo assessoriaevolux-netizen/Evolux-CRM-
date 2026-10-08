@@ -17,10 +17,25 @@
   window._sb=supabase.createClient(SB_URL,SB_KEY);
 
   // ── 1. Guard: redireciona para login se não autenticado ───────────────────
-  window._sb.auth.getSession().then(({data:{session}})=>{
+  window._sb.auth.getSession().then(async({data:{session}})=>{
     if(!session){window.location.href='index.html';return;}
     window._session=session;
     window._currentUserId=session.user.id; // uuid do Supabase
+
+    // Garante que o profile do usuário logado existe na tabela profiles
+    const email=session.user.email;
+    const nome=session.user.user_metadata?.nome||email?.split('@')[0]||'Usuário';
+    const role=session.user.user_metadata?.role||'vendedor';
+    const meta=session.user.user_metadata?.meta||500000;
+    try{
+      const {data:existing}=await window._sb.from('profiles').select('id').eq('id',session.user.id).single();
+      if(!existing){
+        await window._sb.from('profiles').upsert({
+          id:session.user.id,
+          email,nome,role,meta,vendas:0,credito:0
+        },{onConflict:'id'});
+      }
+    }catch(e){console.warn('Profile check:',e);}
   });
 
   // ── INATIVIDADE OBRIGATÓRIA — 30 dias sem uso → logout ────────────────────
@@ -2545,7 +2560,7 @@ function renderDashboard(){
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   const meses=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
   const nd=new Date();
-  const meUser=users.find(u=>u.id===1)||users[0];
+  const meUser=getMe()||users[0];
   const meNome=meUser?meUser.nome.split(' ')[0]:'';
   document.getElementById('hero-greeting-txt').textContent=`${saud}${meNome?', '+meNome:''} 👋`;
   document.getElementById('hero-date-txt').textContent=`${dias[nd.getDay()]}, ${nd.getDate()} de ${meses[nd.getMonth()]} de ${nd.getFullYear()}${getAdmin()?` · ${getAdmin().nome}`:''}` ;
@@ -3338,7 +3353,7 @@ function downloadSimPDF(comDados){
   if(!out||out.includes('Selecione a tabela')){alert('Faça a simulação antes de baixar.');return;}
 
   const data=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
-  const _me=users.find(u=>u.id===1)||users[0]||{};
+  const _me=getMe()||users[0]||{};
 
   // Foto: tenta o elemento visível, senão pega do objeto users
   const fotoEl=document.getElementById('foto-preview-conta')?.querySelector('img');
@@ -5000,13 +5015,13 @@ function cfgRenderSection(){
       <div class="cfg-card-sub">Informações principais da sua conta no Evolux CRM.</div>
       <div style="display:flex;align-items:center;gap:20px;margin-bottom:22px;padding:16px;background:var(--c0);border-radius:var(--radl);border:1px solid var(--c2)">
         <div style="position:relative;flex-shrink:0">
-          <div id="foto-preview-conta" onclick="document.getElementById('foto-input-real').click()" style="width:76px;height:76px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#fff;cursor:pointer;overflow:hidden;box-shadow:0 4px 14px rgba(26,110,60,.3);border:3px solid var(--gb)">${users[0]&&users[0].foto?`<img src="${users[0].foto}" style="width:100%;height:100%;object-fit:cover">`:users[0].nome.charAt(0)}</div>
+          <div id="foto-preview-conta" onclick="document.getElementById('foto-input-real').click()" style="width:76px;height:76px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#fff;cursor:pointer;overflow:hidden;box-shadow:0 4px 14px rgba(26,110,60,.3);border:3px solid var(--gb)">${(()=>{const _m=getMe()||users[0];return _m&&_m.foto?`<img src="${_m.foto}" style="width:100%;height:100%;object-fit:cover">`:(_m?_m.nome.charAt(0):'?')})()}</div>
           <div onclick="document.getElementById('foto-input-real').click()" style="position:absolute;bottom:0;right:0;width:24px;height:24px;background:var(--g);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.2)"><i class="ti ti-camera" style="font-size:12px;color:#fff"></i></div>
           <input type="file" id="foto-input-real" accept="image/*" style="display:none" onchange="uploadFoto(event)">
         </div>
         <div style="flex:1">
-          <div style="font-size:16px;font-weight:800;color:var(--tx)">${users[0].nome}</div>
-          <div style="font-size:12px;color:var(--tm);margin-top:2px">${RL[users[0].role]} · ${users[0].email}</div>
+          <div style="font-size:16px;font-weight:800;color:var(--tx)">${(getMe()||users[0]).nome}</div>
+          <div style="font-size:12px;color:var(--tm);margin-top:2px">${(()=>{const _m=getMe()||users[0];return RL[_m.role]+' · '+(_m.email||window._session?.user?.email||'')})()}</div>
           <div style="font-size:11px;color:var(--gc);font-weight:700;margin-top:5px">● Online agora</div>
           <div style="font-size:11px;color:var(--tm);margin-top:6px"><i class="ti ti-camera" style="font-size:11px"></i> Clique na foto para alterar</div>
         </div>
@@ -5444,7 +5459,7 @@ function cfgRenderSection(){
   panel.innerHTML=sections[cfgActive]||`<div class="cfg-card"><div class="cfg-card-title">${CFG_SECTIONS.find(s=>s.id===cfgActive)?.label||''}</div><div class="cfg-card-sub">Em desenvolvimento.</div></div>`;
   // Popula campos da seção conta com dados do usuário atual
   if(cfgActive==='conta'){
-    const me=users.find(u=>u.id===1)||users[0];
+    const me=getMe()||users[0];
     if(me){
       const parts=me.nome.split(' ');
       const nEl=document.getElementById('accNome');
@@ -6068,7 +6083,7 @@ function uploadFoto(e) {
   const reader = new FileReader();
   reader.onload = function(ev) {
     const dataUrl = ev.target.result;
-    users[0].foto = dataUrl;
+    (getMe()||users[0]).foto = dataUrl;
     // Atualizar preview na seção conta
     const prev = document.getElementById('foto-preview-conta');
     if(prev) prev.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover">`;
@@ -6170,8 +6185,23 @@ function editMeta(id) {
 }
 
 
+function getMe(){
+  // Retorna sempre o usuário autenticado no Supabase, nunca users[0] fixo
+  if(window._currentUserId){
+    const found=users.find(u=>u.sb_id===window._currentUserId);
+    if(found) return found;
+  }
+  // Fallback: tenta pelo email do Supabase
+  const sbEmail=window._session&&window._session.user&&window._session.user.email;
+  if(sbEmail){
+    const byEmail=users.find(u=>u.email===sbEmail);
+    if(byEmail) return byEmail;
+  }
+  return users[0]||null;
+}
+
 function updateSbUser(){
-  const me = users.find(u=>u.id===1)||users[0]; if(!me) return;
+  const me = getMe(); if(!me) return;
   const sbAv = document.getElementById('sb-av');
   const tpAv = document.getElementById('tp-av');
   const sbName = document.getElementById('sb-user-name');
@@ -6219,8 +6249,8 @@ function salvarConfiguracoesConta(){
   const fotoImg = fotoPreviewEl ? fotoPreviewEl.querySelector('img') : null;
   const fotoSrc = fotoImg ? fotoImg.src : '';
 
-  // Atualiza usuário principal (id=1)
-  const me = users.find(u=>u.id===1)||users[0];
+  // Atualiza usuário logado
+  const me = getMe()||users[0];
   if(me){
     if(nomeCompleto) me.nome = nomeCompleto;
     if(fotoSrc) me.foto = fotoSrc;
