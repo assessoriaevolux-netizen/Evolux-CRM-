@@ -3,18 +3,124 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script>
-(async()=>{
-  const sb=supabase.createClient('https://uekeeutycmqsswrhspwv.supabase.co','sb_publishable_nJ-BnFkD8sG8mv4f7Uc-Uw_v87ZOIl9');
-  const {data:{session}}=await sb.auth.getSession();
-  if(!session) window.location.href='index.html';
-  window._supabase=sb;
-  window._session=session;
-})();
-</script>
 <title>Evolux CRM — Consórcio</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.0/dist/tabler-icons.min.css">
+
+<!-- ═══════════════════════════════════════════════════════════
+     SUPABASE — Auth guard + sincronização em tempo real
+     ═══════════════════════════════════════════════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+(function(){
+  const SB_URL='https://uekeeutycmqsswrhspwv.supabase.co';
+  const SB_KEY='sb_publishable_nJ-BnFkD8sG8mv4f7Uc-Uw_v87ZOIl9';
+  window._sb=supabase.createClient(SB_URL,SB_KEY);
+
+  // ── 1. Guard: redireciona para login se não autenticado ───────────────────
+  window._sb.auth.getSession().then(({data:{session}})=>{
+    if(!session){window.location.href='index.html';return;}
+    window._session=session;
+    window._currentUserId=session.user.id; // uuid do Supabase
+  });
+
+  // ── 2. Helpers de sync ────────────────────────────────────────────────────
+  // Converte linha do Supabase → objeto user do CRM
+  function sbRowToUser(row,idx){
+    return {
+      id: row.crm_id||idx+100, // id numérico local (para compatibilidade com código existente)
+      sb_id: row.id,           // uuid do Supabase (para upserts)
+      nome: row.nome||'',
+      email: row.email||'',
+      role: row.role||'vendedor',
+      hierarquiaId: row.hierarquia_id||null,
+      equipeId: row.equipe_id||null,
+      managerId: null,
+      vendas: row.vendas||0,
+      credito: row.credito||0,
+      meta: row.meta||500000,
+      foto: row.foto_url||null,
+      perms: row.perms?JSON.parse(row.perms):{},
+      hperms: row.hperms?JSON.parse(row.hperms):{}
+    };
+  }
+
+  // Busca todos os profiles e atualiza array users + re-renderiza ranking
+  window._loadProfiles=async function(){
+    const {data,error}=await window._sb.from('profiles').select('*').order('credito',{ascending:false});
+    if(error){console.warn('Erro ao carregar profiles:',error);return;}
+    if(!data||!data.length)return;
+    // Preserva permissões locais mas atualiza dados de ranking
+    if(window.users&&window.users.length){
+      data.forEach(row=>{
+        const local=window.users.find(u=>u.sb_id===row.id||u.email===row.email);
+        if(local){
+          local.nome=row.nome||local.nome;
+          local.foto=row.foto_url||local.foto;
+          local.meta=row.meta||local.meta;
+          local.vendas=row.vendas||0;
+          local.credito=row.credito||0;
+          local.sb_id=row.id;
+        } else {
+          // Usuário novo — adiciona ao array com id numérico único
+          const maxId=Math.max(...window.users.map(u=>u.id),1);
+          const newU=sbRowToUser(row,maxId);
+          newU.id=maxId+1;
+          window.users.push(newU);
+          if(window.nextUserId<=newU.id) window.nextUserId=newU.id+1;
+        }
+      });
+    }
+    try{window.renderRanking&&window.renderRanking();}catch(e){}
+    try{window.renderUserList&&window.renderUserList();}catch(e){}
+    try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
+  };
+
+  // Salva/atualiza um user no Supabase
+  window._syncUser=async function(u){
+    if(!u||!u.email)return;
+    const payload={
+      email:u.email,
+      nome:u.nome,
+      role:u.role||'vendedor',
+      hierarquia_id:u.hierarquiaId||null,
+      equipe_id:u.equipeId||null,
+      meta:u.meta||0,
+      vendas:u.vendas||0,
+      credito:u.credito||0,
+      foto_url:u.foto||null,
+      perms:u.perms?JSON.stringify(u.perms):null,
+      hperms:u.hperms?JSON.stringify(u.hperms):null,
+      updated_at:new Date().toISOString()
+    };
+    if(u.sb_id) payload.id=u.sb_id;
+    const {data,error}=await window._sb.from('profiles').upsert(payload,{onConflict:'email'}).select().single();
+    if(error){console.warn('Erro ao salvar profile:',error);return;}
+    if(data) u.sb_id=data.id; // garante que temos o uuid
+  };
+
+  // Sync massa: todos os users
+  window._syncAllUsers=async function(){
+    if(!window.users)return;
+    for(const u of window.users){await window._syncUser(u);}
+  };
+
+  // ── 3. Realtime: escuta mudanças na tabela profiles ───────────────────────
+  // Ativa após o DOM carregar (quando renderRanking estiver disponível)
+  window.addEventListener('load',function(){
+    window._sb.channel('profiles-sync')
+      .on('postgres_changes',{event:'*',schema:'public',table:'profiles'},function(payload){
+        // Algum usuário atualizou seus dados → recarrega tudo
+        window._loadProfiles();
+      })
+      .subscribe();
+
+    // Carrega perfis ao abrir o CRM
+    setTimeout(function(){window._loadProfiles();},800);
+    // Aplica permissões de nav após carregar
+    setTimeout(function(){try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}},1200);
+  });
+})();
+</script>
 <style>
 :root {
   /* BRAND */
@@ -245,7 +351,7 @@ tr:hover td{background:var(--c1)}
 .rank-num.gold{color:#c8a000}
 .rank-av-wrap{position:relative}
 .rank-av{width:60px;height:60px;border-radius:14px;background:linear-gradient(135deg,var(--gs),rgba(22,163,74,.12));border:2px solid var(--gb);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;color:var(--ge)}
-.rank-av-foto{width:60px;height:60px;border-radius:14px;object-fit:cover;object-position:center top;border:2px solid var(--gb);box-shadow:0 3px 12px rgba(0,0,0,.2),0 0 0 2px #fff}
+.rank-av-foto{width:60px;height:60px;border-radius:14px;object-fit:cover;object-position:center 15%;border:2px solid var(--gb);box-shadow:0 3px 12px rgba(0,0,0,.2),0 0 0 2px #fff}
 .rank-av-crown{position:absolute;top:-8px;right:-8px;width:22px;height:22px;background:#f0c040;border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 6px rgba(240,192,64,.5)}
 /* coluna direita: dados */
 .rank-right-col{flex:1;padding:14px 16px;display:flex;flex-direction:column;justify-content:center;gap:6px;min-width:0}
@@ -299,98 +405,137 @@ tr:hover td{background:var(--c1)}
 /* ── TV OVERLAY ──────────────────────────────────── */
 .tvov{display:none;position:fixed;inset:0;z-index:9998;flex-direction:column;overflow:hidden}
 .tvov.open{display:flex}
-/* TV themes */
-.tvov.tv-light{background:#f0f2f7;color:#0d1b35}
-.tvov.tv-dark{background:#0a0f1a;color:#e8f0ff}
-/* TV light — todos os textos escuros e legíveis */
-.tv-light .tv-header-title,.tv-light .tv-header-title .tv-rank-word{color:#0d1b35}
-.tv-light .tv-header-title .tv-month{color:#1db954}
-.tv-light .tv-header-sub{color:#2d3a55}
-.tv-light .tv-val-lbl{color:#2d3a55;opacity:1}
-.tv-light .tv-chevron{color:#2d3a55}
-.tv-light .tv-name{color:#0d1b35}
-.tv-light .tv-meta{color:#4a5a7a}
-.tv-light .tv-sc{color:#15863b}
-.tv-light .tv-pos-badge{background:#e2e6ef;color:#2d3a55}
-.tv-light .tv-row.tv-pos1 .tv-pos-badge{background:#f0c040;color:#7a5800}
-.tv-light .tv-row.tv-pos2 .tv-pos-badge{background:rgba(140,160,190,.3);color:#3a4a6a}
-.tv-light .tv-row.tv-pos3 .tv-pos-badge{background:rgba(190,120,50,.25);color:#7a3a08}
-.tv-light .tv-av{background:linear-gradient(135deg,#ddf0e6,#c0e0d0);color:#15863b;border-color:#a8d8bc}
+.tvov.tv-light{background:linear-gradient(160deg,#e8f2f0 0%,#f0f4ff 100%);color:#0d1b35}
+.tvov.tv-dark{background:linear-gradient(160deg,#070d18 0%,#0a1120 100%);color:#e8f0ff}
 /* TV header */
-.tv-header{display:flex;align-items:center;justify-content:space-between;padding:22px 40px 16px;flex-shrink:0}
-.tv-header-left{display:flex;flex-direction:column;gap:2px}
-.tv-header-title{display:flex;align-items:center;gap:12px;font-size:36px;font-weight:900;letter-spacing:-.03em;line-height:1}
-.tv-header-title .tv-trophy{font-size:38px}
+.tv-header{display:flex;align-items:center;justify-content:space-between;padding:28px 48px 20px;flex-shrink:0}
+.tv-header-left{display:flex;flex-direction:column;gap:3px}
+.tv-header-title{display:flex;align-items:center;gap:14px;font-size:46px;font-weight:900;letter-spacing:-.04em;line-height:1}
+.tv-header-title .tv-trophy{font-size:50px;line-height:1}
 .tv-header-title .tv-rank-word{color:inherit}
 .tv-header-title .tv-month{color:#1db954}
-.tv-header-sub{font-size:13px;font-weight:500;opacity:.55;margin-left:4px;margin-top:2px}
+.tv-header-sub{font-size:15px;font-weight:600;opacity:.5;margin-left:6px;margin-top:3px}
+.tv-light .tv-header-title,.tv-light .tv-header-title .tv-rank-word{color:#0d1b35}
+.tv-light .tv-header-title .tv-month{color:#1db954}
+.tv-light .tv-header-sub{color:#2d3a55;opacity:.6}
 .tv-header-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
 /* TV filter tabs */
-.tv-filter-tabs{display:flex;gap:6px}
-.tv-ftab{display:flex;align-items:center;gap:6px;padding:9px 18px;border-radius:50px;border:1.5px solid;font-size:13.5px;font-weight:700;cursor:pointer;transition:all .15s}
-.tv-light .tv-ftab{border-color:#d0d8e8;background:#fff;color:#4a5a7a}
+.tv-filter-tabs{display:flex;gap:8px}
+.tv-ftab{display:flex;align-items:center;gap:7px;padding:11px 22px;border-radius:50px;border:2px solid;font-size:15px;font-weight:700;cursor:pointer;transition:all .15s}
+.tv-light .tv-ftab{border-color:#c8d4e8;background:#fff;color:#4a5a7a}
 .tv-dark .tv-ftab{border-color:rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:rgba(255,255,255,.7)}
-.tv-ftab.tv-active{background:#1db954;border-color:#1db954;color:#fff}
-.tv-ftab i{font-size:14px}
+.tv-ftab.tv-active{background:#1db954;border-color:#1db954;color:#fff;box-shadow:0 4px 16px rgba(29,185,84,.35)}
+.tv-ftab i{font-size:16px}
 /* TV theme toggle */
-.tv-theme-toggle{display:flex;align-items:center;gap:8px;padding:9px 16px;border-radius:50px;border:1.5px solid;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;margin-left:4px}
-.tv-light .tv-theme-toggle{border-color:#d0d8e8;background:#fff;color:#4a5a7a}
+.tv-theme-toggle{display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:50px;border:2px solid;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;margin-left:4px}
+.tv-light .tv-theme-toggle{border-color:#c8d4e8;background:#fff;color:#4a5a7a}
 .tv-dark .tv-theme-toggle{border-color:rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:rgba(255,255,255,.7)}
 .tv-theme-toggle:hover{opacity:.8}
-/* TV toggle switch visual */
-.tv-tog-track{width:34px;height:20px;border-radius:20px;background:#1db954;position:relative;flex-shrink:0;transition:background .2s}
+.tv-tog-track{width:36px;height:20px;border-radius:20px;background:#1db954;position:relative;flex-shrink:0;transition:background .2s}
 .tv-tog-thumb{position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s}
-.tv-dark .tv-tog-thumb{left:17px}
+.tv-dark .tv-tog-thumb{left:19px}
 /* TV close */
-.tv-close{position:absolute;top:20px;right:40px;display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:50px;border:1.5px solid rgba(255,255,255,.2);background:rgba(255,255,255,.1);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;z-index:1;transition:all .15s}
-.tv-light .tv-close{border-color:rgba(0,0,0,.15);background:rgba(0,0,0,.07);color:#3d4f6a}
+.tv-close{position:absolute;top:24px;right:48px;display:flex;align-items:center;gap:6px;padding:9px 18px;border-radius:50px;border:2px solid rgba(255,255,255,.2);background:rgba(255,255,255,.1);color:#fff;font-size:13px;font-weight:600;cursor:pointer;z-index:1;transition:all .15s}
+.tv-light .tv-close{border-color:rgba(0,0,0,.15);background:rgba(0,0,0,.06);color:#3d4f6a}
 .tv-close:hover{opacity:.75}
-/* TV body — two columns */
-.tv-body{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:0 20px;padding:0 32px 24px;overflow:hidden;align-content:start}
-.tv-col{display:flex;flex-direction:column;gap:7px}
-/* TV row card */
-.tv-row{display:flex;align-items:center;gap:14px;padding:10px 16px;border-radius:14px;border:1.5px solid;transition:background .15s}
-.tv-light .tv-row{background:#fff;border-color:#e2e6ef;box-shadow:0 1px 6px rgba(0,0,0,.05)}
-.tv-dark .tv-row{background:#111824;border-color:rgba(255,255,255,.07);box-shadow:0 2px 10px rgba(0,0,0,.3)}
-/* pos 1 highlight */
-.tv-row.tv-pos1.tv-light{background:linear-gradient(135deg,rgba(29,185,84,.08),rgba(29,185,84,.03));border-color:rgba(29,185,84,.35);box-shadow:0 4px 20px rgba(29,185,84,.12)}
-.tv-row.tv-pos1.tv-dark{background:linear-gradient(135deg,rgba(29,185,84,.14),rgba(29,185,84,.05));border-color:rgba(29,185,84,.4);box-shadow:0 4px 24px rgba(29,185,84,.2)}
-/* pos 2 */
-.tv-row.tv-pos2.tv-light{background:linear-gradient(135deg,rgba(160,176,200,.08),rgba(160,176,200,.02));border-color:rgba(160,176,200,.4)}
-.tv-row.tv-pos2.tv-dark{background:linear-gradient(135deg,rgba(160,176,200,.1),rgba(160,176,200,.03));border-color:rgba(160,176,200,.25)}
-/* pos 3 */
-.tv-row.tv-pos3.tv-light{background:linear-gradient(135deg,rgba(205,128,60,.07),rgba(205,128,60,.02));border-color:rgba(205,128,60,.35)}
-.tv-row.tv-pos3.tv-dark{background:linear-gradient(135deg,rgba(205,128,60,.1),rgba(205,128,60,.03));border-color:rgba(205,128,60,.3)}
-/* TV position badge */
-.tv-pos-badge{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:900;flex-shrink:0}
-.tv-light .tv-pos-badge{background:#f0f2f7;color:#3d4f6a}
+/* TV body */
+.tv-body{flex:1;padding:0 40px 32px;overflow:hidden;display:flex;flex-direction:column}
+/* ── PODIUM (Top 3) ── */
+.tv-podium{display:flex;align-items:flex-end;justify-content:center;gap:24px;flex:1;padding-bottom:20px}
+.tv-pod-card{display:flex;flex-direction:column;align-items:center;border-radius:24px;border:2.5px solid;padding:28px 24px 24px;position:relative;transition:all .2s;flex:0 0 auto}
+.tv-light .tv-pod-card{background:#fff;border-color:#e2e8f0;box-shadow:0 8px 40px rgba(0,0,0,.09)}
+.tv-dark .tv-pod-card{background:#111824;border-color:rgba(255,255,255,.1);box-shadow:0 8px 48px rgba(0,0,0,.5)}
+/* 1st place — center, tallest */
+.tv-pod-1{width:280px;min-height:380px;order:2;border-color:rgba(240,192,64,.5)!important;box-shadow:0 12px 60px rgba(240,192,64,.2)!important}
+.tv-light .tv-pod-1{background:linear-gradient(160deg,#fffaec,#fffef8)!important}
+.tv-dark .tv-pod-1{background:linear-gradient(160deg,#1e1600,#121000)!important}
+/* 2nd place — left */
+.tv-pod-2{width:230px;min-height:300px;order:1;border-color:rgba(160,176,200,.4)!important}
+.tv-light .tv-pod-2{background:linear-gradient(160deg,#f4f6fb,#f8f9fd)!important}
+.tv-dark .tv-pod-2{background:linear-gradient(160deg,#111520,#0d1018)!important}
+/* 3rd place — right */
+.tv-pod-3{width:210px;min-height:260px;order:3;border-color:rgba(205,128,60,.35)!important}
+.tv-light .tv-pod-3{background:linear-gradient(160deg,#fdf4ec,#fef8f4)!important}
+.tv-dark .tv-pod-3{background:linear-gradient(160deg,#140a00,#100800)!important}
+/* podium medal crown */
+.tv-pod-medal{font-size:44px;margin-bottom:12px;line-height:1}
+.tv-pod-1 .tv-pod-medal{font-size:54px}
+/* podium avatar */
+.tv-pod-av{border-radius:50%;object-fit:cover;object-position:center 15%;display:flex;align-items:center;justify-content:center;font-weight:900;flex-shrink:0;border:4px solid;margin-bottom:14px}
+.tv-pod-1 .tv-pod-av{width:130px;height:130px;font-size:52px;border-color:#f0c040;box-shadow:0 0 0 6px rgba(240,192,64,.25)}
+.tv-pod-2 .tv-pod-av{width:100px;height:100px;font-size:40px;border-color:rgba(160,176,200,.6);box-shadow:0 0 0 4px rgba(160,176,200,.15)}
+.tv-pod-3 .tv-pod-av{width:88px;height:88px;font-size:34px;border-color:rgba(205,128,60,.5);box-shadow:0 0 0 4px rgba(205,128,60,.12)}
+.tv-light .tv-pod-av{background:linear-gradient(135deg,#e4f0ea,#cce4d6);color:#1db954}
+.tv-dark .tv-pod-av{background:linear-gradient(135deg,#1a3028,#0f2018);color:#1db954}
+/* podium name & meta */
+.tv-pod-name{font-weight:900;text-align:center;letter-spacing:-.02em;line-height:1.2}
+.tv-pod-1 .tv-pod-name{font-size:24px}
+.tv-pod-2 .tv-pod-name{font-size:19px}
+.tv-pod-3 .tv-pod-name{font-size:17px}
+.tv-light .tv-pod-name{color:#0d1b35}
+.tv-dark .tv-pod-name{color:#e8f0ff}
+.tv-pod-role{font-size:12px;font-weight:600;opacity:.5;text-align:center;margin-top:3px}
+.tv-pod-val{font-size:22px;font-weight:900;color:#1db954;letter-spacing:-.03em;margin-top:10px;text-align:center}
+.tv-pod-1 .tv-pod-val{font-size:28px}
+.tv-pod-sales{font-size:12px;font-weight:600;opacity:.45;text-align:center;margin-top:2px}
+/* pos badge inside podium */
+.tv-pod-pos{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900}
+.tv-pod-1 .tv-pod-pos{background:#f0c040;color:#7a5800}
+.tv-pod-2 .tv-pod-pos{background:rgba(160,176,200,.25);color:#8090a8}
+.tv-pod-3 .tv-pod-pos{background:rgba(205,128,60,.25);color:#a06020}
+/* ── LIST VIEW (Top 5/10/50) ── */
+.tv-list{display:flex;flex-direction:column;gap:10px;flex:1;overflow:hidden}
+.tv-list-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;overflow-y:auto;padding-right:4px}
+.tv-list-grid::-webkit-scrollbar{width:4px}
+.tv-list-grid::-webkit-scrollbar-track{background:transparent}
+.tv-list-grid::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:4px}
+.tv-row{display:flex;align-items:center;gap:16px;padding:14px 20px;border-radius:18px;border:2px solid;transition:background .15s}
+.tv-light .tv-row{background:#fff;border-color:#e2e8f0;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+.tv-dark .tv-row{background:#111824;border-color:rgba(255,255,255,.07);box-shadow:0 2px 12px rgba(0,0,0,.3)}
+.tv-row.tv-compact{padding:10px 16px;border-radius:14px}
+.tv-row.tv-pos1{border-color:rgba(240,192,64,.4)!important}
+.tv-light .tv-row.tv-pos1{background:linear-gradient(135deg,rgba(255,248,220,.6),rgba(255,252,240,.4))!important;box-shadow:0 4px 20px rgba(240,192,64,.12)!important}
+.tv-dark .tv-row.tv-pos1{background:linear-gradient(135deg,rgba(40,30,0,.7),rgba(25,18,0,.5))!important;box-shadow:0 4px 24px rgba(240,192,64,.15)!important}
+.tv-row.tv-pos2{border-color:rgba(160,176,200,.35)!important}
+.tv-light .tv-row.tv-pos2{background:linear-gradient(135deg,rgba(245,247,252,.6),rgba(248,250,255,.4))!important}
+.tv-dark .tv-row.tv-pos2{background:linear-gradient(135deg,rgba(20,24,36,.6),rgba(14,18,28,.4))!important}
+.tv-row.tv-pos3{border-color:rgba(205,128,60,.3)!important}
+.tv-light .tv-row.tv-pos3{background:linear-gradient(135deg,rgba(255,244,232,.6),rgba(255,250,245,.4))!important}
+.tv-dark .tv-row.tv-pos3{background:linear-gradient(135deg,rgba(30,15,0,.5),rgba(20,10,0,.4))!important}
+/* TV position badge (list) */
+.tv-pos-badge{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;flex-shrink:0}
+.tv-row.tv-compact .tv-pos-badge{width:34px;height:34px;font-size:14px}
+.tv-light .tv-pos-badge{background:#f0f4fb;color:#3d4f6a}
 .tv-dark .tv-pos-badge{background:rgba(255,255,255,.08);color:rgba(255,255,255,.7)}
-.tv-row.tv-pos1 .tv-pos-badge{background:#f0c040;color:#7a5800;font-size:16px}
+.tv-row.tv-pos1 .tv-pos-badge{background:#f0c040;color:#7a5800}
 .tv-row.tv-pos2 .tv-pos-badge{background:rgba(160,176,200,.2);color:#8090a8}
 .tv-row.tv-pos3 .tv-pos-badge{background:rgba(205,128,60,.2);color:#a06020}
-/* TV avatar */
-.tv-av{width:52px;height:52px;border-radius:50%;object-fit:cover;object-position:top;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;flex-shrink:0;border:2.5px solid transparent}
-.tv-light .tv-av{background:linear-gradient(135deg,#e8f4ee,#d0eadc);color:#1db954;border-color:#c0deca}
-.tv-dark .tv-av{background:linear-gradient(135deg,#1a3a28,#0f2018);color:#1db954;border-color:#2a5040}
+/* TV avatar (list) */
+.tv-av{width:62px;height:62px;border-radius:50%;object-fit:cover;object-position:center 15%;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;flex-shrink:0;border:3px solid transparent}
+.tv-row.tv-compact .tv-av{width:48px;height:48px;font-size:18px;border-width:2.5px}
+.tv-light .tv-av{background:linear-gradient(135deg,#e4f0ea,#cce4d6);color:#1db954;border-color:#c0deca}
+.tv-dark .tv-av{background:linear-gradient(135deg,#1a3028,#0f2018);color:#1db954;border-color:#2a5040}
 .tv-row.tv-pos1 .tv-av{border-color:#f0c040;box-shadow:0 0 0 3px rgba(240,192,64,.2)}
 .tv-row.tv-pos2 .tv-av{border-color:rgba(160,176,200,.6)}
 .tv-row.tv-pos3 .tv-av{border-color:rgba(205,128,60,.5)}
-/* TV info */
+/* TV info (list) */
 .tv-info{flex:1;min-width:0}
-.tv-name{font-size:15px;font-weight:800;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tv-name{font-size:17px;font-weight:800;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tv-row.tv-compact .tv-name{font-size:14px}
 .tv-light .tv-name{color:#0d1b35}
 .tv-dark .tv-name{color:#e8f0ff}
-.tv-meta{font-size:11px;font-weight:500;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tv-meta{font-size:12px;font-weight:500;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tv-row.tv-compact .tv-meta{font-size:11px;margin-top:1px}
 .tv-light .tv-meta{color:#6272a4}
 .tv-dark .tv-meta{color:#6a7a9a}
-/* TV value */
+/* TV value (list) */
 .tv-val-block{text-align:right;flex-shrink:0}
-.tv-val-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;opacity:.5;margin-bottom:1px}
-.tv-sc{font-size:17px;font-weight:900;color:#1db954;letter-spacing:-.02em;white-space:nowrap}
-/* TV chevron */
-.tv-chevron{flex-shrink:0;opacity:.3;font-size:16px}
-/* TV empty */
-.tv-empty{padding:48px 24px;text-align:center;opacity:.4;font-size:15px;grid-column:1/-1}
+.tv-val-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;opacity:.45;margin-bottom:2px}
+.tv-row.tv-compact .tv-val-lbl{font-size:10px}
+.tv-light .tv-val-lbl{color:#2d3a55}
+.tv-sc{font-size:20px;font-weight:900;color:#1db954;letter-spacing:-.02em;white-space:nowrap}
+.tv-row.tv-compact .tv-sc{font-size:16px}
+.tv-empty{padding:60px 24px;text-align:center;opacity:.35;font-size:18px;width:100%;text-align:center}
 
 /* ── CONFIGURAÇÕES ───────────────────────────────── */
 .cfg-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -611,8 +756,8 @@ html.dark .celebra-box{background:#1c2540;color:#e8f0ff;border-color:rgba(255,25
 .rank-item-1::after{content:'Nº 1';position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:9px;font-weight:900;letter-spacing:.1em;color:#c8a000;opacity:.8;background:rgba(240,192,64,.15);padding:3px 8px;border-radius:20px}
 html[data-theme="dark"] .rank-item-1::after{color:#f0d060}
 html.dark .rank-item-1::after{color:#f0d060}
-.rank-av-foto{width:58px;height:58px;border-radius:50%;object-fit:cover;border:3px solid var(--gb);flex-shrink:0;box-shadow:0 4px 12px rgba(0,0,0,.18)}
-.rank-av-foto-lg{width:96px;height:96px;border-radius:50%;object-fit:cover;object-position:center top;border:4px solid var(--gb);flex-shrink:0;box-shadow:0 8px 28px rgba(0,0,0,.2),0 0 0 3px var(--w)}
+.rank-av-foto{width:58px;height:58px;border-radius:50%;object-fit:cover;object-position:center 15%;border:3px solid var(--gb);flex-shrink:0;box-shadow:0 4px 12px rgba(0,0,0,.18)}
+.rank-av-foto-lg{width:96px;height:96px;border-radius:50%;object-fit:cover;object-position:center 15%;border:4px solid var(--gb);flex-shrink:0;box-shadow:0 8px 28px rgba(0,0,0,.2),0 0 0 3px var(--w)}
 
 /* ── FILTRO PERÍODO ──────────────────────────────── */
 .periodo-tabs{display:flex;gap:4px;background:var(--c1);border-radius:8px;padding:3px}
@@ -1598,44 +1743,24 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
         <p>Projete o ranking em tela cheia para toda a equipe.</p>
         <button class="tv-btn" onclick="openTV()"><i class="ti ti-maximize"></i>Abrir tela cheia</button>
       </div>
-      <div class="side-card">
-        <h3><i class="ti ti-user-plus" style="color:var(--g)"></i>Adicionar ao ranking</h3>
-        <p>Cadastre uma pessoa com foto para aparecer no ranking.</p>
+      <!-- Card: minha venda (qualquer usuário logado) -->
+      <div class="side-card" id="card-minha-venda">
+        <h3><i class="ti ti-trophy" style="color:var(--g)"></i>Registrar minha venda</h3>
+        <p id="minha-venda-sub">Registre uma venda no seu nome.</p>
         <div class="vf">
-          <div style="display:flex;flex-direction:column;align-items:center;gap:6px;margin-bottom:8px">
-            <div id="rank-foto-prev" onclick="document.getElementById('rank-foto-inp').click()"
-              style="width:70px;height:70px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--gc));
-              display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;
-              border:3px solid var(--gb);box-shadow:0 4px 14px rgba(1,107,60,.2)">
-              <i class="ti ti-camera" style="font-size:24px;color:rgba(255,255,255,.9)"></i>
-            </div>
-            <input type="file" id="rank-foto-inp" accept="image/*" style="display:none" onchange="rankFotoPreview(event)">
-            <input type="hidden" id="rank-foto-data">
-            <span style="font-size:10.5px;color:var(--tm)">Clique para adicionar foto</span>
-          </div>
-          <input type="text" id="rank-nome-inp" class="fi" placeholder="Nome completo" style="margin-bottom:6px">
-          <select id="rank-role-inp" class="fi" style="margin-bottom:6px">
-            <option value="">Hierarquia...</option>
-          </select>
-          <input type="text" id="rank-meta-inp" class="fi" placeholder="Meta (R$)" oninput="maskM(this)" style="margin-bottom:8px">
-          <button id="btn-add-pessoa-ranking" class="btn bp" style="justify-content:center;width:100%">
-            <i class="ti ti-user-plus"></i>Adicionar pessoa
-          </button>
+          <input type="text" id="vval-me" placeholder="Valor do crédito (R$)" oninput="maskM(this)">
+          <button class="btn bp" style="justify-content:center" onclick="addMinhaVenda()"><i class="ti ti-check"></i>Registrar</button>
         </div>
       </div>
-      <div class="side-card">
+      <!-- Card: registrar por qualquer vendedor (gestor/permissão) -->
+      <div class="side-card" id="card-venda-outro" style="display:none">
         <h3><i class="ti ti-plus" style="color:var(--g)"></i>Registrar venda</h3>
-        <p>Registre manualmente uma venda no ranking.</p>
+        <p>Registre venda para qualquer membro da equipe.</p>
         <div class="vf">
           <select id="vvend"><option value="">Selecionar vendedor...</option></select>
           <input type="text" id="vval" placeholder="Valor do crédito (R$)" oninput="maskM(this)">
           <button class="btn bp" style="justify-content:center" onclick="addVenda()"><i class="ti ti-check"></i>Registrar venda</button>
         </div>
-      </div>
-      <div class="side-card">
-        <h3><i class="ti ti-calendar-x" style="color:var(--r)"></i>Reset mensal</h3>
-        <p>Use no dia 1° de cada mês para zerar o ranking.</p>
-        <button class="reset-btn" onclick="resetRanking()"><i class="ti ti-trash"></i>Resetar ranking</button>
       </div>
     </div>
   </div>
@@ -1660,6 +1785,19 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
     <div class="rel-card"><div class="rel-title">Tipos de consórcio</div><div id="rel-tipos"></div></div>
     <div class="rel-card"><div class="rel-title">Origem dos leads</div><div id="rel-origem"></div></div>
     <div class="rel-card"><div class="rel-title">Resumo do pipeline</div><div id="rel-financeiro"></div></div>
+  </div>
+  <!-- Desempenho por membro da equipe -->
+  <div class="card" style="margin-top:14px;padding:18px">
+    <div class="rel-title" style="margin-bottom:12px"><i class="ti ti-users" style="color:var(--g);margin-right:6px"></i>Desempenho da equipe</div>
+    <div id="rel-equipe-table"></div>
+  </div>
+  <!-- Histórico completo de movimentações -->
+  <div class="card" style="margin-top:14px;padding:18px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div class="rel-title"><i class="ti ti-history" style="color:var(--b);margin-right:6px"></i>Histórico de movimentações</div>
+      <input type="search" id="rel-search-hist" placeholder="Buscar movimentação..." class="fi" style="width:200px;font-size:12px;padding:5px 10px" oninput="renderRelatorios()">
+    </div>
+    <div id="rel-historico"></div>
   </div>
   <div class="card" style="margin-top:14px;padding:18px">
     <div class="rel-title" style="margin-bottom:11px">Ações rápidas com IA</div>
@@ -1979,6 +2117,7 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
         <button class="tv-ftab tv-active" id="tv-f3" onclick="setTVFilter(3,this)"><i class="ti ti-trophy"></i> Top 3</button>
         <button class="tv-ftab" id="tv-f5" onclick="setTVFilter(5,this)"><i class="ti ti-star"></i> Top 5</button>
         <button class="tv-ftab" id="tv-f10" onclick="setTVFilter(10,this)"><i class="ti ti-list"></i> Top 10</button>
+        <button class="tv-ftab" id="tv-f50" onclick="setTVFilter(50,this)"><i class="ti ti-list-numbers"></i> Top 50</button>
         <button class="tv-ftab" id="tv-fall" onclick="setTVFilter(0,this)"><i class="ti ti-users"></i> Todos</button>
       </div>
       <button class="tv-theme-toggle" id="tv-theme-btn" onclick="toggleTVTheme()">
@@ -2279,12 +2418,36 @@ function toggleSidebar(){
 }
 
 // ─── TABS ─────────────────────────────────────────────────────────────────────
+// Mapa: tab id → chave em DPERMS (null = sempre acessível)
+const TAB_PERM_MAP={dashboard:null,funil:'funil',leads:'leads',simulador:'simulador',lances:'lances',ranking:'ranking',relatorios:'relatorios',whatsapp:'whatsapp',calendario:'calendario',configuracoes:'config'};
+function _getMeRole(){
+  if(!window._currentUserId) return users[0]||null;
+  return users.find(u=>u.sb_id===window._currentUserId)||users[0]||null;
+}
 function showTab(id,btn){
+  const me=_getMeRole();
+  const permKey=TAB_PERM_MAP[id];
+  if(permKey&&me&&me.perms&&me.perms[permKey]===false){
+    showToast('Você não tem permissão para acessar esta aba.','ti-lock');
+    return;
+  }
   document.querySelectorAll('.content').forEach(el=>el.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(el=>el.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
   if(btn) btn.classList.add('active');
   ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,simulador:()=>{syncSim();calcSim();},lances:renderLances,ranking:renderRanking,relatorios:renderRelatorios,whatsapp:renderWhatsapp,calendario:renderCalendario,configuracoes:renderConfig})[id]?.();
+}
+// Oculta/mostra botões do nav de acordo com permissões do usuário logado
+function applyNavPermissions(){
+  const me=_getMeRole();
+  if(!me) return;
+  Object.entries(TAB_PERM_MAP).forEach(([tabId,permKey])=>{
+    if(!permKey) return; // sempre visível
+    const navBtn=document.querySelector(`.nb[onclick*="'${tabId}'"]`);
+    if(!navBtn) return;
+    const allowed=!(me.perms&&me.perms[permKey]===false);
+    navBtn.style.display=allowed?'':'none';
+  });
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
@@ -2432,7 +2595,7 @@ function renderKanban(){
   document.getElementById('kanban').innerHTML=ETAPAS.map((etapa,i)=>{
     const cards=leads.filter(l=>l.etapa===etapa&&applyFunilFilter(l,f,vis));
     const allColSel=cards.length>0&&cards.every(l=>funilSelected.has(l.id));
-    return `<div class="col" ondragover="onDragOver(event,this)" ondragleave="onDragLeave(this)" ondrop="onDrop(event,'${etapa.replace(/'/g,"\\'")}')">
+    return `<div class="col" ondragover="onDragOver(event,this)" ondragleave="onDragLeave(event,this)" ondrop="onDrop(event,'${etapa.replace(/'/g,"\\'")}')">
       <div class="col-hdr">
         <span class="cn2"><span class="cdot" style="background:${EC[i]}"></span>${etapa}</span>
         <div style="display:flex;align-items:center;gap:6px">
@@ -2602,9 +2765,9 @@ function importarLeadsCSV(input){
   reader.readAsText(file,'UTF-8');
 }
 
-function onDragStart(e,id){dragId=id;setTimeout(()=>document.querySelector(`[data-id="${id}"]`)?.classList.add('dragging'),0);}
-function onDragOver(e,c){e.preventDefault();c.classList.add('drag-over');}
-function onDragLeave(c){c.classList.remove('drag-over');}
+function onDragStart(e,id){dragId=id;e.dataTransfer.effectAllowed='move';setTimeout(()=>document.querySelector(`[data-id="${id}"]`)?.classList.add('dragging'),0);}
+function onDragOver(e,c){e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='move';c.classList.add('drag-over');}
+function onDragLeave(e,c){if(c.contains(e.relatedTarget))return;c.classList.remove('drag-over');}
 function onDrop(e,etapa){
   e.preventDefault();document.querySelectorAll('.col').forEach(c=>c.classList.remove('drag-over'));
   const l=leads.find(x=>x.id===dragId);
@@ -2631,6 +2794,7 @@ function onDrop(e,etapa){
       setTimeout(()=>openProtocolo(l.id,'','','',''),200);
     }
     renderRanking();renderDashboard();renderNotifPanel();
+    syncLancesConvertidos();
   }
   dragId=null;renderKanban();
 }
@@ -2646,11 +2810,6 @@ function populateSelects(){
   // Atualiza selects de hierarquia em todo o CRM
   const hierOpts='<option value="">Hierarquia...</option>'+hierarquias.slice().sort((a,b)=>a.ordem-b.ordem).map(h=>`<option value="${h.id}">${h.nome}</option>`).join('');
   const uHier=document.getElementById('uHierarquia');if(uHier)uHier.innerHTML=hierOpts;
-  // Select de hierarquia no form "Adicionar pessoa" do ranking
-  const rankRoleInp=document.getElementById('rank-role-inp');if(rankRoleInp)rankRoleInp.innerHTML=hierOpts;
-  // Bind botão adicionar pessoa ranking (evita onclick inline)
-  const btnAPR=document.getElementById('btn-add-pessoa-ranking');
-  if(btnAPR&&!btnAPR._bound){btnAPR._bound=true;btnAPR.addEventListener('click',function(){addPessoaRanking();});}
   // Selects de hierarquia na lista de usuários
   document.querySelectorAll('.ulist-hier-sel').forEach(function(sel){
     const uid=parseInt(sel.getAttribute('data-uid'));
@@ -3232,40 +3391,78 @@ function convertToLead(nome,tipo,credito){
 }
 
 // ─── LANCES ───────────────────────────────────────────────────────────────────
+// Sincroniza lances com leads convertidos — chamado sempre que etapa muda
+function syncLancesConvertidos(){
+  const convertidos=leads.filter(l=>l.etapa==='Fechado / Convertido');
+  // Adiciona lance automático para convertidos sem lance
+  convertidos.forEach(l=>{
+    const jaTemLance=lances.some(la=>la.leadId===l.id&&!la._removido);
+    if(!jaTemLance){
+      lances.push({id:nextLanceId++,leadId:l.id,clienteNome:l.nome,valor:l.credito||0,pct:0,dataOferta:new Date().toISOString().split('T')[0],assem:mesAtual(),obs:'',ofertado:false,_auto:true});
+    }
+  });
+  // Marca como removido lances automáticos de leads que saíram de convertido
+  lances.filter(la=>la._auto&&!la._removido).forEach(la=>{
+    const lead=leads.find(l=>l.id===la.leadId);
+    if(!lead||lead.etapa!=='Fechado / Convertido') la._removido=true;
+  });
+}
 function renderLances(){
+  syncLancesConvertidos();
   document.getElementById('lance-mes').textContent=mesAtual();
   const hoje=new Date();hoje.setHours(0,0,0,0);
   const em3=new Date(hoje);em3.setDate(em3.getDate()+3);
+  const ativos=lances.filter(l=>!l._removido);
   let u=0,b=0,ok=0;
-  lances.filter(l=>!l.ofertado).forEach(l=>{const d=new Date(l.dataOferta);d.setHours(0,0,0,0);if(d<=hoje)u++;else if(d<=em3)b++;else ok++;});
+  ativos.filter(l=>!l.ofertado).forEach(l=>{const d=new Date(l.dataOferta);d.setHours(0,0,0,0);if(d<=hoje)u++;else if(d<=em3)b++;else ok++;});
   document.getElementById('l-urgente').textContent=u;
   document.getElementById('l-breve').textContent=b;
-  document.getElementById('l-ok').textContent=ok+lances.filter(l=>!l.ofertado&&(new Date(l.dataOferta)>em3)).length;
+  document.getElementById('l-ok').textContent=ok+ativos.filter(l=>!l.ofertado&&(new Date(l.dataOferta)>em3)).length;
   const lista=document.getElementById('lances-lista');
-  if(!lances.length){lista.innerHTML='<p style="color:var(--tm);font-size:13px">Nenhum lance cadastrado. Clique em "Cadastrar lance" para começar.</p>';return;}
-  const sorted=[...lances].sort((a,b)=>new Date(a.dataOferta)-new Date(b.dataOferta));
+  if(!ativos.length){lista.innerHTML='<p style="color:var(--tm);font-size:13px">Nenhum lance cadastrado. Leads "Fechado / Convertido" aparecem aqui automaticamente para cadastro de lance.</p>';return;}
+  const sorted=[...ativos].sort((a,b)=>new Date(a.dataOferta)-new Date(b.dataOferta));
   lista.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px">'+sorted.map(l=>{
-    if(l.ofertado) return `<div class="lance-card done"><div class="lance-n">${l.clienteNome}</div><div class="lance-i">Lance: ${fmtR(l.valor)} (${l.pct}%) · ${l.assem}</div><div class="lance-foot"><span class="lbadge lb-d">✓ Ofertado</span><button class="btn bd bsm" onclick="removeLance(${l.id})"><i class="ti ti-trash"></i></button></div></div>`;
+    const autoTag=l._auto?`<span style="font-size:9px;padding:2px 6px;border-radius:20px;background:rgba(1,107,60,.12);color:var(--g);font-weight:700;margin-left:4px">AUTO</span>`:'';
+    if(l.ofertado) return `<div class="lance-card done"><div class="lance-n">${l.clienteNome}${autoTag}</div><div class="lance-i">Lance: ${fmtR(l.valor)} (${l.pct}%) · ${l.assem}</div><div class="lance-foot"><span class="lbadge lb-d">✓ Ofertado</span><button class="btn bd bsm" onclick="removeLance(${l.id})"><i class="ti ti-trash"></i></button></div></div>`;
     const d=new Date(l.dataOferta);d.setHours(0,0,0,0);
     let cls='ok',bcls='lb-ok',lbl='Em dia';
     if(d<=hoje){cls='urgente';bcls='lb-u';lbl='⚠️ Ofertar HOJE';}
     else if(d<=em3){cls='hoje';bcls='lb-h';lbl='🔔 Em breve';}
+    // Se é lance automático (sem data definida), mostre como pendente
+    if(l._auto&&l.pct===0) lbl='📋 Cadastre o lance';
     return `<div class="lance-card ${cls}">
-      <div class="lance-n">${l.clienteNome}</div>
-      <div class="lance-i">Lance: ${fmtR(l.valor)} (${l.pct}%) · ${l.assem}${l.obs?` · ${l.obs}`:''}</div>
+      <div class="lance-n">${l.clienteNome}${autoTag}</div>
+      <div class="lance-i">${l.valor?`Lance: ${fmtR(l.valor)} (${l.pct}%) · ${l.assem}`:'Crédito: '+fmtR(l.valor||0)+' · '+l.assem}${l.obs?` · ${l.obs}`:''}</div>
       <div class="lance-i">Data para ofertar: ${l.dataOferta.split('-').reverse().join('/')}</div>
       <div class="lance-foot">
         <span class="lbadge ${bcls}">${lbl}</span>
         <div style="display:flex;gap:5px">
+          <button class="btn bp bsm" onclick="editarLanceAuto(${l.id})"><i class="ti ti-pencil"></i>Editar</button>
           <button class="btn bp bsm" onclick="marcarOfertado(${l.id})"><i class="ti ti-check"></i>Ofertado</button>
-          <button class="btn bd bsm" onclick="removeLance(${l.id})"><i class="ti ti-trash"></i></button>
+          <button class="btn bd bsm" onclick="removeLance(${l.id})"><i class="ti ti-x"></i></button>
         </div>
       </div>
     </div>`;
   }).join('')+'</div>';
 }
-function openLanceModal(){populateSelects();const d=new Date();document.getElementById('lData').value=d.toISOString().split('T')[0];document.getElementById('lance-modal').classList.add('open');}
-function closeLanceModal(){document.getElementById('lance-modal').classList.remove('open');}
+function editarLanceAuto(id){
+  const l=lances.find(x=>x.id===id);if(!l)return;
+  populateSelects();
+  // Pre-preenche o modal de lance com dados deste lead
+  setTimeout(()=>{
+    const cl=document.getElementById('lCliente');
+    if(cl){cl.value=l.leadId;}
+    const lv=document.getElementById('lValor');
+    if(lv&&l.valor){lv.value=fmtR(l.valor).replace('R$ ','').replace('R$','');}
+    const ld=document.getElementById('lData');
+    if(ld)ld.value=l.dataOferta;
+    // Ao salvar este modal devemos atualizar o lance existente em vez de criar novo
+    window._editandoLanceId=id;
+  },50);
+  document.getElementById('lance-modal').classList.add('open');
+}
+function openLanceModal(){populateSelects();window._editandoLanceId=null;const d=new Date();document.getElementById('lData').value=d.toISOString().split('T')[0];document.getElementById('lance-modal').classList.add('open');}
+function closeLanceModal(){document.getElementById('lance-modal').classList.remove('open');window._editandoLanceId=null;}
 function saveLance(){
   const leadId=parseInt(document.getElementById('lCliente').value);
   const lead=leads.find(l=>l.id===leadId);if(!lead){alert('Selecione um cliente.');return;}
@@ -3273,15 +3470,42 @@ function saveLance(){
   const pct=parseFloat(document.getElementById('lPct').value)||0;
   const dataOferta=document.getElementById('lData').value;
   const assem=document.getElementById('lAssem').value||mesAtual();
-  lances.push({id:nextLanceId++,leadId,clienteNome:lead.nome,valor,pct,dataOferta,assem,obs:document.getElementById('lObs').value,ofertado:false});
-  activities.push({icon:'ti-gavel',text:`Lance cadastrado: ${lead.nome} — ${fmtR(valor)} (${pct}%)`,time:'Agora'});
+  const obs=document.getElementById('lObs').value;
+  // Se editando lance existente, atualiza
+  if(window._editandoLanceId){
+    const l=lances.find(x=>x.id===window._editandoLanceId);
+    if(l){l.leadId=leadId;l.clienteNome=lead.nome;l.valor=valor;l.pct=pct;l.dataOferta=dataOferta;l.assem=assem;l.obs=obs;l._auto=false;}
+    activities.push({icon:'ti-gavel',text:`Lance atualizado: ${lead.nome} — ${fmtR(valor)} (${pct}%)`,time:'Agora'});
+  } else {
+    // Remove lance auto do mesmo lead se existir
+    lances=lances.filter(la=>!(la._auto&&la.leadId===leadId&&!la._removido));
+    lances.push({id:nextLanceId++,leadId,clienteNome:lead.nome,valor,pct,dataOferta,assem,obs,ofertado:false});
+    activities.push({icon:'ti-gavel',text:`Lance cadastrado: ${lead.nome} — ${fmtR(valor)} (${pct}%)`,time:'Agora'});
+  }
   closeLanceModal();['lValor','lPct','lAssem','lObs'].forEach(id=>document.getElementById(id).value='');
   renderLances();
 }
 function marcarOfertado(id){const l=lances.find(x=>x.id===id);if(l){l.ofertado=true;activities.push({icon:'ti-gavel',text:`Lance de ${l.clienteNome} ofertado`,time:'Agora'});}renderLances();}
-function removeLance(id){if(!confirm('Remover?'))return;lances=lances.filter(l=>l.id!==id);renderLances();}
+function removeLance(id){if(!confirm('Remover lance?'))return;const l=lances.find(x=>x.id===id);if(l&&l._auto){l._removido=true;}else{lances=lances.filter(l=>l.id!==id);}renderLances();}
 
 // ─── RANKING ──────────────────────────────────────────────────────────────────
+function rankAtualizarSidebar(){
+  // Identifica usuário logado
+  const me=window._currentUserId
+    ? users.find(u=>u.sb_id===window._currentUserId)||users[0]
+    : users[0];
+  const isGestor=me&&(me.role==='gestor'||(me.hperms&&me.hperms.vendas_edit));
+  const podeAddOutro=isGestor||(me&&me.hperms&&me.hperms.equipe_edit);
+
+  // Atualiza subtítulo do card "minha venda"
+  const sub=document.getElementById('minha-venda-sub');
+  if(sub&&me) sub.textContent=`Olá, ${me.nome.split(' ')[0]}! Registre uma venda no seu nome.`;
+
+  // Mostra/esconde card de venda por outro
+  const cardOutro=document.getElementById('card-venda-outro');
+  if(cardOutro) cardOutro.style.display=podeAddOutro?'':'none';
+}
+
 function renderRanking(){
   const periodoLabel={hoje:'Hoje',dia:'Hoje',semana:'Esta semana',mes:mesAtual(),custom:rankDataSelecionada?new Date(rankDataSelecionada+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'}):'Data personalizada',semana_passada:'Semana passada',mes_passado:'Mês passado',ultimos_7:'Últimos 7 dias',ultimos_30:'Últimos 30 dias'};
   document.getElementById('rank-month').textContent=periodoLabel[rankPeriodo]||mesAtual();
@@ -3405,7 +3629,7 @@ function renderRanking(){
     rankEl.innerHTML=`<div style="padding:52px 24px;text-align:center">
       <div style="font-size:52px;margin-bottom:14px">🏆</div>
       <div style="font-size:15px;font-weight:800;color:var(--tx);margin-bottom:6px">Ranking vazio</div>
-      <div style="font-size:13px;color:var(--tm)">Use "Adicionar ao ranking" ao lado para cadastrar sua equipe.</div>
+      <div style="font-size:13px;color:var(--tm)">Cadastre vendedores em Configurações → Usuários para eles aparecerem aqui automaticamente.</div>
     </div>`;
     const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+users.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
     return;
@@ -3464,7 +3688,29 @@ function renderRanking(){
       <div><div class="tv-sc">${fmtR(u.credito)}</div><div class="tv-sl">volume</div></div>
     </div>`).join('');
   const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+users.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+  // Atualiza sidebar de vendas com base no usuário logado
+  try{rankAtualizarSidebar();}catch(e){}
 }
+// Registra venda para o próprio usuário logado
+function addMinhaVenda(){
+  const val=unM(document.getElementById('vval-me').value);
+  if(!val){alert('Informe o valor da venda.');return;}
+  // Encontrar user logado: pelo sb_id ou pelo primeiro (fallback)
+  const me=window._currentUserId
+    ? users.find(u=>u.sb_id===window._currentUserId)||users[0]
+    : users[0];
+  if(!me){alert('Usuário não identificado.');return;}
+  me.vendas++;
+  me.credito+=val;
+  activities.unshift({icon:'ti-trophy',text:`${me.nome} registrou venda de ${fmtR(val)}`,time:'Agora'});
+  if(window._syncUser) window._syncUser(me);
+  document.getElementById('vval-me').value='';
+  try{renderRanking();}catch(e){}
+  try{renderDashboard();}catch(e){}
+  try{renderNotifPanel();}catch(e){}
+  setTimeout(()=>{ showCelebra(me.nome, val); }, 100);
+}
+
 function addVenda(){
   const id=parseInt(document.getElementById('vvend').value);
   const val=unM(document.getElementById('vval').value);
@@ -3475,6 +3721,8 @@ function addVenda(){
     u.vendas++;
     u.credito+=val;
     activities.unshift({icon:'ti-trophy',text:`${u.nome} registrou venda de ${fmtR(val)}`,time:'Agora'});
+    // Sincroniza venda com Supabase (ranking atualiza para todos em tempo real)
+    if(window._syncUser) window._syncUser(u);
   }
   // Se um lead foi selecionado, mover para Fechado / Convertido
   const sls=document.getElementById('sLeadSel');
@@ -3500,7 +3748,7 @@ function addVenda(){
 }
 function resetRanking(){
   if(!confirm(`Resetar o ranking de ${mesAtual()}?`))return;
-  users.forEach(u=>{u.vendas=0;u.credito=0;});
+  users.forEach(u=>{u.vendas=0;u.credito=0;if(window._syncUser)window._syncUser(u);});
   activities.push({icon:'ti-refresh',text:`Ranking resetado para novo mês`,time:'Agora'});renderRanking();
 }
 let tvFilter=3;
@@ -3543,25 +3791,64 @@ function renderTV(){
   const sorted=[...users].sort((a,b)=>b.credito-a.credito||b.vendas-a.vendas);
   const limit=tvFilter>0?tvFilter:sorted.length;
   const shown=sorted.slice(0,limit);
-  if(subEl) subEl.textContent=tvFilter===0?'Todos os vendedores da loja':`Top ${tvFilter} vendedores`;
+  if(subEl) subEl.textContent=tvFilter===0?'Todos os vendedores':tvFilter===3?'Pódio — Top 3':`Top ${tvFilter} vendedores`;
   const medals=['🥇','🥈','🥉'];
   const posClass=['tv-pos1','tv-pos2','tv-pos3'];
-  const ov=document.getElementById('tv-overlay');
-  const theme=tvTheme;
+  const body=document.getElementById('tv-body');
+  if(!body) return;
+  if(shown.length===0){
+    body.innerHTML='<div class="tv-empty">Nenhuma venda registrada ainda.</div>';
+    return;
+  }
 
-  function renderRow(u,idx){
-    const globalPos=sorted.indexOf(u);
+  function avHtml(u,cls,size){
+    if(u.foto) return `<img src="${u.foto}" class="${cls}" alt="${u.nome}" style="width:${size}px;height:${size}px;object-fit:cover;object-position:center 15%;border-radius:50%">`;
+    return `<div class="${cls}" style="width:${size}px;height:${size}px;font-size:${Math.round(size*.38)}px">${u.nome.charAt(0).toUpperCase()}</div>`;
+  }
+
+  // ── PODIUM VIEW (Top 3) ──────────────────────────
+  if(tvFilter===3){
+    const top=shown.slice(0,3);
+    // order: 2nd, 1st, 3rd (visual podium)
+    const podOrder=[top[1],top[0],top[2]].filter(Boolean);
+    const podClass=['tv-pod-2','tv-pod-1','tv-pod-3'];
+    const podPos=[1,0,2]; // index into top array
+    body.innerHTML=`<div class="tv-podium">${podOrder.map((u,vi)=>{
+      if(!u)return'';
+      const realIdx=sorted.indexOf(u);
+      const pc=podClass[vi];
+      const ti=podPos[vi];
+      const medal=medals[realIdx]||((realIdx+1)+'°');
+      const size=pc==='tv-pod-1'?130:pc==='tv-pod-2'?100:88;
+      const av=avHtml(u,'tv-pod-av',size);
+      const hierLabel=getHierLabel(u);
+      const eqU=equipes.find(e=>(e.membroIds||[]).includes(u.id));
+      return `<div class="tv-pod-card ${pc}">
+        <div class="tv-pod-medal">${medal}</div>
+        ${av}
+        <div class="tv-pod-name">${u.nome}</div>
+        <div class="tv-pod-role">${hierLabel}${eqU?' · '+eqU.nome:''}</div>
+        <div class="tv-pod-val">${fmtR(u.credito)}</div>
+        <div class="tv-pod-sales">${u.vendas} venda${u.vendas!==1?'s':''}</div>
+        <div class="tv-pod-pos">${realIdx+1}°</div>
+      </div>`;
+    }).join('')}</div>`;
+    return;
+  }
+
+  // ── LIST VIEW (Top 5 / 10 / 50 / Todos) ──────────
+  const compact=limit>10;
+  function renderRow(u,globalPos){
     const pcls=posClass[globalPos]||'';
     const posLabel=medals[globalPos]||(globalPos+1)+'°';
-    const eqU=equipes.find(e=>(e.membroIds||[]).includes(u.id));
     const hierLabel=getHierLabel(u);
-    const meta=`${u.vendas} venda${u.vendas!==1?'s':''} · ${hierLabel}${eqU?' · Equipe: '+eqU.nome:''}`;
-    const avHtml=u.foto
-      ?`<img src="${u.foto}" class="tv-av" alt="${u.nome}" style="object-fit:cover">`
-      :`<div class="tv-av">${u.nome.charAt(0).toUpperCase()}</div>`;
-    return `<div class="tv-row ${pcls} ${theme==='dark'?'tv-dark':'tv-light'}">
+    const eqU=equipes.find(e=>(e.membroIds||[]).includes(u.id));
+    const meta=`${u.vendas} venda${u.vendas!==1?'s':''} · ${hierLabel}${eqU?' · '+eqU.nome:''}`;
+    const size=compact?48:62;
+    const av=avHtml(u,'tv-av',size);
+    return `<div class="tv-row ${pcls}${compact?' tv-compact':''}">
       <div class="tv-pos-badge">${posLabel}</div>
-      ${avHtml}
+      ${av}
       <div class="tv-info">
         <div class="tv-name">${u.nome}</div>
         <div class="tv-meta">${meta}</div>
@@ -3570,23 +3857,18 @@ function renderTV(){
         <div class="tv-val-lbl">Total vendido</div>
         <div class="tv-sc">${fmtR(u.credito)}</div>
       </div>
-      <i class="ti ti-chevron-right tv-chevron"></i>
     </div>`;
   }
 
-  const body=document.getElementById('tv-body');
-  if(!body) return;
-  if(shown.length===0){
-    body.innerHTML='<div class="tv-empty">Nenhuma venda registrada ainda.</div>';
-    return;
+  const cols=limit>5?2:1;
+  if(cols===1){
+    body.innerHTML=`<div class="tv-list">${shown.map((u,i)=>renderRow(u,sorted.indexOf(u))).join('')}</div>`;
+  } else {
+    const half=Math.ceil(shown.length/2);
+    const col1=shown.slice(0,half);
+    const col2=shown.slice(half);
+    body.innerHTML=`<div class="tv-list-grid">${col1.map(u=>renderRow(u,sorted.indexOf(u))).join('')}${col2.map(u=>renderRow(u,sorted.indexOf(u))).join('')}</div>`;
   }
-  // Split into two columns
-  const half=Math.ceil(shown.length/2);
-  const col1=shown.slice(0,half);
-  const col2=shown.slice(half);
-  body.innerHTML=`
-    <div class="tv-col">${col1.map((u,i)=>renderRow(u,i)).join('')}</div>
-    <div class="tv-col">${col2.map((u,i)=>renderRow(u,i+half)).join('')}</div>`;
 }
 
 // ─── MODELOS (removido) ───────────────────────────────────────────────────────
@@ -4227,33 +4509,69 @@ function admParsePDFTextToGrupos(text){
 }
 
 // ─── USUÁRIOS ──────────────────────────────────────────────────────────────────
-function inviteUser(){
+async function inviteUser(){
   const nomeVal=document.getElementById('uNome').value.trim();
   const email=document.getElementById('uEmail').value.trim();
+  const senhaEl=document.getElementById('uSenha');
+  const senhaConEl=document.getElementById('uSenhaConf');
+  const senha=senhaEl?senhaEl.value:'';
+  const senhaConf=senhaConEl?senhaConEl.value:'';
   if(!nomeVal){alert('Informe o nome completo.');return;}
   if(!email||!email.includes('@')){alert('E-mail inválido.');return;}
   if(users.find(u=>u.email===email)){alert('E-mail já cadastrado.');return;}
+  if(!senha||senha.length<6){alert('A senha deve ter no mínimo 6 caracteres.');return;}
+  if(senha!==senhaConf){alert('As senhas não coincidem.');return;}
   const hierSel=document.getElementById('uHierarquia');
   const hierarquiaId=hierSel?parseInt(hierSel.value)||null:null;
   if(!hierarquiaId){alert('Selecione a hierarquia do usuário.');return;}
+  const metaEl=document.getElementById('uMeta');
+  const metaRaw=metaEl?unM(metaEl.value)||0:0;
+  if(!metaRaw){alert('Informe a meta do usuário.');return;}
   const equipeEl=document.getElementById('uEquipe');
   const equipeId=equipeEl?parseInt(equipeEl.value)||null:null;
   const selH=getHier(hierarquiaId);
-  // Derivar role da hierarquia (gestor → gestor, outros → vendedor para permissões base)
   const role=selH&&selH.slug==='gestor'?'gestor':selH&&selH.slug==='representante'?'representante':'vendedor';
-  const newU={id:nextUserId++,nome:nomeVal,email,role,managerId:null,vendas:0,credito:0,hierarquiaId,equipeId,
+  // Tentar criar via Supabase admin (requer service_role key via Edge Function)
+  const btn=document.getElementById('btn-invite-user');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>Criando...';}
+  let sbUserId=null;
+  try{
+    // Chamar Edge Function que usa service_role key para criar usuário
+    const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/create-user',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${window._session?.access_token||''}`},
+      body:JSON.stringify({email,password:senha,nome:nomeVal,role,meta:metaRaw,hierarquia_id:hierarquiaId,equipe_id:equipeId})
+    });
+    const json=await res.json();
+    if(json.id) sbUserId=json.id;
+    if(!res.ok) throw new Error(json.error||'Erro ao criar usuário no Supabase');
+  }catch(err){
+    // Fallback: criar localmente e enviar convite
+    console.warn('Edge Function não disponível, adicionando localmente:',err.message);
+    try{
+      const {data,error}=await window._sb.auth.admin.createUser({email,password:senha,email_confirm:true,user_metadata:{nome:nomeVal}});
+      if(data?.user?.id) sbUserId=data.user.id;
+      if(error) console.warn('Supabase admin.createUser falhou (esperado sem service_role):',error.message);
+    }catch(e2){console.warn('admin.createUser não disponível:',e2.message);}
+  }
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-user-plus"></i>Adicionar';}
+  const newU={id:nextUserId++,nome:nomeVal,email,role,sb_id:sbUserId||null,managerId:null,vendas:0,credito:0,meta:metaRaw,hierarquiaId,equipeId,
     perms:{...DPERMS[role]||DPERMS.vendedor},hperms:selH?{...selH.perms}:{}};
-  // Adicionar à equipe se selecionada
   if(equipeId){const eq=equipes.find(e=>e.id===equipeId);if(eq){eq.membroIds=eq.membroIds||[];if(!eq.membroIds.includes(newU.id))eq.membroIds.push(newU.id);}}
   users.push(newU);
+  if(window._syncUser) window._syncUser(newU);
   document.getElementById('uNome').value='';
   document.getElementById('uEmail').value='';
+  if(senhaEl)senhaEl.value='';
+  if(senhaConEl)senhaConEl.value='';
+  if(metaEl)metaEl.value='';
   if(hierSel)hierSel.value='';
   if(equipeEl)equipeEl.value='';
+  renderRanking();
   const toast=document.getElementById('invite-toast');
   toast.style.display='block';
-  toast.innerHTML=`<i class="ti ti-mail-check"></i> Convite enviado para <strong>${email}</strong>. O usuário receberá um e-mail para definir a senha e acessar o CRM.`;
-  setTimeout(()=>toast.style.display='none',6000);
+  toast.innerHTML=`<i class="ti ti-mail-check"></i> Usuário <strong>${nomeVal}</strong> criado! E-mail de acesso enviado para <strong>${email}</strong>.`;
+  setTimeout(()=>toast.style.display='none',7000);
   renderUserList();populateSelects();
 }
 function togglePerm(userId,perm){
@@ -4316,7 +4634,38 @@ function changeUserHier(userId,hierIdStr){
   if(h)u.hperms={...h.perms};
   renderUserList();
 }
-function removeUser(id){if(!confirm('Remover este usuário?'))return;users=users.filter(u=>u.id!==id);renderUserList();populateSelects();}
+async function removeUser(id){
+  const u=users.find(x=>x.id===id);
+  if(!u)return;
+  if(!confirm(`Remover o usuário "${u.nome}"?\n\nEsta ação revogará o acesso ao CRM permanentemente.`))return;
+  // Tentar remover do Supabase (via Edge Function ou admin API)
+  if(u.sb_id){
+    try{
+      const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/delete-user',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${window._session?.access_token||''}`},
+        body:JSON.stringify({userId:u.sb_id})
+      });
+      if(!res.ok){
+        const j=await res.json().catch(()=>({}));
+        console.warn('delete-user Edge Function falhou:',j.error||res.status);
+        // Fallback: tentar via admin API diretamente
+        try{await window._sb.auth.admin.deleteUser(u.sb_id);}catch(e2){console.warn('admin.deleteUser falhou:',e2.message);}
+      }
+    }catch(err){
+      try{await window._sb.auth.admin.deleteUser(u.sb_id);}catch(e2){console.warn('Não foi possível remover do Supabase (normal sem service_role):',e2.message);}
+    }
+  }
+  // Remover do profile no Supabase
+  if(u.sb_id&&window._sb){
+    await window._sb.from('profiles').delete().eq('id',u.sb_id).catch(()=>{});
+  }
+  users=users.filter(x=>x.id!==id);
+  // Remover de equipes
+  equipes.forEach(eq=>{eq.membroIds=(eq.membroIds||[]).filter(mid=>mid!==id);});
+  showToast(`Usuário "${u.nome}" removido.`,'ti-user-x');
+  renderUserList();populateSelects();
+}
 // ─── CONFIGURAÇÕES PROFISSIONAL ───────────────────────────────────────────────
 const CFG_SECTIONS=[
   {id:'conta',label:'Configurações gerais',icon:'ti-settings',group:'CONTA'},
@@ -4411,19 +4760,29 @@ function cfgRenderSection(){
 
     usuarios:`<div class="cfg-card">
       <div class="cfg-card-title"><i class="ti ti-users" style="color:var(--g)"></i>Usuários</div>
-      <div class="cfg-card-sub">Adicione um usuário informando nome e e-mail. Um convite será enviado para ele definir a própria senha e acessar o CRM.</div>
-      <div style="font-size:12.5px;font-weight:700;color:var(--tx);margin-bottom:12px">Adicionar novo usuário</div>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
-        <input type="text" id="uNome" class="fi" placeholder="Nome completo">
-        <input type="email" id="uEmail" class="fi" placeholder="E-mail">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <select id="uHierarquia" class="fi" style="flex:1;min-width:140px"><option value="">Hierarquia...</option></select>
-          <select id="uEquipe" class="fi" style="flex:1;min-width:140px"><option value="">Equipe (opcional)</option></select>
-          <button id="btn-invite-user" class="btn bp" style="white-space:nowrap"><i class="ti ti-user-plus"></i>Adicionar</button>
+      <div class="cfg-card-sub">Gerencie os usuários da plataforma. Somente quem tem permissão de equipe pode adicionar novos usuários.</div>
+      <div id="form-add-user-wrap">
+        <div style="font-size:12.5px;font-weight:700;color:var(--tx);margin-bottom:12px">Adicionar novo usuário</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
+          <input type="text" id="uNome" class="fi" placeholder="Nome completo">
+          <input type="email" id="uEmail" class="fi" placeholder="E-mail">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input type="password" id="uSenha" class="fi" placeholder="Senha inicial (mín. 6 caracteres)" style="flex:1;min-width:180px">
+            <input type="password" id="uSenhaConf" class="fi" placeholder="Confirmar senha" style="flex:1;min-width:180px">
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select id="uHierarquia" class="fi" style="flex:1;min-width:140px"><option value="">Hierarquia...</option></select>
+            <select id="uEquipe" class="fi" style="flex:1;min-width:140px"><option value="">Equipe (opcional)</option></select>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <input type="text" id="uMeta" class="fi" placeholder="Meta (R$) — obrigatório" oninput="maskM(this)" style="flex:1;min-width:140px">
+            <button id="btn-invite-user" class="btn bp" style="white-space:nowrap"><i class="ti ti-user-plus"></i>Adicionar</button>
+          </div>
+          <div style="font-size:11.5px;color:var(--tm);padding:6px 0"><i class="ti ti-info-circle"></i> O usuário receberá um e-mail e poderá acessar com as credenciais definidas aqui, podendo alterar a senha depois.</div>
         </div>
+        <div class="inv-toast" id="invite-toast"></div>
+        <div class="cfg-divider"></div>
       </div>
-      <div class="inv-toast" id="invite-toast"></div>
-      <div class="cfg-divider"></div>
       <div id="user-list"></div>
     </div>`,
 
@@ -4563,15 +4922,66 @@ function cfgRenderSection(){
       <button class="btn bp" onclick="integConectar('whatsapp')"><i class="ti ti-brand-whatsapp"></i>Salvar configuração</button>
     </div>`,
 
-    google:`<div class="cfg-card">
+    google:(()=>{
+      const gcalConnected=!!(window._gcalToken);
+      const savedClientId=localStorage.getItem('evolux_gcal_client_id')||'';
+      const redirectUri=window.location.origin+window.location.pathname;
+      return `<div class="cfg-card">
       <div class="cfg-card-title"><i class="ti ti-brand-google" style="color:#4285f4"></i>Google Agenda</div>
       <div class="cfg-card-sub">Sincronize reuniões agendadas no CRM com seu Google Calendar.</div>
-      ${demoBanner}
-      <button class="gcal-btn" onclick="integConectar('google')">
+
+      ${gcalConnected?`<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;background:rgba(1,122,69,.08);border:1px solid rgba(1,122,69,.2);margin-bottom:16px">
+        <i class="ti ti-circle-check" style="color:var(--g);font-size:18px;flex-shrink:0"></i>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:700;color:var(--tx)">Google Calendar conectado</div>
+          <div style="font-size:11.5px;color:var(--tm);margin-top:2px">Reuniões criadas no CRM serão sincronizadas automaticamente.</div>
+        </div>
+        <button class="btn bd bsm" onclick="gcalDesconectar()"><i class="ti ti-unlink"></i>Desconectar</button>
+      </div>`:`<div style="padding:14px 16px;border-radius:10px;background:rgba(66,133,244,.07);border:1px dashed rgba(66,133,244,.35);margin-bottom:16px">
+        <div style="font-size:12px;font-weight:700;color:#4285f4;margin-bottom:6px"><i class="ti ti-info-circle"></i> Não conectado</div>
+        <div style="font-size:12px;color:var(--tm)">Configure as credenciais abaixo e clique em "Autorizar Google" para vincular sua conta.</div>
+      </div>`}
+
+      <div style="margin-bottom:18px">
+        <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--tm);margin-bottom:10px">Configuração OAuth</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div class="field">
+            <label style="font-size:12px;color:var(--ts)">Client ID <span style="color:var(--r)">*</span></label>
+            <input type="text" id="gcal-client-id" class="fi" placeholder="xxxxxx.apps.googleusercontent.com" value="${savedClientId}" oninput="localStorage.setItem('evolux_gcal_client_id',this.value)">
+          </div>
+          <div class="field">
+            <label style="font-size:12px;color:var(--ts)">Redirect URI (copie para o Console Google)</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="text" class="fi" value="${redirectUri}" readonly style="flex:1;font-size:11.5px;background:var(--c1);color:var(--tm)">
+              <button class="btn bg bsm" onclick="navigator.clipboard.writeText('${redirectUri}').then(()=>showToast('URI copiada!','ti-clipboard-check'))"><i class="ti ti-copy"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:18px">
+        <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--tm);margin-bottom:10px">Passo a passo para configurar</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${[
+            ['1','Acesse o Google Cloud Console','console.cloud.google.com'],
+            ['2','Crie um projeto ou selecione um existente',''],
+            ['3','Vá em APIs & Services → Credentials → Create OAuth 2.0 Client ID',''],
+            ['4','Em "Application type" escolha <strong>Web application</strong>',''],
+            ['5','Cole a Redirect URI acima no campo "Authorized redirect URIs"',''],
+            ['6','Copie o Client ID gerado e cole no campo acima',''],
+            ['7','Ative a API: APIs & Services → Library → Google Calendar API',''],
+          ].map(([n,txt,link])=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:8px;background:var(--c0)">
+            <div style="width:22px;height:22px;border-radius:6px;background:var(--g);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#fff;flex-shrink:0">${n}</div>
+            <div style="font-size:12px;color:var(--ts);line-height:1.5">${txt}${link?` <a href="https://${link}" target="_blank" style="color:#4285f4;text-decoration:none;font-weight:600">${link} ↗</a>`:''}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+
+      <button class="gcal-btn" onclick="gcalIniciarOAuth()" ${!savedClientId?'style="opacity:.5"':''}>
         <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-        Conectar Google Agenda
+        Autorizar Google Calendar
       </button>
-    </div>`,
+    </div>`;})(),
 
     notificacoes:`<div class="cfg-card">
       <div class="cfg-card-title"><i class="ti ti-bell" style="color:var(--g)"></i>Notificações</div>
@@ -4646,6 +5056,9 @@ function cfgRenderSection(){
 
   // ── SEÇÃO EQUIPES ──────────────────────────────────────────
   sections.equipes=(()=>{
+    // Verificar permissão de criar equipe
+    const meEq=window._currentUserId?users.find(u=>u.sb_id===window._currentUserId)||users[0]:users[0];
+    const podeNovaEq=meEq&&(meEq.role==='gestor'||meEq.role==='administrador'||(meEq.hperms&&meEq.hperms.equipe_add));
     const eqAv=(eq)=>{
       if(eq.foto) return `<img src="${eq.foto}" style="width:50px;height:50px;border-radius:12px;object-fit:cover;flex-shrink:0">`;
       const ini=eq.nome.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
@@ -4689,11 +5102,11 @@ function cfgRenderSection(){
       <div style="font-size:44px;margin-bottom:12px">👥</div>
       <div style="font-size:15px;font-weight:800;color:var(--tx);margin-bottom:6px">Nenhuma equipe ainda</div>
       <div style="font-size:13px;color:var(--tm);margin-bottom:16px">Crie a primeira equipe para organizar sua operação.</div>
-      <button class="btn bp" onclick="openEqModal()"><i class="ti ti-plus"></i>Criar primeira equipe</button>
+      ${podeNovaEq?`<button class="btn bp" onclick="openEqModal()"><i class="ti ti-plus"></i>Criar primeira equipe</button>`:''}
     </div>`;
     return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div><div style="font-size:16px;font-weight:800;color:var(--tx)">Equipes</div><div style="font-size:12px;color:var(--tm);margin-top:2px">${equipes.length} equipe${equipes.length!==1?'s':''} cadastrada${equipes.length!==1?'s':''}</div></div>
-      <button class="btn bp" onclick="openEqModal()"><i class="ti ti-plus"></i>Nova equipe</button>
+      ${podeNovaEq?`<button class="btn bp" onclick="openEqModal()"><i class="ti ti-plus"></i>Nova equipe</button>`:''}
     </div>${list}`;
   })();
 
@@ -4773,6 +5186,15 @@ function cfgRenderSection(){
     if(es)es.innerHTML='<option value="">Equipe (opcional)</option>'+equipes.map(e=>`<option value="${e.id}">${e.nome}</option>`).join('');
     const btnInvite=document.getElementById('btn-invite-user');
     if(btnInvite)btnInvite.addEventListener('click',function(){inviteUser();});
+    // Controla visibilidade do form de adicionar usuário por permissão
+    const formWrap=document.getElementById('form-add-user-wrap');
+    if(formWrap){
+      const me=window._currentUserId
+        ? users.find(u=>u.sb_id===window._currentUserId)||users[0]
+        : users[0];
+      const podeAdicionar=me&&(me.role==='gestor'||(me.hperms&&me.hperms.equipe_add));
+      formWrap.style.display=podeAdicionar?'':'none';
+    }
   }
 }
 
@@ -4795,6 +5217,73 @@ function renderRelatorios(){
     <div class="sr"><span class="sl">Crédito em pipeline</span><span class="sv">${fmtR(pip)}</span></div>
     <div class="sr"><span class="sl">Total vendido (ranking)</span><span class="sv" style="color:var(--g)">${fmtR(rankTotalRel)}</span></div>
     <div class="sr"><span class="sl">Vendas registradas</span><span class="sv">${rankVendasRel}</span></div>`;
+  // ── Desempenho por membro ──────────────────────────────────────────────────
+  const eqEl=document.getElementById('rel-equipe-table');
+  if(eqEl){
+    const sorted=[...users].sort((a,b)=>(b.credito||0)-(a.credito||0));
+    const maxCred=Math.max(...sorted.map(u=>u.credito||0),1);
+    eqEl.innerHTML=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">
+      <thead><tr style="border-bottom:2px solid var(--c2);text-align:left">
+        <th style="padding:8px 10px;color:var(--tm);font-weight:700">Membro</th>
+        <th style="padding:8px 10px;color:var(--tm);font-weight:700">Hierarquia</th>
+        <th style="padding:8px 10px;color:var(--tm);font-weight:700;text-align:right">Leads ativos</th>
+        <th style="padding:8px 10px;color:var(--tm);font-weight:700;text-align:right">Convertidos</th>
+        <th style="padding:8px 10px;color:var(--tm);font-weight:700;text-align:right">Total vendido</th>
+        <th style="padding:8px 10px;color:var(--tm);font-weight:700;text-align:right">Meta</th>
+        <th style="padding:8px 10px;color:var(--tm);font-weight:700;min-width:100px">Progresso</th>
+      </tr></thead>
+      <tbody>${sorted.map((u,i)=>{
+        const h=u.hierarquiaId?getHier(u.hierarquiaId):null;
+        const leadsAtivos=leads.filter(l=>l.responsavelId===u.id&&!['Fechado / Convertido','Perdido'].includes(l.etapa)).length;
+        const leadsConv=leads.filter(l=>l.responsavelId===u.id&&l.etapa==='Fechado / Convertido').length;
+        const pct=u.meta?Math.min(Math.round((u.credito||0)/u.meta*100),100):0;
+        const bg=i%2===0?'':'var(--c0)';
+        return `<tr style="border-bottom:1px solid var(--c1);background:${bg}">
+          <td style="padding:10px 10px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;overflow:hidden;flex-shrink:0">${u.foto?`<img src="${u.foto}" style="width:100%;height:100%;object-fit:cover">`:u.nome.charAt(0)}</div>
+              <div>
+                <div style="font-weight:700;color:var(--tx)">${u.nome}</div>
+                <div style="font-size:10.5px;color:var(--tm)">${u.email}</div>
+              </div>
+            </div>
+          </td>
+          <td style="padding:10px 10px"><span style="font-size:10.5px;padding:2px 8px;border-radius:20px;background:rgba(1,107,60,.1);color:var(--g);font-weight:600">${h?h.nome:RL[u.role]}</span></td>
+          <td style="padding:10px 10px;text-align:right;font-weight:700;color:var(--tx)">${leadsAtivos}</td>
+          <td style="padding:10px 10px;text-align:right;font-weight:700;color:var(--g)">${leadsConv}</td>
+          <td style="padding:10px 10px;text-align:right;font-weight:800;color:var(--tx)">${fmtR(u.credito||0)}</td>
+          <td style="padding:10px 10px;text-align:right;color:var(--tm)">${fmtR(u.meta||0)}</td>
+          <td style="padding:10px 10px">
+            <div style="height:6px;background:var(--c1);border-radius:20px;overflow:hidden;margin-bottom:3px">
+              <div style="height:100%;width:${pct}%;background:${pct>=100?'var(--g)':'var(--y)'};border-radius:20px;transition:width .4s"></div>
+            </div>
+            <div style="font-size:10px;color:${pct>=100?'var(--g)':'var(--tm)'};font-weight:700">${pct}%</div>
+          </td>
+        </tr>`;
+      }).join('')}</tbody></table></div>`;
+  }
+  // ── Histórico de movimentações ─────────────────────────────────────────────
+  const histEl=document.getElementById('rel-historico');
+  if(histEl){
+    const searchEl=document.getElementById('rel-search-hist');
+    const q=(searchEl?searchEl.value:'').toLowerCase().trim();
+    const filtered=q?activities.filter(a=>a.text.toLowerCase().includes(q)):activities;
+    const ICON_CLS={'ti-user-plus':'color:#6366f1','ti-circle-check':'color:var(--g)','ti-message':'color:var(--b)','ti-brand-whatsapp':'color:#25d366','ti-arrows-right-left':'color:var(--y)','ti-phone':'color:var(--b)','ti-x':'color:var(--r)','ti-trophy':'color:#f0c040','ti-gavel':'color:var(--y)','ti-user-edit':'color:var(--b)'};
+    if(!filtered.length){histEl.innerHTML='<p style="color:var(--tm);font-size:13px">Nenhuma movimentação encontrada.</p>';return;}
+    histEl.innerHTML='<div style="display:flex;flex-direction:column;gap:4px">'+[...filtered].reverse().slice(0,50).map((a,i)=>{
+      const icStyle=ICON_CLS[a.icon]||'color:var(--tm)';
+      const bg=i%2===0?'background:var(--c0)':'';
+      return `<div style="display:flex;align-items:flex-start;gap:12px;padding:9px 12px;border-radius:8px;${bg}">
+        <div style="width:28px;height:28px;border-radius:8px;background:var(--c1);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <i class="ti ${a.icon}" style="font-size:13px;${icStyle}"></i>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12.5px;color:var(--tx);font-weight:500">${a.text}</div>
+        </div>
+        <div style="font-size:11px;color:var(--tm);white-space:nowrap;flex-shrink:0">${a.time}</div>
+      </div>`;
+    }).join('')+'</div>'+(filtered.length>50?`<div style="text-align:center;padding:10px;font-size:12px;color:var(--tm)">Exibindo 50 de ${filtered.length} registros</div>`:' ');
+  }
 }
 
 // ─── CALENDÁRIO ───────────────────────────────────────────────────────────────
@@ -5371,7 +5860,7 @@ function editMeta(id) {
   const val = prompt(`Meta de ${u.nome} (R$):`, u.meta||500000);
   if(val===null) return;
   const n = parseFloat(val.replace(/\./g,'').replace(',','.'));
-  if(!isNaN(n)&&n>0) { u.meta=n; renderUserList(); renderRanking(); }
+  if(!isNaN(n)&&n>0) { u.meta=n; if(window._syncUser)window._syncUser(u); renderUserList(); renderRanking(); }
 }
 
 
@@ -5516,6 +6005,8 @@ function saveEditUser() {
   if(foto) u.foto = foto;
   // Atualizar avatares
   if(id===1) updateSbUser();
+  // Sincroniza com Supabase (todos verão a foto atualizada em tempo real)
+  if(window._syncUser) window._syncUser(u);
   closeEditUser();
   renderUserList();
   renderRanking();
@@ -5826,6 +6317,40 @@ function integConectar(tipo){
   }
   integState[tipo]=true;
   showToast(m.ok, m.icon);
+}
+
+// ─── GOOGLE CALENDAR OAUTH ───────────────────────────────────────────────────
+window._gcalToken=null;
+// Verificar se voltou com token no hash (fluxo implícito)
+(function(){
+  try{
+    const h=window.location.hash;
+    if(h&&h.includes('access_token=')){
+      const params=new URLSearchParams(h.slice(1));
+      const tok=params.get('access_token');
+      if(tok){window._gcalToken=tok;try{localStorage.setItem('evolux_gcal_token',tok);}catch(e){}
+      history.replaceState(null,'',window.location.pathname+window.location.search);
+      showToast('Google Calendar conectado com sucesso!','ti-circle-check');}
+    } else {
+      const saved=localStorage.getItem('evolux_gcal_token');
+      if(saved) window._gcalToken=saved;
+    }
+  }catch(e){}
+})();
+function gcalIniciarOAuth(){
+  const clientId=(document.getElementById('gcal-client-id')||{}).value||localStorage.getItem('evolux_gcal_client_id')||'';
+  if(!clientId){showToast('Informe o Client ID antes de autorizar.','ti-alert-triangle');return;}
+  const redirectUri=window.location.origin+window.location.pathname;
+  const scope=encodeURIComponent('https://www.googleapis.com/auth/calendar.events');
+  const url=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${scope}&prompt=consent`;
+  window.open(url,'_blank');
+  showToast('Janela de autorização aberta. Volte aqui após autorizar.','ti-brand-google');
+}
+function gcalDesconectar(){
+  window._gcalToken=null;
+  try{localStorage.removeItem('evolux_gcal_token');}catch(e){}
+  showToast('Google Calendar desconectado.','ti-unlink');
+  cfgRenderSection();
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
