@@ -4763,9 +4763,13 @@ function admParsePDFTextToGrupos(text){
 async function inviteUser(){
   const nomeVal=document.getElementById('uNome').value.trim();
   const email=document.getElementById('uEmail').value.trim();
+  const senha=document.getElementById('uSenha').value;
+  const senhaConf=document.getElementById('uSenhaConf').value;
   if(!nomeVal){alert('Informe o nome completo.');return;}
   if(!email||!email.includes('@')){alert('E-mail inválido.');return;}
-  if(users.find(u=>u.email===email)){alert('E-mail já cadastrado.');return;}
+  if(!senha||senha.length<6){alert('A senha deve ter pelo menos 6 caracteres.');return;}
+  if(senha!==senhaConf){alert('As senhas não coincidem. Verifique e tente novamente.');return;}
+  if(users.find(u=>u.email===email)){alert('Este e-mail já está cadastrado no sistema.');return;}
   const hierSel=document.getElementById('uHierarquia');
   const hierarquiaId=hierSel?parseInt(hierSel.value)||null:null;
   if(!hierarquiaId){alert('Selecione a hierarquia do usuário.');return;}
@@ -4777,54 +4781,89 @@ async function inviteUser(){
   const selH=getHier(hierarquiaId);
   const role=selH&&selH.slug==='gestor'?'gestor':selH&&selH.slug==='representante'?'representante':'vendedor';
   const btn=document.getElementById('btn-invite-user');
-  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>Enviando convite...';}
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>Cadastrando...';}
   let sbUserId=null;
-  let conviteEnviado=false;
+  let criado=false;
+  let errMsg='';
+
+  // 1ª tentativa: Edge Function com senha definida pelo admin
   try{
-    // 1ª tentativa: Edge Function (cria usuário + dispara email de convite com link)
     const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/create-user',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${window._session?.access_token||''}`},
-      body:JSON.stringify({email,nome:nomeVal,role,meta:metaRaw,hierarquia_id:hierarquiaId,equipe_id:equipeId,send_invite:true})
+      body:JSON.stringify({email,senha,nome:nomeVal,role,meta:metaRaw,hierarquia_id:hierarquiaId,equipe_id:equipeId})
     });
     const json=await res.json();
-    if(json.id){sbUserId=json.id;conviteEnviado=true;}
-    if(!res.ok) throw new Error(json.error||'Erro na Edge Function');
+    if(json.id){sbUserId=json.id;criado=true;}
+    else if(json.error) errMsg=json.error;
+    if(!res.ok&&!criado) throw new Error(json.error||'Edge Function retornou erro');
   }catch(err){
     console.warn('Edge Function indisponível:',err.message);
-    // 2ª tentativa: Supabase Magic Link (convite por email sem precisar criar senha)
+    // 2ª tentativa: signUp direto (funciona sem Edge Function, mas manda email de confirmação)
+    // Desabilita confirmação de email no Supabase para funcionar diretamente
     try{
-      const {data,error}=await window._sb.auth.signInWithOtp({
+      const {data,error}=await window._sb.auth.signUp({
         email,
+        password:senha,
         options:{
-          emailRedirectTo: window.location.origin+'/index.html',
-          data:{nome:nomeVal,role,meta:metaRaw}
+          data:{nome:nomeVal,role,meta:metaRaw},
+          emailRedirectTo: window.location.origin+'/index.html'
         }
       });
-      if(!error) conviteEnviado=true;
-      else console.warn('signInWithOtp falhou:',error.message);
-    }catch(e2){console.warn('OTP falhou:',e2.message);}
+      if(!error&&data?.user){
+        sbUserId=data.user.id;
+        criado=true;
+        // Salva profile na tabela profiles para o CRM reconhecer
+        await window._sb.from('profiles').upsert({
+          id:data.user.id,
+          email,
+          nome:nomeVal,
+          role,
+          meta:metaRaw,
+          hierarquia_id:hierarquiaId,
+          equipe_id:equipeId||null,
+          vendas:0,
+          credito:0
+        },{onConflict:'id'});
+      } else if(error){
+        errMsg=error.message==='User already registered'?'Este e-mail já possui conta no Supabase.':error.message;
+        console.warn('signUp falhou:',error.message);
+      }
+    }catch(e2){errMsg=e2.message;console.warn('signUp erro:',e2.message);}
   }
-  if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-user-plus"></i>Adicionar';}
-  // Cria usuário localmente para o CRM funcionar mesmo antes do aceite
+
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-user-plus"></i>Cadastrar usuário';}
+  const toast=document.getElementById('invite-toast');
+  toast.style.display='block';
+
+  if(!criado){
+    toast.style.background='rgba(220,38,38,.1)';
+    toast.style.borderColor='rgba(220,38,38,.3)';
+    toast.style.color='#dc2626';
+    toast.innerHTML=`<i class="ti ti-alert-circle"></i> Erro ao cadastrar: ${errMsg||'Tente novamente.'}`;
+    setTimeout(()=>{toast.style.display='none';toast.style='';},8000);
+    return;
+  }
+
+  // Cria usuário localmente no CRM
   const newU={id:nextUserId++,nome:nomeVal,email,role,sb_id:sbUserId||null,managerId:null,vendas:0,credito:0,meta:metaRaw,hierarquiaId,equipeId,
     perms:{...DPERMS[role]||DPERMS.vendedor},hperms:selH?{...selH.perms}:{}};
   if(equipeId){const eq=equipes.find(e=>e.id===equipeId);if(eq){eq.membroIds=eq.membroIds||[];if(!eq.membroIds.includes(newU.id))eq.membroIds.push(newU.id);}}
   users.push(newU);
   if(window._syncUser) window._syncUser(newU);
+
+  // Limpa formulário
   document.getElementById('uNome').value='';
   document.getElementById('uEmail').value='';
+  document.getElementById('uSenha').value='';
+  document.getElementById('uSenhaConf').value='';
   if(metaEl)metaEl.value='';
   if(hierSel)hierSel.value='';
   if(equipeEl)equipeEl.value='';
+
   renderRanking();
-  const toast=document.getElementById('invite-toast');
-  toast.style.display='block';
-  if(conviteEnviado){
-    toast.innerHTML=`<i class="ti ti-mail-check"></i> Convite enviado para <strong>${email}</strong>. ${nomeVal} receberá um link para criar a própria senha.`;
-  } else {
-    toast.innerHTML=`<i class="ti ti-user-check"></i> Usuário <strong>${nomeVal}</strong> adicionado. <span style="opacity:.8">Recomende que acesse o login e use "Esqueci a senha" com o e-mail ${email} para definir a senha.</span>`;
-  }
+  toast.style.background='';toast.style.borderColor='';toast.style.color='';
+  toast.innerHTML=`<i class="ti ti-user-check"></i> <strong>${nomeVal}</strong> cadastrado com sucesso! Já pode entrar com o e-mail <strong>${email}</strong> e a senha definida.`;
   setTimeout(()=>toast.style.display='none',9000);
   renderUserList();populateSelects();
 }
@@ -5020,14 +5059,18 @@ function cfgRenderSection(){
           <input type="text" id="uNome" class="fi" placeholder="Nome completo">
           <input type="email" id="uEmail" class="fi" placeholder="E-mail">
           <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input type="password" id="uSenha" class="fi" placeholder="Senha de acesso (mínimo 6 caracteres)" style="flex:2;min-width:200px">
+            <input type="password" id="uSenhaConf" class="fi" placeholder="Confirmar senha" style="flex:2;min-width:200px">
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
             <select id="uHierarquia" class="fi" style="flex:1;min-width:140px"><option value="">Hierarquia...</option></select>
             <select id="uEquipe" class="fi" style="flex:1;min-width:140px"><option value="">Equipe (opcional)</option></select>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <input type="text" id="uMeta" class="fi" placeholder="Meta (R$) — obrigatório" oninput="maskM(this)" style="flex:1;min-width:140px">
-            <button id="btn-invite-user" class="btn bp" style="white-space:nowrap"><i class="ti ti-user-plus"></i>Enviar convite</button>
+            <button id="btn-invite-user" class="btn bp" style="white-space:nowrap"><i class="ti ti-user-plus"></i>Cadastrar usuário</button>
           </div>
-          <div style="font-size:11.5px;color:var(--tm);padding:6px 0;display:flex;align-items:flex-start;gap:5px"><i class="ti ti-mail-forward" style="margin-top:1px;flex-shrink:0"></i> O usuário receberá um e-mail com link para criar a própria senha e acessar o CRM.</div>
+          <div style="font-size:11.5px;color:var(--tm);padding:6px 0;display:flex;align-items:flex-start;gap:5px"><i class="ti ti-lock-check" style="margin-top:1px;flex-shrink:0"></i> Você define o e-mail e a senha. O usuário já pode entrar direto e trocar a senha quando quiser em "Esqueci minha senha".</div>
         </div>
         <div class="inv-toast" id="invite-toast"></div>
         <div class="cfg-divider"></div>
