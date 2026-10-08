@@ -16,48 +16,22 @@
   const SB_KEY='sb_publishable_nJ-BnFkD8sG8mv4f7Uc-Uw_v87ZOIl9';
   window._sb=supabase.createClient(SB_URL,SB_KEY);
 
-  // ── 1. Guard: redireciona para login se não autenticado ───────────────────
-  window._sb.auth.getSession().then(async({data:{session}})=>{
-    if(!session){window.location.href='index.html';return;}
-    window._session=session;
-    window._currentUserId=session.user.id; // uuid do Supabase
-
-    // Garante que o profile do usuário logado existe na tabela profiles
-    const email=session.user.email;
-    const nome=session.user.user_metadata?.nome||email?.split('@')[0]||'Usuário';
-    const role=session.user.user_metadata?.role||'vendedor';
-    const meta=session.user.user_metadata?.meta||500000;
-    try{
-      const {data:existing}=await window._sb.from('profiles').select('id').eq('id',session.user.id).single();
-      if(!existing){
-        await window._sb.from('profiles').upsert({
-          id:session.user.id,
-          email,nome,role,meta,vendas:0,credito:0
-        },{onConflict:'id'});
-      }
-    }catch(e){console.warn('Profile check:',e);}
-  });
-
   // ── INATIVIDADE OBRIGATÓRIA — 30 dias sem uso → logout ────────────────────
-  // Não pode ser desativado. Grava timestamp em localStorage a cada interação.
   (function(){
     const INATIV_KEY='evolux_last_active';
-    const INATIV_LIMIT=30*24*60*60*1000; // 30 dias em ms
+    const INATIV_LIMIT=30*24*60*60*1000;
     const agora=Date.now();
     const ultimo=parseInt(localStorage.getItem(INATIV_KEY)||'0');
     if(ultimo&&(agora-ultimo)>INATIV_LIMIT){
-      // Mais de 30 dias sem atividade → forçar logout
       localStorage.removeItem(INATIV_KEY);
       window._sb.auth.signOut().finally(()=>{window.location.href='index.html?motivo=inatividade';});
       return;
     }
-    // Atualiza timestamp a cada interação do usuário
     function atualizarAtividade(){localStorage.setItem(INATIV_KEY,Date.now().toString());}
-    atualizarAtividade(); // registra acesso atual
+    atualizarAtividade();
     ['click','keydown','mousemove','touchstart'].forEach(ev=>{
       document.addEventListener(ev,atualizarAtividade,{passive:true});
     });
-    // Verificação a cada hora (cobre aba aberta por muito tempo)
     setInterval(function(){
       const ts=parseInt(localStorage.getItem(INATIV_KEY)||'0');
       if(ts&&(Date.now()-ts)>INATIV_LIMIT){
@@ -66,12 +40,11 @@
     },60*60*1000);
   })();
 
-  // ── 2. Helpers de sync ────────────────────────────────────────────────────
-  // Converte linha do Supabase → objeto user do CRM
+  // ── Helpers de sync ────────────────────────────────────────────────────────
   function sbRowToUser(row,idx){
     return {
-      id: row.crm_id||idx+100, // id numérico local (para compatibilidade com código existente)
-      sb_id: row.id,           // uuid do Supabase (para upserts)
+      id: row.crm_id||idx+100,
+      sb_id: row.id,
       nome: row.nome||'',
       email: row.email||'',
       role: row.role||'vendedor',
@@ -87,38 +60,93 @@
     };
   }
 
-  // Busca todos os profiles e atualiza array users + re-renderiza ranking
-  window._loadProfiles=async function(){
-    const {data,error}=await window._sb.from('profiles').select('*').order('credito',{ascending:false});
-    if(error){console.warn('Erro ao carregar profiles:',error);return;}
-    if(!data||!data.length)return;
-    // Preserva permissões locais mas atualiza dados de ranking
-    if(window.users&&window.users.length){
-      data.forEach(row=>{
-        const local=window.users.find(u=>u.sb_id===row.id||u.email===row.email);
-        if(local){
-          local.nome=row.nome||local.nome;
-          local.foto=row.foto_url||local.foto;
-          local.meta=row.meta||local.meta;
-          local.vendas=row.vendas||0;
-          local.credito=row.credito||0;
-          local.sb_id=row.id;
+  // Merge linhas do Supabase no array users local
+  function mergeProfilesIntoUsers(data){
+    if(!window.users||!data||!data.length)return;
+    data.forEach(function(row,idx){
+      const local=window.users.find(u=>u.sb_id===row.id||u.email===row.email);
+      if(local){
+        local.nome=row.nome||local.nome;
+        local.foto=row.foto_url||local.foto;
+        local.meta=row.meta||local.meta;
+        local.vendas=row.vendas||0;
+        local.credito=row.credito||0;
+        local.role=row.role||local.role;
+        local.hierarquiaId=row.hierarquia_id||local.hierarquiaId;
+        local.equipeId=row.equipe_id||local.equipeId;
+        local.sb_id=row.id; // garante linkagem
+      } else {
+        // Usuário novo não estava no array local — adiciona
+        const maxId=Math.max(...window.users.map(u=>u.id),99);
+        const newU=sbRowToUser(row,idx);
+        newU.id=maxId+1;
+        window.users.push(newU);
+        if(window.nextUserId&&window.nextUserId<=newU.id) window.nextUserId=newU.id+1;
+      }
+    });
+  }
+
+  // ── 1. Guard + carregamento inicial de profiles ────────────────────────────
+  // Executa ANTES do DOM estar pronto; guarda promise para init aguardar
+  window._profilesLoadPromise = window._sb.auth.getSession().then(async function(res){
+    const session=res.data.session;
+    if(!session){window.location.href='index.html';return;}
+    window._session=session;
+    window._currentUserId=session.user.id;
+
+    const email=session.user.email;
+    const nome=session.user.user_metadata?.nome||email?.split('@')[0]||'Usuário';
+    const role=session.user.user_metadata?.role||'vendedor';
+    const meta=session.user.user_metadata?.meta||500000;
+
+    // Garante que o profile do usuário logado existe
+    try{
+      const {data:existing}=await window._sb.from('profiles').select('id').eq('id',session.user.id).single();
+      if(!existing){
+        await window._sb.from('profiles').upsert({
+          id:session.user.id,email,nome,role,meta,vendas:0,credito:0
+        },{onConflict:'id'});
+      }
+    }catch(e){console.warn('Profile upsert:',e);}
+
+    // Carrega TODOS os profiles agora (antes do init renderizar)
+    try{
+      const {data,error}=await window._sb.from('profiles').select('*').order('credito',{ascending:false});
+      if(!error&&data&&data.length){
+        // Se users ainda não existe, guarda para aplicar depois
+        if(window.users&&window.users.length){
+          mergeProfilesIntoUsers(data);
         } else {
-          // Usuário novo — adiciona ao array com id numérico único
-          const maxId=Math.max(...window.users.map(u=>u.id),1);
-          const newU=sbRowToUser(row,maxId);
-          newU.id=maxId+1;
-          window.users.push(newU);
-          if(window.nextUserId<=newU.id) window.nextUserId=newU.id+1;
+          window._pendingProfiles=data; // aplica no init
         }
-      });
-    }
-    try{window.renderRanking&&window.renderRanking();}catch(e){}
-    try{window.renderUserList&&window.renderUserList();}catch(e){}
-    try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
+      }
+    }catch(e){console.warn('Load profiles:',e);}
+  });
+
+  // ── 2. _loadProfiles: recarrega e re-renderiza (chamado pelo realtime) ─────
+  window._loadProfiles=async function(){
+    try{
+      const {data,error}=await window._sb.from('profiles').select('*').order('credito',{ascending:false});
+      if(error||!data||!data.length)return;
+      mergeProfilesIntoUsers(data);
+      // Re-renderiza tudo com o usuário correto
+      try{window.updateSbUser&&window.updateSbUser();}catch(e){}
+      try{window.renderDashboard&&window.renderDashboard();}catch(e){}
+      try{window.renderRanking&&window.renderRanking();}catch(e){}
+      try{window.renderUserList&&window.renderUserList();}catch(e){}
+      try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
+      // Atualiza página de configurações se estiver aberta
+      try{
+        const contaTab=document.querySelector('.nav-item[data-section="config"]');
+        const configSec=document.getElementById('config-section');
+        if(configSec&&configSec.style.display!=='none'){
+          window.renderConfig&&window.renderConfig();
+        }
+      }catch(e){}
+    }catch(e){console.warn('loadProfiles error:',e);}
   };
 
-  // Salva/atualiza um user no Supabase
+  // ── 3. Salva/atualiza um user no Supabase ─────────────────────────────────
   window._syncUser=async function(u){
     if(!u||!u.email)return;
     const payload={
@@ -138,29 +166,21 @@
     if(u.sb_id) payload.id=u.sb_id;
     const {data,error}=await window._sb.from('profiles').upsert(payload,{onConflict:'email'}).select().single();
     if(error){console.warn('Erro ao salvar profile:',error);return;}
-    if(data) u.sb_id=data.id; // garante que temos o uuid
+    if(data) u.sb_id=data.id;
   };
 
-  // Sync massa: todos os users
   window._syncAllUsers=async function(){
     if(!window.users)return;
     for(const u of window.users){await window._syncUser(u);}
   };
 
-  // ── 3. Realtime: escuta mudanças na tabela profiles ───────────────────────
-  // Ativa após o DOM carregar (quando renderRanking estiver disponível)
+  // ── 4. Realtime: escuta mudanças na tabela profiles ───────────────────────
   window.addEventListener('load',function(){
     window._sb.channel('profiles-sync')
-      .on('postgres_changes',{event:'*',schema:'public',table:'profiles'},function(payload){
-        // Algum usuário atualizou seus dados → recarrega tudo
+      .on('postgres_changes',{event:'*',schema:'public',table:'profiles'},function(){
         window._loadProfiles();
       })
       .subscribe();
-
-    // Carrega perfis ao abrir o CRM
-    setTimeout(function(){window._loadProfiles();},800);
-    // Aplica permissões de nav após carregar
-    setTimeout(function(){try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}},1200);
   });
 })();
 </script>
@@ -2511,8 +2531,7 @@ function toggleSidebar(){
 // Mapa: tab id → chave em DPERMS (null = sempre acessível)
 const TAB_PERM_MAP={dashboard:null,funil:'funil',leads:'leads',simulador:'simulador',lances:'lances',ranking:'ranking',relatorios:'relatorios',whatsapp:'whatsapp',calendario:'calendario',configuracoes:'config'};
 function _getMeRole(){
-  if(!window._currentUserId) return users[0]||null;
-  return users.find(u=>u.sb_id===window._currentUserId)||users[0]||null;
+  return getMe()||users[0]||null;
 }
 function _hasTabPerm(me,permKey){
   if(!permKey) return true;
@@ -6186,19 +6205,33 @@ function editMeta(id) {
 
 
 function getMe(){
-  // Retorna sempre o usuário autenticado no Supabase, nunca users[0] fixo
+  // 1. Busca pelo UUID do Supabase (mais confiável)
   if(window._currentUserId){
     const found=users.find(u=>u.sb_id===window._currentUserId);
     if(found) return found;
   }
-  // Fallback: tenta pelo email do Supabase
+  // 2. Fallback: tenta pelo email do Supabase
   const sbEmail=window._session&&window._session.user&&window._session.user.email;
   if(sbEmail){
     const byEmail=users.find(u=>u.email===sbEmail);
     if(byEmail) return byEmail;
   }
+  // 3. Último recurso: cria objeto temporário com dados do Supabase
+  // (nunca mostra dados do admin para outro usuário)
+  if(window._session&&window._session.user){
+    const u=window._session.user;
+    const tempNome=u.user_metadata?.nome||u.email?.split('@')[0]||'Usuário';
+    return {
+      id:9999, sb_id:u.id, nome:tempNome, email:u.email||'',
+      role:u.user_metadata?.role||'vendedor',
+      hierarquiaId:null, equipeId:null, managerId:null,
+      vendas:0, credito:0, meta:u.user_metadata?.meta||500000,
+      foto:null, perms:{}, hperms:{}
+    };
+  }
   return users[0]||null;
 }
+window.getMe=getMe; // expõe globalmente para _loadProfiles poder chamar
 
 function updateSbUser(){
   const me = getMe(); if(!me) return;
@@ -6206,12 +6239,17 @@ function updateSbUser(){
   const tpAv = document.getElementById('tp-av');
   const sbName = document.getElementById('sb-user-name');
   const sbRole = document.getElementById('sb-user-role');
-  const avatarHtml = me.foto ? `<img src="${me.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : me.nome.charAt(0).toUpperCase();
+  const avatarHtml = me.foto ? `<img src="${me.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : (me.nome||'U').charAt(0).toUpperCase();
   if(sbAv) sbAv.innerHTML = avatarHtml;
   if(tpAv) tpAv.innerHTML = avatarHtml;
   if(sbName) sbName.textContent = me.nome;
   if(sbRole) sbRole.textContent = 'Evolux CRM';
 }
+window.updateSbUser=updateSbUser;
+// Expõe funções globais para _loadProfiles poder chamá-las após profiles carregarem
+window.renderDashboard=renderDashboard;
+// renderRanking, renderUserList, renderConfig, applyNavPermissions são
+// function declarations e já são globais — não precisam ser re-atribuídas
 
 function maskTelConta(el){
   let v=el.value.replace(/\D/g,'');
@@ -6723,17 +6761,60 @@ async function gcalCriarEvento(titulo,descricao,dataHoraInicio,duracaoMin){
 function sendPrompt(txt){
   showToast('Recurso de IA disponível na versão com integração Supabase.','ti-sparkles');
 }
-// Restaurar dark mode salvo
 // Restaurar tema salvo
 const savedTheme = localStorage.getItem('evolux-theme');
 if(savedTheme==='dark') document.documentElement.setAttribute('data-theme','dark');
-updateSbUser();
-populateSelects();
-renderDashboard();
-renderNotifPanel();
-try{if(localStorage.getItem('sb_collapsed')==='1'){const sb=document.getElementById('sidebar');const btn=document.getElementById('sb-toggle');if(sb)sb.classList.add('collapsed');if(btn){btn.style.left='60px';btn.classList.add('collapsed');}}}catch(e){}
-syncSim();
-renderAdminList();
+
+// ── INIT assíncrono: aguarda profiles do Supabase antes de renderizar ────────
+async function _initCRM(){
+  // Aguarda o carregamento de profiles (getSession + fetch profiles)
+  try{ await window._profilesLoadPromise; }catch(e){ console.warn('profilesLoad err:',e); }
+
+  // Aplica profiles pendentes ao array users (caso não estivesse pronto antes)
+  if(window._pendingProfiles&&window.users){
+    const data=window._pendingProfiles;
+    delete window._pendingProfiles;
+    data.forEach(function(row,idx){
+      const local=window.users.find(u=>u.sb_id===row.id||u.email===row.email);
+      if(local){
+        local.nome=row.nome||local.nome;
+        local.foto=row.foto_url||local.foto;
+        local.meta=row.meta||local.meta;
+        local.vendas=row.vendas||0;
+        local.credito=row.credito||0;
+        local.role=row.role||local.role;
+        local.hierarquiaId=row.hierarquia_id||local.hierarquiaId;
+        local.equipeId=row.equipe_id||local.equipeId;
+        local.sb_id=row.id;
+      } else {
+        const maxId=Math.max(...window.users.map(u=>u.id),99);
+        const newU={
+          id:maxId+1, sb_id:row.id, nome:row.nome||'', email:row.email||'',
+          role:row.role||'vendedor', hierarquiaId:row.hierarquia_id||null,
+          equipeId:row.equipe_id||null, managerId:null,
+          vendas:row.vendas||0, credito:row.credito||0, meta:row.meta||500000,
+          foto:row.foto_url||null, perms:row.perms?JSON.parse(row.perms):{},
+          hperms:row.hperms?JSON.parse(row.hperms):{}
+        };
+        window.users.push(newU);
+        if(window.nextUserId&&window.nextUserId<=newU.id) window.nextUserId=newU.id+1;
+      }
+    });
+  }
+
+  // Agora renderiza com o usuário correto
+  updateSbUser();
+  populateSelects();
+  renderDashboard();
+  renderNotifPanel();
+  try{if(localStorage.getItem('sb_collapsed')==='1'){const sb=document.getElementById('sidebar');const btn=document.getElementById('sb-toggle');if(sb)sb.classList.add('collapsed');if(btn){btn.style.left='60px';btn.classList.add('collapsed');}}}catch(e){}
+  syncSim();
+  renderAdminList();
+  try{applyNavPermissions();}catch(e){}
+  try{renderRanking();}catch(e){}
+  try{renderUserList();}catch(e){}
+}
+_initCRM();
 
 // bindHierModal movido para após o modal HTML no final do arquivo
 
