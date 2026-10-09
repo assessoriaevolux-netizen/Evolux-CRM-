@@ -1410,7 +1410,7 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
     <button class="nb sb-superadmin-only" onclick="showTab('empresas',this)" style="display:none" title="Empresas"><i class="ti ti-building-plus"></i><span class="nb-label">Empresas</span></button>
     <button class="nb" onclick="showTab('configuracoes',this)" title="Configurações"><i class="ti ti-settings"></i><span class="nb-label">Configurações</span></button>
   </nav>
-  <div class="sb-user" onclick="showTab('configuracoes',document.querySelectorAll('.nb')[9])" title="Configurações">
+  <div class="sb-user" onclick="showTab('configuracoes',document.querySelectorAll('.nb')[9])" title="Configurações" style="cursor:pointer">
     <div class="sb-av" id="sb-av">E</div>
     <div class="sb-user-info">
       <div class="sb-user-name" id="sb-user-name">Erick</div>
@@ -1418,6 +1418,10 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
     </div>
     <i class="ti ti-chevron-right" style="font-size:14px;color:#aab0c0;flex-shrink:0"></i>
   </div>
+  <button onclick="fazerLogout()" title="Sair" style="width:calc(100% - 28px);margin:0 14px 14px;display:flex;align-items:center;justify-content:center;gap:8px;padding:9px;border:1px solid rgba(220,38,38,.25);border-radius:8px;background:rgba(220,38,38,.06);color:#dc2626;font-size:12.5px;font-weight:600;cursor:pointer;transition:.2s">
+    <i class="ti ti-logout" style="font-size:14px"></i>
+    <span class="nb-label">Sair</span>
+  </button>
 </div>
 
 <!-- MAIN AREA -->
@@ -6248,6 +6252,14 @@ function getMe(){
   return null; // sessão não carregada ainda — retorna null, nunca o admin
 }
 window.getMe=getMe; // expõe globalmente para _loadProfiles poder chamar
+
+async function fazerLogout(){
+  if(!confirm('Deseja sair do CRM?'))return;
+  try{ await window._sb.auth.signOut(); }catch(e){}
+  localStorage.removeItem('evolux_last_active');
+  window.location.href='index.html';
+}
+window.fazerLogout=fazerLogout;
 
 // ─── EMPRESAS (superadmin) ────────────────────────────────────────────────────
 let _empresasCache=[];
