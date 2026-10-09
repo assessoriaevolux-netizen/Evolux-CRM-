@@ -400,16 +400,17 @@ const _urlParams = new URLSearchParams(window.location.search);
 const _conviteEmpresaId = _urlParams.get('convite');
 const _conviteEmpresaNome = _urlParams.get('empresa');
 
-// Redireciona se já estiver logado (mas não se vier de convite)
+// Sempre exibe a tela de login — faz signOut de qualquer sessão ativa
 (async()=>{
-  const {data:{session}} = await sb.auth.getSession();
-  if(session && !_conviteEmpresaId) window.location.href = 'crm.html';
   // Se vier com convite, mostra tela de cadastro
   if(_conviteEmpresaId){
     showView('convite');
     const label = document.getElementById('convite-empresa-label');
     if(label && _conviteEmpresaNome) label.innerHTML = `Você foi convidado para acessar o CRM da <strong>${decodeURIComponent(_conviteEmpresaNome)}</strong>.`;
+    return;
   }
+  // Encerra qualquer sessão ativa para forçar o login manual
+  try { await sb.auth.signOut(); } catch(e) {}
 })();
 
 async function fazerCadastroConvite(){
