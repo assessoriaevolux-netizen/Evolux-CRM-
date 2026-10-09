@@ -2793,7 +2793,7 @@ let taxaFin=1.25,nextAdminId=1;
 function getAdmin(){return administradoras.find(a=>a.ativa)||administradoras[0]||null;}
 
 let users=[
-  {id:1,nome:'Erick',email:'assessoriaevolux@gmail.com',role:'superadmin',managerId:null,vendas:0,credito:0,foto:null,meta:500000,hierarquiaId:1,empresaId:'00000000-0000-0000-0000-000000000001',perms:{...DPERMS.gestor},hperms:{...HPERM_DEFAULTS.gestor}},
+  {id:1,nome:'Erick',email:'assessoriaevolux@gmail.com',role:'master',managerId:null,vendas:0,credito:0,foto:null,meta:500000,hierarquiaId:1,empresaId:null,perms:{...DPERMS.gestor},hperms:{...HPERM_DEFAULTS.gestor}},
 ];
 let nextUserId=2;
 let equipes=[];
@@ -6537,17 +6537,22 @@ function alertarCadastroLance(nomeLead, leadId) {
 
 
 
-function uploadFoto(e) {
+async function uploadFoto(e) {
   const file = e.target.files[0]; if(!file) return;
-  const reader = new FileReader();
-  reader.onload = function(ev) {
-    const dataUrl = ev.target.result;
-    const _meF=getMe(); if(_meF) _meF.foto = dataUrl; // FIX: nunca acessa users[0]
-    if(window._syncUser&&_meF) window._syncUser(_meF).then(()=>updateSbUser()).catch(e=>console.warn(e));
+  try {
+    const ext = file.name.split('.').pop() || 'jpg';
+    const path = `${window._currentUserId}/${Date.now()}.${ext}`;
+    const { data: upData, error: upError } = await window._sb.storage.from('avatars').upload(path, file, { upsert: true });
+    if (upError) { console.warn('Storage upload error:', upError); return; }
+    const { data: urlData } = window._sb.storage.from('avatars').getPublicUrl(path);
+    const publicUrl = urlData.publicUrl;
+    const _meF = getMe();
+    if (_meF) _meF.foto = publicUrl;
+    if (window._syncUser && _meF) await window._syncUser(_meF).catch(e => console.warn(e));
     updateSbUser();
     // Atualizar preview na seção conta
     const prev = document.getElementById('foto-preview-conta');
-    if(prev) prev.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover">`;
+    if (prev) prev.innerHTML = `<img src="${publicUrl}" style="width:100%;height:100%;object-fit:cover">`;
     // Notificar
     const toast = document.createElement('div');
     toast.style.cssText='position:fixed;bottom:24px;right:24px;background:#1a6e3c;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)';
@@ -6556,8 +6561,7 @@ function uploadFoto(e) {
     setTimeout(()=>toast.remove(), 3000);
     // Atualizar ranking
     if(document.getElementById('ranking-rows')) renderRanking();
-  };
-  reader.readAsDataURL(file);
+  } catch(err) { console.warn('uploadFoto error:', err); }
 }
 function toggleDarkMode(on) {
   document.documentElement.setAttribute('data-theme', on?'dark':'light');
@@ -7362,6 +7366,15 @@ async function _initCRM(){
       const {data}=await window._sb.from('profiles').select('*').order('credito',{ascending:false});
       applyRows(data);
     }catch(e){console.warn('_initCRM fallback fetch:',e);}
+  }
+
+  // Garante que o usuário atual tem empresaId definido após o merge
+  const meCheck = window.users.find(u => u.sb_id === window._currentUserId);
+  if (meCheck && !meCheck.empresaId) {
+    try {
+      const {data: profData} = await window._sb.from('profiles').select('empresa_id').eq('id', window._currentUserId).single();
+      if (profData?.empresa_id) meCheck.empresaId = profData.empresa_id;
+    } catch(e) {}
   }
 
   // Agora renderiza com o usuário correto
