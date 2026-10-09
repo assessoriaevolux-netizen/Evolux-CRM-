@@ -175,12 +175,15 @@
     }
     // Garante empresa_id
     if(!u.empresaId && window._empresaIdDireto) u.empresaId = window._empresaIdDireto;
+    // Resolve UUID real da hierarquia (hierarquiaId é ID local numérico)
+    const _hierLocal=window.hierarquias&&window.hierarquias.find(h=>h.id===u.hierarquiaId);
+    const _hierUUID=_hierLocal?.sb_id||null;
     const payload={
       id: u.sb_id, // SEMPRE inclui o UUID correto
       email:u.email,
       nome:u.nome,
       role:u.role||'vendedor',
-      hierarquia_id:u.hierarquiaId||null,
+      hierarquia_id:_hierUUID,
       equipe_id:u.equipeId||null,
       meta:u.meta||0,
       vendas:u.vendas||0,
@@ -2910,7 +2913,7 @@ let hierarquias=[
 window.hierarquias = hierarquias; // mesma referência
 let nextHierArquiaId=5;
 
-function getHier(id){return hierarquias.find(h=>h.id===id);}
+function getHier(id){return hierarquias.find(h=>h.id===id||h.sb_id===id);}
 function getHierBySlug(slug){return hierarquias.find(h=>h.slug===slug);}
 function hierUsersCount(hId){return users.filter(u=>u.hierarquiaId===hId).length;}
 function hierPermCount(h){return h.perms?Object.values(h.perms).filter(Boolean).length:0;}
