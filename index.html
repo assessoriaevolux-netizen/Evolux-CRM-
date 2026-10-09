@@ -299,6 +299,10 @@ input.form-input:focus{
         </button>
       </div>
     </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <input type="checkbox" id="l-lembrar" style="width:15px;height:15px;accent-color:var(--g,#1db954);cursor:pointer">
+      <label for="l-lembrar" style="font-size:13px;color:var(--fg2,#6272a4);cursor:pointer;user-select:none">Lembrar meu e-mail</label>
+    </div>
     <button class="btn-submit" id="btn-login" onclick="fazerLogin()">
       <div class="spinner"></div>
       <span class="btn-text">Entrar</span>
@@ -451,6 +455,22 @@ async function fazerCadastroConvite(){
   setTimeout(()=>{ window.location.href = 'crm.html?from=login'; }, 800);
 }
 
+// Carrega email salvo ao abrir a página
+(function(){
+  const emailSalvo = localStorage.getItem('evolux_email_salvo');
+  if(emailSalvo){
+    document.addEventListener('DOMContentLoaded', function(){
+      const inp = document.getElementById('l-email');
+      const chk = document.getElementById('l-lembrar');
+      if(inp) inp.value = emailSalvo;
+      if(chk) chk.checked = true;
+      // Foca na senha direto
+      const pwd = document.getElementById('l-senha');
+      if(pwd) setTimeout(()=>pwd.focus(), 100);
+    });
+  }
+})();
+
 function showView(v){
   document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
   document.getElementById('view-'+v).classList.add('active');
@@ -491,6 +511,9 @@ function hideErr(id){
 async function fazerLogin(){
   const email = document.getElementById('l-email').value.trim();
   const senha = document.getElementById('l-senha').value;
+  const lembrar = document.getElementById('l-lembrar').checked;
+  if(lembrar) localStorage.setItem('evolux_email_salvo', email);
+  else localStorage.removeItem('evolux_email_salvo');
   const btn = document.getElementById('btn-login');
   hideErr('login-err');
   if(!email){ showErr('login-err','Informe seu e-mail.'); return; }

@@ -98,13 +98,6 @@
     const session=res.data.session;
     // Sempre exige passar pela tela de login — só entra no CRM se vier com ?from=login
     if(!session){window.location.href='index.html';return;}
-    const _params=new URLSearchParams(window.location.search);
-    if(!_params.has('from')){
-      // Tem sessão mas não veio do login — desloga e manda pra tela de login
-      await window._sb.auth.signOut();
-      window.location.href='index.html';
-      return;
-    }
     window._session=session;
     window._currentUserId=session.user.id;
 
