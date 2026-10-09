@@ -585,6 +585,57 @@
     await window._sb.from('vendas').delete().eq('lead_id', lead.sb_id);
   };
 
+  // ── ATIVIDADES (histórico sincronizado) ────────────────────────────────────
+  // Salva uma atividade no banco e adiciona ao array local
+  window._saveAtividade = async function(icon, text, targetUserId) {
+    try {
+      const empresaId = await window._getEmpresaId();
+      if (!empresaId) return;
+      const me = window.getMe ? window.getMe() : null;
+      const payload = {
+        empresa_id: empresaId,
+        user_id: targetUserId || me?.sb_id || null,
+        icon: icon || 'ti-activity',
+        text: text || '',
+      };
+      await window._sb.from('atividades').insert(payload);
+      // Adiciona local imediatamente para quem gerou (feedback instantâneo)
+      if (window.activities) {
+        window.activities.unshift({ icon, text, time: 'Agora', _userId: payload.user_id });
+        try { window.renderNotifPanel && window.renderNotifPanel(); } catch(e) {}
+        try { window.renderDashboard && window.renderDashboard(); } catch(e) {}
+      }
+    } catch(e) { console.warn('[_saveAtividade]', e); }
+  };
+
+  // Carrega atividades do banco (respeitando visibilidade por role)
+  window._loadAtividades = async function() {
+    try {
+      const empresaId = await window._getEmpresaId();
+      if (!empresaId) return;
+      const me = window.getMe ? window.getMe() : null;
+      const role = me?.role || 'vendedor';
+      const isLider = ['master','admin','gestor','supervisor'].includes(role);
+      let q = window._sb.from('atividades').select('*').eq('empresa_id', empresaId).order('created_at', { ascending: false }).limit(50);
+      // Vendedor e consultor só veem as próprias atividades
+      if (!isLider && me?.sb_id) q = q.eq('user_id', me.sb_id);
+      const { data, error } = await q;
+      if (error || !data) return;
+      // Mapeia timestamps para label legível
+      function _ageLabel(ts) {
+        if (!ts) return 'Agora';
+        const d = new Date(ts), now = new Date(), diff = Math.floor((now - d) / 60000);
+        if (diff < 1) return 'Agora';
+        if (diff < 60) return `${diff}min atrás`;
+        if (diff < 1440) return `${Math.floor(diff/60)}h atrás`;
+        return `${Math.floor(diff/1440)}d atrás`;
+      }
+      window.activities = data.map(r => ({ sb_id: r.id, icon: r.icon, text: r.text, time: _ageLabel(r.created_at), _userId: r.user_id }));
+      try { window.renderNotifPanel && window.renderNotifPanel(); } catch(e) {}
+      try { window.renderDashboard && window.renderDashboard(); } catch(e) {}
+    } catch(e) { console.warn('[_loadAtividades]', e); }
+  };
+
   // ── EMPRESA (dados gerais) ─────────────────────────────────────────────────
   window._syncEmpresa = async function() {
     const empresaId = await window._getEmpresaId();
@@ -637,6 +688,7 @@
     await window._loadLeads().catch(e=>console.warn('[_loadAllData] loadLeads error:',e));
     await window._loadLances().catch(e=>console.warn('[_loadAllData] loadLances error:',e));
     await window._loadEventos().catch(e=>console.warn('[_loadAllData] loadEventos error:',e));
+    await window._loadAtividades().catch(e=>console.warn('[_loadAllData] loadAtividades error:',e));
 
     try { window.renderDashboard && window.renderDashboard(); } catch(e) {}
     try { window.renderKanban && window.renderKanban(); } catch(e) {}
@@ -730,6 +782,15 @@
           try{window.renderLances&&window.renderLances();}catch(e){}
           try{window.renderRanking&&window.renderRanking();}catch(e){}
           try{window.renderDashboard&&window.renderDashboard();}catch(e){}
+        })
+        .subscribe();
+
+      // Realtime atividades → atualiza feed e notificações para toda a empresa
+      const _atChanOpts={event:'INSERT',schema:'public',table:'atividades'};
+      if(_profFilter) _atChanOpts.filter=_profFilter;
+      window._sb.channel('atividades-sync')
+        .on('postgres_changes',_atChanOpts,async function(){
+          await window._loadAtividades();
         })
         .subscribe();
 
@@ -3337,7 +3398,7 @@ function transferirSelecionados(){
     const l=leads.find(x=>x.id===id);
     if(l&&applyFunilFilter(l,f,vis)){
       l.responsavelId=destId;
-      activities.unshift({icon:'ti-arrows-right-left',text:`${l.nome} transferido para ${dest?dest.nome:'—'}`,time:'Agora'});
+      if(window._saveAtividade)window._saveAtividade('ti-arrows-right-left',`${l.nome} transferido para ${dest?dest.nome:'—'}`);
     }
   });
   cancelarSelecaoFunil();
@@ -3473,7 +3534,7 @@ function saveLeadDetalhe(){
   if(oldEtapa!==newEtapa){
     if(oldEtapa==='Fechado / Convertido'){const r=users.find(u=>u.id===l.responsavelId);if(r){r.vendas=Math.max(0,(r.vendas||0)-1);r.credito=Math.max(0,(r.credito||0)-l.credito);if(window._syncUser) window._syncUser(r).catch(e=>console.warn(e));}if(window._estornarVenda) window._estornarVenda(l).catch(e=>console.warn(e));}
     if(newEtapa==='Fechado / Convertido'){const r=users.find(u=>u.id===newResp);if(r){r.vendas=(r.vendas||0)+1;r.credito=(r.credito||0)+newCredito;if(window._syncUser) window._syncUser(r).catch(e=>console.warn(e));}if(window._registrarVenda) window._registrarVenda(l,newResp).catch(e=>console.warn(e));setTimeout(()=>showCelebra(users.find(u=>u.id===newResp)?.nome||'Vendedor',newCredito),100);}
-    activities.unshift({icon:'ti-arrows-right-left',text:`${nome}: ${oldEtapa} → ${newEtapa}`,time:'Agora'});
+    if(window._saveAtividade)window._saveAtividade('ti-arrows-right-left',`${nome}: ${oldEtapa} → ${newEtapa}`);
   }
   l.nome=nome;l.tel=document.getElementById('ld-tel').value;l.tipo=document.getElementById('ld-tipo').value;
   l.credito=newCredito;l.etapa=newEtapa;l.origem=document.getElementById('ld-origem').value;
@@ -3553,17 +3614,17 @@ function onDrop(e,etapa){
     }
     l.etapa=etapa;
     if(window._syncLead) window._syncLead(l).catch(e=>console.warn(e));
-    activities.push({icon:'ti-arrows-right-left',text:`${l.nome}: ${old} → ${etapa}`,time:'Agora'});
+    if(window._saveAtividade)window._saveAtividade('ti-arrows-right-left',`${l.nome}: ${old} → ${etapa}`);
     if(etapa==='Fechado / Convertido'){
       const resp=users.find(x=>x.id===l.responsavelId);
       if(resp){resp.vendas=(resp.vendas||0)+1;resp.credito=(resp.credito||0)+l.credito;if(window._syncUser) window._syncUser(resp).catch(e=>console.warn(e));}
       if(window._registrarVenda) window._registrarVenda(l, l.responsavelId).catch(e=>console.warn(e));
-      activities.unshift({icon:'ti-circle-check',text:`${l.nome} fechado — ${fmtR(l.credito)}`,time:'Agora'});
+      if(window._saveAtividade)window._saveAtividade('ti-circle-check',`${l.nome} fechado — ${fmtR(l.credito)}`);
       setTimeout(()=>showCelebra(resp?resp.nome:'Vendedor', l.credito), 100);
     }
     if(old==='Fechado / Convertido'&&window._estornarVenda) window._estornarVenda(l).catch(e=>console.warn(e));
     if(etapa==='Perdido'){
-      activities.unshift({icon:'ti-x',text:`${l.nome} marcado como perdido`,time:'Agora'});
+      if(window._saveAtividade)window._saveAtividade('ti-x',`${l.nome} marcado como perdido`);
     }
     if(etapa==='Negociação'){
       // Abre protocolo automaticamente ao entrar em Negociação
@@ -3630,13 +3691,13 @@ function saveLead(){
   leads.push(lead);
   if(window._syncLead) window._syncLead(lead).catch(e=>console.warn(e));
   const resp=users.find(u=>u.id===respId);
-  activities.unshift({icon:'ti-user-plus',text:`Novo lead: ${nome} → ${resp?resp.nome:'—'}`,time:'Agora'});
+  if(window._saveAtividade)window._saveAtividade('ti-user-plus',`Novo lead: ${nome} → ${resp?resp.nome:'—'}`);
   // Se cadastrado já como Fechado, atualiza stats do responsável
   if(lead.etapa==='Fechado / Convertido'){
     const rr=users.find(u=>u.id===respId);
     if(rr){rr.vendas=(rr.vendas||0)+1;rr.credito=(rr.credito||0)+credito;if(window._syncUser) window._syncUser(rr).catch(e=>console.warn(e));}
     if(window._registrarVenda) window._registrarVenda(lead,respId).catch(e=>console.warn(e));
-    activities.unshift({icon:'ti-circle-check',text:`${nome} fechado — ${fmtR(credito)}`,time:'Agora'});
+    if(window._saveAtividade)window._saveAtividade('ti-circle-check',`${nome} fechado — ${fmtR(credito)}`);
     setTimeout(()=>alertarCadastroLance(nome, lead.id), 300);
   }
   closeModal();['fNome','fTel','fObs'].forEach(id=>document.getElementById(id).value='');document.getElementById('fCredito').value='';
@@ -4234,7 +4295,7 @@ function convertToLead(nome,tipo,credito){
   if(!nome){alert('Preencha o nome do cliente.');return;}
   leads.push({id:nextLeadId++,nome,tel:'',tipo,credito,etapa:'Novo lead',origem:'Simulador',responsavelId:(getMe()||users[0]||{}).id||1,data:toDate(),obs:'Convertido via simulador.'});
   const _cl=leads[leads.length-1]; if(window._syncLead) window._syncLead(_cl).catch(e=>console.warn(e));
-  activities.push({icon:'ti-calculator',text:`${nome} convertido via simulador — ${fmtR(credito)}`,time:'Agora'});
+  if(window._saveAtividade)window._saveAtividade('ti-calculator',`${nome} convertido via simulador — ${fmtR(credito)}`);
   showTab('leads',document.querySelectorAll('.nb')[2]);
 }
 
@@ -4325,18 +4386,18 @@ function saveLance(){
   if(window._editandoLanceId){
     const l=lances.find(x=>x.id===window._editandoLanceId);
     if(l){l.leadId=leadId;l.clienteNome=lead.nome;l.valor=valor;l.pct=pct;l.dataOferta=dataOferta;l.assem=assem;l.obs=obs;l._auto=false;if(window._syncLance) window._syncLance(l).catch(e=>console.warn(e));}
-    activities.push({icon:'ti-gavel',text:`Lance atualizado: ${lead.nome} — ${fmtR(valor)} (${pct}%)`,time:'Agora'});
+    if(window._saveAtividade)window._saveAtividade('ti-gavel',`Lance atualizado: ${lead.nome} — ${fmtR(valor)} (${pct}%)`);
   } else {
     // Remove lance auto do mesmo lead se existir
     lances=lances.filter(la=>!(la._auto&&la.leadId===leadId&&!la._removido));
     lances.push({id:nextLanceId++,leadId,clienteNome:lead.nome,valor,pct,dataOferta,assem,obs,ofertado:false});
     if(window._syncLance) window._syncLance(lances[lances.length-1]).catch(e=>console.warn(e));
-    activities.push({icon:'ti-gavel',text:`Lance cadastrado: ${lead.nome} — ${fmtR(valor)} (${pct}%)`,time:'Agora'});
+    if(window._saveAtividade)window._saveAtividade('ti-gavel',`Lance cadastrado: ${lead.nome} — ${fmtR(valor)} (${pct}%)`);
   }
   closeLanceModal();['lValor','lPct','lAssem','lObs'].forEach(id=>document.getElementById(id).value='');
   renderLances();
 }
-function marcarOfertado(id){const l=lances.find(x=>x.id===id);if(l){l.ofertado=true;if(window._syncLance) window._syncLance(l).catch(e=>console.warn(e));activities.push({icon:'ti-gavel',text:`Lance de ${l.clienteNome} ofertado`,time:'Agora'});}renderLances();}
+function marcarOfertado(id){const l=lances.find(x=>x.id===id);if(l){l.ofertado=true;if(window._syncLance) window._syncLance(l).catch(e=>console.warn(e));if(window._saveAtividade)window._saveAtividade('ti-gavel',`Lance de ${l.clienteNome} ofertado`);}renderLances();}
 function removeLance(id){if(!confirm('Remover lance?'))return;const l=lances.find(x=>x.id===id);if(l&&l._auto){l._removido=true;if(window._syncLance) window._syncLance(l).catch(e=>console.warn(e));}else{if(l?.sb_id){window._sb&&window._sb.from('lances').delete().eq('id',l.sb_id).catch(e=>console.warn(e));}lances=lances.filter(x=>x.id!==id);}renderLances();}
 
 // ─── RANKING ──────────────────────────────────────────────────────────────────
@@ -4555,7 +4616,7 @@ function addMinhaVenda(){
   if(!me){alert('Usuário não identificado.');return;}
   me.vendas++;
   me.credito+=val;
-  activities.unshift({icon:'ti-trophy',text:`${me.nome} registrou venda de ${fmtR(val)}`,time:'Agora'});
+  if(window._saveAtividade)window._saveAtividade('ti-trophy',`${me.nome} registrou venda de ${fmtR(val)}`,me.sb_id);
   if(window._syncUser) window._syncUser(me);
   document.getElementById('vval-me').value='';
   try{renderRanking();}catch(e){}
@@ -4573,7 +4634,7 @@ function addVenda(){
   if(u){
     u.vendas++;
     u.credito+=val;
-    activities.unshift({icon:'ti-trophy',text:`${u.nome} registrou venda de ${fmtR(val)}`,time:'Agora'});
+    if(window._saveAtividade)window._saveAtividade('ti-trophy',`${u.nome} registrou venda de ${fmtR(val)}`,u.sb_id);
     // Sincroniza venda com Supabase (ranking atualiza para todos em tempo real)
     if(window._syncUser) window._syncUser(u);
   }
@@ -4586,7 +4647,7 @@ function addVenda(){
       lead.etapa='Fechado / Convertido';
       lead.credito=val||lead.credito;
       if(u) lead.responsavelId=u.id;
-      activities.unshift({icon:'ti-circle-check',text:`${lead.nome} fechado — ${fmtR(lead.credito)}`,time:'Agora'});
+      if(window._saveAtividade)window._saveAtividade('ti-circle-check',`${lead.nome} fechado — ${fmtR(lead.credito)}`);
     }
     sls.value='';
   }
@@ -4602,7 +4663,7 @@ function addVenda(){
 function resetRanking(){
   if(!confirm(`Resetar o ranking de ${mesAtual()}?`))return;
   users.forEach(u=>{u.vendas=0;u.credito=0;if(window._syncUser)window._syncUser(u);});
-  activities.push({icon:'ti-refresh',text:`Ranking resetado para novo mês`,time:'Agora'});renderRanking();
+  if(window._saveAtividade)window._saveAtividade('ti-refresh',`Ranking resetado para novo mês`);renderRanking();
 }
 let tvFilter=3;
 let tvTheme='dark';
@@ -6412,7 +6473,7 @@ function calAgendar(){
   const novoEvt={id:nextEventoId++,leadId:lid,leadNome:lead?lead.nome:'—',tipo,data,horaIni:hi,horaFim:hf,obs};
   eventos.push(novoEvt);
   if(window._syncEvento) window._syncEvento(novoEvt).catch(e=>console.warn(e));
-  activities.unshift({icon:'ti-calendar-check',text:`Reunião agendada com ${lead?lead.nome:'cliente'} — ${data.split('-').reverse().join('/')} ${hi}`,time:'Agora'});
+  if(window._saveAtividade)window._saveAtividade('ti-calendar-check',`Reunião agendada com ${lead?lead.nome:'cliente'} — ${data.split('-').reverse().join('/')} ${hi}`);
   renderCalendario();
   showToast('Evento agendado! Deseja gerar o protocolo?', 'ti-calendar');
   // Pergunta se quer gerar protocolo
@@ -6540,7 +6601,7 @@ function waDemoSend(){
   const msg=document.getElementById('wa-msg').value.trim();
   if(!msg){alert('Escreva a mensagem antes de disparar.');return;}
   showToast(`Disparo simulado para ${n} lead(s) — integração real ativa após deploy.`, 'ti-brand-whatsapp');
-  activities.unshift({icon:'ti-brand-whatsapp',text:`Disparo demo: ${n} mensagens enviadas via WhatsApp`,time:'Agora'});
+  if(window._saveAtividade)window._saveAtividade('ti-brand-whatsapp',`Disparo demo: ${n} mensagens enviadas via WhatsApp`);
 }
 function openWaConnect(){
   const sel=document.getElementById('wa-user-sel');
@@ -6681,7 +6742,7 @@ function distribuirLeads() {
   if(!selectedLeads.size){alert('Selecione pelo menos um lead.');return;}
   const dest = users.find(u=>u.id===destId);
   leads.forEach(l=>{if(selectedLeads.has(l.id))l.responsavelId=destId;});
-  activities.unshift({icon:'ti-arrows-exchange',text:`${selectedLeads.size} lead${selectedLeads.size!==1?'s':''} distribuído${selectedLeads.size!==1?'s':''} para ${dest?.nome}`,time:'Agora'});
+  if(window._saveAtividade)window._saveAtividade('ti-arrows-exchange',`${selectedLeads.size} lead${selectedLeads.size!==1?'s':''} distribuído${selectedLeads.size!==1?'s':''} para ${dest?.nome}`);
   alert(`✅ ${selectedLeads.size} lead(s) distribuído(s) para ${dest?.nome}!`);
   toggleDistrib();
 }
@@ -7201,7 +7262,7 @@ function saveEditUser() {
   closeEditUser();
   renderUserList();
   renderRanking();
-  activities.unshift({icon:'ti-user-edit',text:`Perfil de ${nome} atualizado`,time:'Agora'});
+  if(window._saveAtividade)window._saveAtividade('ti-user-edit',`Perfil de ${nome} atualizado`);
   // toast
   const t=document.createElement('div');
   t.style.cssText='position:fixed;bottom:24px;right:24px;background:#017A45;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.4)';
@@ -7276,7 +7337,7 @@ function addPessoaRanking(){
   setTimeout(()=>t.remove(),3000);
   renderRanking();
   populateSelects();
-  activities.unshift({icon:'ti-user-plus',text:nome+' adicionado ao ranking',time:'Agora'});
+  if(window._saveAtividade)window._saveAtividade('ti-user-plus',nome+' adicionado ao ranking');
 }
 
 
