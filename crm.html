@@ -3025,7 +3025,9 @@ function _getMeRole(){
 }
 function _hasTabPerm(me,permKey){
   if(!permKey) return true;
-  if(!me) return false; // FIX bug#10: usuário não identificado = sem acesso
+  if(!me) return false;
+  // Configurações: todo usuário autenticado pode acessar (para editar próprio perfil/foto/senha)
+  if(permKey==='config') return true;
   // Permissão individual explicitamente negada → bloqueia
   if(me.perms&&me.perms[permKey]===false) return false;
   // Permissão da hierarquia explicitamente negada → bloqueia (a menos que individual seja true)
@@ -5534,8 +5536,15 @@ function cfgShow(id){cfgActive=id;renderConfig();}
 function renderConfig(){
   const nav=document.getElementById('cfg-nav');
   if(!nav)return;
+  const meC=getMe();
+  const isAdmin=meC&&(meC.role==='master'||meC.role==='gestor'||meC.role==='superadmin');
+  const adminOnlySections=['admins','usuarios','equipes','hierarquia'];
+  // Se a seção ativa é admin-only e o usuário não é admin, redireciona para conta
+  if(!isAdmin&&adminOnlySections.includes(cfgActive)) cfgActive='conta';
   let nh='';
   CFG_SECTIONS.forEach(s=>{
+    // Esconde seções administrativas para não-admins
+    if(!isAdmin&&adminOnlySections.includes(s.id)) return;
     if(s.group) nh+=`<div class="cfg-nav-group">${s.group}</div>`;
     nh+=`<div class="cfg-nav-item${cfgActive===s.id?' active':''}" onclick="cfgShow('${s.id}')"><i class="ti ${s.icon}"></i>${s.label}</div>`;
   });
