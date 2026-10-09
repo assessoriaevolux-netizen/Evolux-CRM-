@@ -105,14 +105,43 @@
     const role=session.user.user_metadata?.role||'vendedor';
     const meta=session.user.user_metadata?.meta||500000;
 
-    // Garante que o profile do usuário logado existe
+    // Garante que o profile do usuário logado existe e tem empresa_id
     try{
-      const {data:existing}=await window._sb.from('profiles').select('id').eq('id',session.user.id).single();
+      const {data:existing}=await window._sb.from('profiles').select('*').eq('id',session.user.id).single();
+      let empresaIdToUse = existing?.empresa_id || null;
+
       if(!existing){
-        await window._sb.from('profiles').upsert({
+        // Cria profile novo
+        const {data:newProf}=await window._sb.from('profiles').upsert({
           id:session.user.id,email,nome,role,meta,vendas:0,credito:0
-        },{onConflict:'id'});
+        },{onConflict:'id'}).select().single();
+        if(newProf) empresaIdToUse = newProf.empresa_id || null;
       }
+
+      // Se não tem empresa_id, cria empresa automaticamente para este usuário
+      if(!empresaIdToUse){
+        console.log('[profilesLoad] sem empresa_id, criando empresa automaticamente...');
+        const nomeEmpresa = nome || email?.split('@')[0] || 'Minha Empresa';
+        const {data:novaEmpresa,error:errEmp}=await window._sb.from('empresas').insert({
+          nome: nomeEmpresa,
+          plano: 'basico',
+          ativo: true
+        }).select().single();
+        if(!errEmp && novaEmpresa){
+          empresaIdToUse = novaEmpresa.id;
+          console.log('[profilesLoad] empresa criada:', empresaIdToUse);
+          // Vincula profile à empresa recém-criada
+          await window._sb.from('profiles').update({
+            empresa_id: empresaIdToUse
+          }).eq('id', session.user.id);
+        }else{
+          console.warn('[profilesLoad] erro ao criar empresa:', errEmp);
+        }
+      }
+
+      // Guarda empresa_id globalmente para uso imediato antes do _initCRM
+      if(empresaIdToUse) window._empresaIdDireto = empresaIdToUse;
+
     }catch(e){console.warn('Profile upsert:',e);}
 
     // Carrega TODOS os profiles agora (antes do init renderizar)
@@ -151,7 +180,20 @@
   // ── 3. Salva/atualiza um user no Supabase ─────────────────────────────────
   window._syncUser=async function(u){
     if(!u||!u.email)return;
+    // Garante que sb_id está correto — usa o auth UID se for o usuário atual
+    if((!u.sb_id || u.sb_id.length < 10) && window._currentUserId && u.email===window._session?.user?.email){
+      u.sb_id = window._currentUserId;
+    }
+    const hasSbId = u.sb_id && typeof u.sb_id === 'string' && u.sb_id.length > 10;
+    // Se ainda não tem sb_id, não conseguimos salvar com segurança
+    if(!hasSbId){
+      console.warn('[_syncUser] sb_id inválido para', u.email, '— abortando');
+      return;
+    }
+    // Garante empresa_id
+    if(!u.empresaId && window._empresaIdDireto) u.empresaId = window._empresaIdDireto;
     const payload={
+      id: u.sb_id, // SEMPRE inclui o UUID correto
       email:u.email,
       nome:u.nome,
       role:u.role||'vendedor',
@@ -161,22 +203,21 @@
       vendas:u.vendas||0,
       credito:u.credito||0,
       foto_url:u.foto||null,
-      empresa_id:u.empresaId||null,
+      empresa_id:u.empresaId||window._empresaIdDireto||null,
       perms:u.perms?JSON.stringify(u.perms):null,
       hperms:u.hperms?JSON.stringify(u.hperms):null,
       updated_at:new Date().toISOString()
     };
-    // sb_id só vai no payload se for uma UUID real (não undefined/null/string vazia)
-    const hasSbId = u.sb_id && typeof u.sb_id === 'string' && u.sb_id.length > 10;
-    if(hasSbId) payload.id=u.sb_id;
     if(u.whatsapp!==undefined) payload.whatsapp=u.whatsapp||null;
-    const conflict = hasSbId ? 'id' : 'email';
-    console.log('[_syncUser] upserting conflict='+conflict, {id:payload.id, email:payload.email});
-    const {data,error}=await window._sb.from('profiles').upsert(payload,{onConflict:conflict}).select().single();
+    console.log('[_syncUser] upserting id='+payload.id, 'email='+payload.email, 'empresa_id='+payload.empresa_id);
+    const {data,error}=await window._sb.from('profiles').upsert(payload,{onConflict:'id'}).select().single();
     if(error){console.warn('Erro ao salvar profile:',error);return;}
     if(data){
       u.sb_id=data.id;
-      if(data.empresa_id) u.empresaId=data.empresa_id;
+      if(data.empresa_id){
+        u.empresaId=data.empresa_id;
+        if(!window._empresaIdDireto) window._empresaIdDireto=data.empresa_id;
+      }
     }
   };
 
@@ -573,16 +614,21 @@
 
   // ── Helper: retorna empresaId do usuário logado, com fallback ao Supabase ───
   window._getEmpresaId = async function() {
+    // Prioridade 1: direto do profilesLoad (mais rápido)
+    if (window._empresaIdDireto) return window._empresaIdDireto;
+    // Prioridade 2: do usuário local
     const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
     if (me?.empresaId) return me.empresaId;
     // Fallback: fetch from DB
     try {
       const {data} = await window._sb.from('profiles').select('empresa_id').eq('id', window._currentUserId).single();
       if (data?.empresa_id) {
+        window._empresaIdDireto = data.empresa_id; // cache
         if (me) me.empresaId = data.empresa_id;
         return data.empresa_id;
       }
     } catch(e) {}
+    console.warn('[_getEmpresaId] empresa_id não encontrado para uid:', window._currentUserId);
     return null;
   };
 
@@ -7426,10 +7472,17 @@ async function _initCRM(){
   const meCheck = users.find(u => u.sb_id === _uid || u.email === _email);
   if(meCheck){
     if(_uid) meCheck.sb_id = _uid; // sempre força o auth UID correto
+    // Aplica empresa_id do profilesLoad se disponível
+    if(!meCheck.empresaId && window._empresaIdDireto){
+      meCheck.empresaId = window._empresaIdDireto;
+    }
     if(!meCheck.empresaId){
       try{
         const {data:profData}=await window._sb.from('profiles').select('empresa_id').eq('id',_uid).single();
-        if(profData?.empresa_id) meCheck.empresaId=profData.empresa_id;
+        if(profData?.empresa_id){
+          meCheck.empresaId=profData.empresa_id;
+          window._empresaIdDireto=profData.empresa_id;
+        }
       }catch(e){}
     }
   }
