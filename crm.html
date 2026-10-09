@@ -129,7 +129,7 @@
 
     // Carrega profiles da empresa do usuário logado (antes do init renderizar)
     try{
-      const _empId=empresaIdExistente||window._empresaIdDireto;
+      const _empId=window._empresaIdDireto;
       let _pq=window._sb.from('profiles').select('*').order('credito',{ascending:false});
       if(_empId) _pq=_pq.eq('empresa_id',_empId);
       const {data,error}=await _pq;
@@ -176,6 +176,11 @@
     // Se ainda não tem sb_id, não conseguimos salvar com segurança
     if(!hasSbId){
       console.warn('[_syncUser] sb_id inválido para', u.email, '— abortando');
+      return;
+    }
+    // RLS: só pode upsert no próprio profile — bloqueia edição de outros usuários via client
+    if(u.sb_id !== window._currentUserId){
+      console.warn('[_syncUser] bloqueado — não pode editar profile de outro usuário via client:', u.email);
       return;
     }
     // Garante empresa_id
