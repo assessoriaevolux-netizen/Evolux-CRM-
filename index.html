@@ -448,7 +448,7 @@ async function fazerCadastroConvite(){
 
   btn.querySelector('.btn-text').textContent = '✓  Conta criada!';
   btn.style.background = 'linear-gradient(135deg,#14532d,#16a34a)';
-  setTimeout(()=>{ window.location.href = 'crm.html'; }, 800);
+  setTimeout(()=>{ window.location.href = 'crm.html?from=login'; }, 800);
 }
 
 function showView(v){
@@ -508,7 +508,7 @@ async function fazerLogin(){
   btn.querySelector('.btn-text').textContent = '✓  Entrando...';
   btn.style.background = 'linear-gradient(135deg,#14532d,#16a34a)';
   btn.style.borderColor = 'transparent';
-  setTimeout(()=>{ window.location.href = 'crm.html'; }, 600);
+  setTimeout(()=>{ window.location.href = 'crm.html?from=login'; }, 600);
 }
 
 async function enviarReset(){
