@@ -127,10 +127,12 @@
 
     }catch(e){console.warn('Profile upsert:',e);}
 
-    // Carrega TODOS os profiles agora (antes do init renderizar)
-    // FIX bug#8: sempre guarda em _pendingProfiles para o init aplicar de forma segura
+    // Carrega profiles da empresa do usuário logado (antes do init renderizar)
     try{
-      const {data,error}=await window._sb.from('profiles').select('*').order('credito',{ascending:false});
+      const _empId=empresaIdExistente||window._empresaIdDireto;
+      let _pq=window._sb.from('profiles').select('*').order('credito',{ascending:false});
+      if(_empId) _pq=_pq.eq('empresa_id',_empId);
+      const {data,error}=await _pq;
       if(!error&&data&&data.length){
         window._pendingProfiles=data; // _initCRM vai aplicar após users estar pronto
       }
@@ -140,7 +142,10 @@
   // ── 2. _loadProfiles: recarrega e re-renderiza (chamado pelo realtime) ─────
   window._loadProfiles=async function(){
     try{
-      const {data,error}=await window._sb.from('profiles').select('*').order('credito',{ascending:false});
+      const _empIdP=window._empresaIdDireto;
+      let _profileQ=window._sb.from('profiles').select('*').order('credito',{ascending:false});
+      if(_empIdP) _profileQ=_profileQ.eq('empresa_id',_empIdP);
+      const {data,error}=await _profileQ;
       if(error||!data||!data.length)return;
       mergeProfilesIntoUsers(data);
       // Re-renderiza tudo com o usuário correto
@@ -263,14 +268,10 @@
 
   window._loadLeads = async function() {
     try {
-      // Master vê todos os leads; outros filtram por empresa
-      const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
-      const isMaster = me?.role === 'master';
+      // Sempre filtra por empresa — isolamento multi-tenant
+      const empresaId = await window._getEmpresaId();
       let query = window._sb.from('leads').select('*').order('created_at', { ascending: false });
-      if (!isMaster) {
-        const empresaId = await window._getEmpresaId();
-        if (empresaId) query = query.eq('empresa_id', empresaId);
-      }
+      if (empresaId) query = query.eq('empresa_id', empresaId);
       const { data, error } = await query;
       if (error || !data) { console.warn('[_loadLeads] erro:', error); return; }
       data.forEach(row => {
@@ -289,7 +290,7 @@
           atendimento: row.atendimento || '',
           obs: row.obs || '',
           data: row.data_criacao ? row.data_criacao.split('-').reverse().join('/') : '',
-          responsavelId: resp ? resp.id : (users[0]?.id || 1),
+          responsavelId: resp ? resp.id : null,
         };
         // Também atualiza _empresaIdDireto se ainda não tiver (aproveita empresa do lead)
         if (row.empresa_id && !window._empresaIdDireto) window._empresaIdDireto = row.empresa_id;
@@ -330,7 +331,10 @@
 
   window._loadLances = async function() {
     try {
-      const { data, error } = await window._sb.from('lances').select('*').order('created_at', { ascending: false });
+      const _empIdL=await window._getEmpresaId();
+      let _lq=window._sb.from('lances').select('*').order('created_at',{ascending:false});
+      if(_empIdL) _lq=_lq.eq('empresa_id',_empIdL);
+      const { data, error } = await _lq;
       if (error || !data) return;
       data.forEach(row => {
         const existing = lances.find(la => la.sb_id === row.id);
@@ -382,7 +386,10 @@
 
   window._loadEquipes = async function() {
     try {
-      const { data, error } = await window._sb.from('equipes').select('*').order('nome');
+      const _empIdEq=await window._getEmpresaId();
+      let _eqQ=window._sb.from('equipes').select('*').order('nome');
+      if(_empIdEq) _eqQ=_eqQ.eq('empresa_id',_empIdEq);
+      const { data, error } = await _eqQ;
       if (error || !data) return;
       data.forEach(row => {
         const existing = equipes.find(e => e.sb_id === row.id);
@@ -431,7 +438,10 @@
 
   window._loadHierarquias = async function() {
     try {
-      const { data, error } = await window._sb.from('hierarquias').select('*').order('ordem');
+      const _empIdH=await window._getEmpresaId();
+      let _hQ=window._sb.from('hierarquias').select('*').order('ordem');
+      if(_empIdH) _hQ=_hQ.eq('empresa_id',_empIdH);
+      const { data, error } = await _hQ;
       if (error || !data || !data.length) return;
       hierarquias.splice(0); // limpa sem quebrar referência
       data.forEach((row, idx) => {
@@ -475,7 +485,10 @@
 
   window._loadAdministradoras = async function() {
     try {
-      const { data, error } = await window._sb.from('administradoras').select('*').order('nome');
+      const _empIdA=await window._getEmpresaId();
+      let _aQ=window._sb.from('administradoras').select('*').order('nome');
+      if(_empIdA) _aQ=_aQ.eq('empresa_id',_empIdA);
+      const { data, error } = await _aQ;
       if (error || !data || !data.length) return;
       administradoras.splice(0); // limpa sem quebrar referência
       data.forEach((row, idx) => {
@@ -528,7 +541,10 @@
 
   window._loadEventos = async function() {
     try {
-      const { data, error } = await window._sb.from('eventos_calendario').select('*').order('data');
+      const _empIdEv=await window._getEmpresaId();
+      let _evQ=window._sb.from('eventos_calendario').select('*').order('data');
+      if(_empIdEv) _evQ=_evQ.eq('empresa_id',_empIdEv);
+      const { data, error } = await _evQ;
       if (error || !data) return;
       eventos.splice(0); nextEventoId = 1;
       data.forEach(row => {
@@ -654,16 +670,25 @@
 
   // ── 4. Realtime: escuta mudanças na tabela profiles e hierarquias ──────────
   window.addEventListener('load',function(){
-    // Realtime profiles
-    window._sb.channel('profiles-sync')
-      .on('postgres_changes',{event:'*',schema:'public',table:'profiles'},function(){
-        window._loadProfiles();
-      })
-      .subscribe();
+    // Aguarda empresa_id antes de assinar canais para filtrar por empresa
+    const _subscribeRealtime=function(){
+      const _empFilter=window._empresaIdDireto;
+      const _profFilter=_empFilter?`empresa_id=eq.${_empFilter}`:undefined;
 
-    // Realtime hierarquias — atualiza permissões de todos em tempo real
-    window._sb.channel('hierarquias-sync')
-      .on('postgres_changes',{event:'*',schema:'public',table:'hierarquias'},async function(payload){
+      // Realtime profiles (filtrado por empresa)
+      const _profChanOpts={event:'*',schema:'public',table:'profiles'};
+      if(_profFilter) _profChanOpts.filter=_profFilter;
+      window._sb.channel('profiles-sync')
+        .on('postgres_changes',_profChanOpts,function(){
+          window._loadProfiles();
+        })
+        .subscribe();
+
+      // Realtime hierarquias (filtrado por empresa)
+      const _hierChanOpts={event:'*',schema:'public',table:'hierarquias'};
+      if(_profFilter) _hierChanOpts.filter=_profFilter;
+      window._sb.channel('hierarquias-sync')
+        .on('postgres_changes',_hierChanOpts,async function(payload){
         await window._loadHierarquias();
         // Reaplicar hperms de todos os usuários locais com base nas hierarquias atualizadas
         if(window.users && window.hierarquias){
@@ -682,6 +707,17 @@
         console.log('[hierarquias-sync] permissões atualizadas em tempo real');
       })
       .subscribe();
+    }; // fim _subscribeRealtime
+
+    // Tenta assinar imediatamente se empresa_id já disponível, senão aguarda até 3s
+    if(window._empresaIdDireto){
+      _subscribeRealtime();
+    } else {
+      const _rtWait=setInterval(function(){
+        if(window._empresaIdDireto){clearInterval(_rtWait);_subscribeRealtime();}
+      },300);
+      setTimeout(function(){clearInterval(_rtWait);if(!window._empresaIdDireto)_subscribeRealtime();},3000);
+    }
   });
 
   // ── 5. Garante hierarquia padrão para empresa sem hierarquias no banco ─────
@@ -4291,6 +4327,11 @@ function rankAtualizarSidebar(){
 }
 
 function renderRanking(){
+  // Filtro defensivo: só mostra usuários da mesma empresa
+  const _meRk=getMe();
+  const _empRk=_meRk?.empresaId;
+  const _usersRk=_empRk?users.filter(u=>u.empresaId===_empRk):users;
+
   const periodoLabel={hoje:'Hoje',dia:'Hoje',semana:'Esta semana',mes:mesAtual(),custom:rankDataSelecionada?new Date(rankDataSelecionada+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'}):'Data personalizada',semana_passada:'Semana passada',mes_passado:'Mês passado',ultimos_7:'Últimos 7 dias',ultimos_30:'Últimos 30 dias'};
   document.getElementById('rank-month').textContent=periodoLabel[rankPeriodo]||mesAtual();
   document.getElementById('tv-month-title').textContent=periodoLabel[rankPeriodo]||mesAtual();
@@ -4342,14 +4383,14 @@ function renderRanking(){
             </div>
           </div>
         </div>`).join('');
-    const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+users.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+    const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+_usersRk.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
     return;
   }
 
   // ── TODOS OS VENDEDORES VIEW ──────────────────────────
   if(rankView==='todos'){
     if(rtEl)rtEl.style.display='block';
-    const allU=[...users].sort((a,b)=>b.credito-a.credito||b.vendas-a.vendas);
+    const allU=[..._usersRk].sort((a,b)=>b.credito-a.credito||b.vendas-a.vendas);
     if(rtEl)rtEl.innerHTML=allU.length===0
       ?`<div style="padding:52px 24px;text-align:center"><div style="font-size:52px;margin-bottom:14px">👤</div><div style="font-size:15px;font-weight:800;color:var(--tx)">Nenhum vendedor</div></div>`
       :`<div style="overflow-x:auto"><table class="rt-table"><thead><tr>
@@ -4367,12 +4408,12 @@ function renderRanking(){
             <td class="rt-green">${fmtR(u.credito)}</td>
           </tr>`;
         }).join('')}</tbody></table></div>`;
-    const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+users.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+    const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+_usersRk.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
     return;
   }
 
   // ── MINHA LOJA VIEW (default) ─────────────────────────
-  const sorted=[...users].sort((a,b)=>b.credito-a.credito||b.vendas-a.vendas);
+  const sorted=[..._usersRk].sort((a,b)=>b.credito-a.credito||b.vendas-a.vendas);
   const maxC=Math.max(...sorted.map(u=>u.credito),1);
   const medals=['🥇','🥈','🥉'];
 
@@ -4415,7 +4456,7 @@ function renderRanking(){
       <div style="font-size:15px;font-weight:800;color:var(--tx);margin-bottom:6px">Ranking vazio</div>
       <div style="font-size:13px;color:var(--tm)">Cadastre vendedores em Configurações → Usuários para eles aparecerem aqui automaticamente.</div>
     </div>`;
-    const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+users.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+    const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+_usersRk.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
     return;
   }
   rankEl.innerHTML=sorted.map((u,i)=>{
@@ -4472,7 +4513,7 @@ function renderRanking(){
       <div class="tv-info"><div class="tv-name">${u.nome}${i===0?' 👑':''}</div><div class="tv-meta">${u.vendas} venda${u.vendas!==1?'s':''} · ${getHierLabel(u)}</div></div>
       <div><div class="tv-sc">${fmtR(u.credito)}</div><div class="tv-sl">volume</div></div>
     </div>`).join('');
-  const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+users.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+  const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+_usersRk.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
   // Atualiza sidebar de vendas com base no usuário logado
   try{rankAtualizarSidebar();}catch(e){}
 }
@@ -5527,7 +5568,9 @@ function changeRole(userId,newRole){
 }
 function renderUserList(){
   const list=document.getElementById('user-list');if(!list)return;
-  list.innerHTML=users.map(u=>{
+  const _meUL=getMe();const _empUL=_meUL?.empresaId;
+  const _usersUL=_empUL?users.filter(u=>u.empresaId===_empUL):users;
+  list.innerHTML=_usersUL.map(u=>{
     const hier=u.hierarquiaId?getHier(u.hierarquiaId):null;
     const eq=u.equipeId?equipes.find(e=>e.id===u.equipeId):null;
     const avatarStyle=u.foto?`background:url('${u.foto}') center/cover no-repeat`:`background:linear-gradient(135deg,var(--g),var(--gc))`;
@@ -7585,7 +7628,10 @@ async function _initCRM(){
   }
 
   try{
-    const {data}=await window._sb.from('profiles').select('*').order('credito',{ascending:false});
+    const _empIdInit=window._empresaIdDireto;
+    let _initPQ=window._sb.from('profiles').select('*').order('credito',{ascending:false});
+    if(_empIdInit) _initPQ=_initPQ.eq('empresa_id',_empIdInit);
+    const {data}=await _initPQ;
     if(data&&data.length) applyRows(data);
   }catch(e){console.warn('_initCRM profiles fetch:',e);}
   delete window._pendingProfiles;
