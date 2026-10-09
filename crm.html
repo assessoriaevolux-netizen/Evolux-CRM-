@@ -7379,25 +7379,24 @@ async function _initCRM(){
     });
   }
 
-  // Aplica profiles já carregados (via _pendingProfiles)
-  if(window._pendingProfiles){
-    applyRows(window._pendingProfiles);
-    delete window._pendingProfiles;
-  } else {
-    // Fallback: busca direto se _pendingProfiles não chegou
-    try{
-      const {data}=await window._sb.from('profiles').select('*').order('credito',{ascending:false});
-      applyRows(data);
-    }catch(e){console.warn('_initCRM fallback fetch:',e);}
-  }
+  // Sempre busca profiles frescos do Supabase (garante sb_id e empresaId corretos)
+  try{
+    const {data}=await window._sb.from('profiles').select('*').order('credito',{ascending:false});
+    if(data&&data.length) applyRows(data);
+  }catch(e){console.warn('_initCRM profiles fetch:',e);}
+  // Limpa pendingProfiles pois já aplicamos acima
+  delete window._pendingProfiles;
 
-  // Garante que o usuário atual tem empresaId definido após o merge
-  const meCheck = window.users.find(u => u.sb_id === window._currentUserId);
-  if (meCheck && !meCheck.empresaId) {
-    try {
-      const {data: profData} = await window._sb.from('profiles').select('empresa_id').eq('id', window._currentUserId).single();
-      if (profData?.empresa_id) meCheck.empresaId = profData.empresa_id;
-    } catch(e) {}
+  // Garante que o usuário atual tem sb_id e empresaId definidos
+  const meCheck = window.users.find(u => u.sb_id === window._currentUserId || u.email === window._session?.user?.email);
+  if(meCheck){
+    if(!meCheck.sb_id) meCheck.sb_id = window._currentUserId;
+    if(!meCheck.empresaId){
+      try{
+        const {data:profData}=await window._sb.from('profiles').select('empresa_id').eq('id',window._currentUserId).single();
+        if(profData?.empresa_id) meCheck.empresaId=profData.empresa_id;
+      }catch(e){}
+    }
   }
 
   // Agora renderiza com o usuário correto
