@@ -652,18 +652,23 @@
 
     // Realtime hierarquias — atualiza permissões de todos em tempo real
     window._sb.channel('hierarquias-sync')
-      .on('postgres_changes',{event:'*',schema:'public',table:'hierarquias'},async function(){
+      .on('postgres_changes',{event:'*',schema:'public',table:'hierarquias'},async function(payload){
         await window._loadHierarquias();
         // Reaplicar hperms de todos os usuários locais com base nas hierarquias atualizadas
         if(window.users && window.hierarquias){
           window.users.forEach(u=>{
-            const h=window.hierarquias.find(x=>x.id===u.hierarquiaId||x.sb_id===u.hierarquiaSbId);
+            // u.hierarquiaId guarda o UUID do banco (row.hierarquia_id)
+            // hierarquias locais têm sb_id = UUID do banco
+            const h=window.hierarquias.find(x=>x.sb_id===u.hierarquiaId||x.id===u.hierarquiaId);
             if(h&&h.perms) u.hperms={...h.perms};
           });
         }
-        // Reaplicar nav e renderizar
+        // Reaplicar nav, config e ranking em tempo real
         try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
         try{window.renderConfig&&window.renderConfig();}catch(e){}
+        try{window.renderRanking&&window.renderRanking();}catch(e){}
+        try{window.renderUserList&&window.renderUserList();}catch(e){}
+        console.log('[hierarquias-sync] permissões atualizadas em tempo real');
       })
       .subscribe();
   });
@@ -3086,15 +3091,23 @@ function _getMeRole(){
   // FIX bug#1: nunca usa users[0] como fallback — retorna null se não identificado
   return getMe()||null;
 }
+// Mapa: chave do TAB_PERM_MAP → chave de hperms (permissão mínima para acessar a aba)
+const TAB_TO_HPERM={
+  leads:'leads_view', funil:'funil_view', simulador:'simulador_view',
+  lances:'lances_view', ranking:'ranking_view', relatorios:'relatorios_view',
+  whatsapp:'whatsapp_view', calendario:'agenda_view', config:'config_view'
+};
 function _hasTabPerm(me,permKey){
   if(!permKey) return true;
   if(!me) return false;
   // Configurações: todo usuário autenticado pode acessar (para editar próprio perfil/foto/senha)
   if(permKey==='config') return true;
+  // Traduz a chave de aba para a chave granular de hperms
+  const hpermKey=TAB_TO_HPERM[permKey]||permKey;
   // Permissão individual explicitamente negada → bloqueia
-  if(me.perms&&me.perms[permKey]===false) return false;
+  if(me.perms&&me.perms[hpermKey]===false) return false;
   // Permissão da hierarquia explicitamente negada → bloqueia (a menos que individual seja true)
-  if(me.perms&&me.perms[permKey]!==true&&me.hperms&&me.hperms[permKey]===false) return false;
+  if(me.perms&&me.perms[hpermKey]!==true&&me.hperms&&me.hperms[hpermKey]===false) return false;
   return true;
 }
 function showTab(id,btn){
