@@ -3228,8 +3228,8 @@ function saveLeadDetalhe(){
   const newCredito=unM(document.getElementById('ld-credito').value)||l.credito;
   // Sync user stats se etapa mudou
   if(oldEtapa!==newEtapa){
-    if(oldEtapa==='Fechado / Convertido'){const r=users.find(u=>u.id===l.responsavelId);if(r){r.vendas=Math.max(0,(r.vendas||0)-1);r.credito=Math.max(0,(r.credito||0)-l.credito);}}
-    if(newEtapa==='Fechado / Convertido'){const r=users.find(u=>u.id===newResp);if(r){r.vendas=(r.vendas||0)+1;r.credito=(r.credito||0)+newCredito;}setTimeout(()=>showCelebra(users.find(u=>u.id===newResp)?.nome||'Vendedor',newCredito),100);}
+    if(oldEtapa==='Fechado / Convertido'){const r=users.find(u=>u.id===l.responsavelId);if(r){r.vendas=Math.max(0,(r.vendas||0)-1);r.credito=Math.max(0,(r.credito||0)-l.credito);if(window._syncUser) window._syncUser(r).catch(e=>console.warn(e));}if(window._estornarVenda) window._estornarVenda(l).catch(e=>console.warn(e));}
+    if(newEtapa==='Fechado / Convertido'){const r=users.find(u=>u.id===newResp);if(r){r.vendas=(r.vendas||0)+1;r.credito=(r.credito||0)+newCredito;if(window._syncUser) window._syncUser(r).catch(e=>console.warn(e));}if(window._registrarVenda) window._registrarVenda(l,newResp).catch(e=>console.warn(e));setTimeout(()=>showCelebra(users.find(u=>u.id===newResp)?.nome||'Vendedor',newCredito),100);}
     activities.unshift({icon:'ti-arrows-right-left',text:`${nome}: ${oldEtapa} → ${newEtapa}`,time:'Agora'});
   }
   l.nome=nome;l.tel=document.getElementById('ld-tel').value;l.tipo=document.getElementById('ld-tipo').value;
@@ -3283,7 +3283,9 @@ function importarLeadsCSV(input){
       const etapaCSV=obj['etapa']||'';
       const etapaValida=ETAPAS.includes(etapaCSV)?etapaCSV:ETAPAS[0];
       const credito=parseFloat((obj['crédito']||obj['credito']||'0').replace(/[^\d.,]/g,'').replace(',','.'))||0;
-      leads.push({id:nextLeadId++,nome,tel:obj['telefone']||'',tipo:obj['tipo']||'Imóvel',credito,etapa:etapaValida,origem:obj['origem']||'',responsavelId:resp.id,atendimento:obj['atendimento']||'',data:obj['data']||toDate(),obs:obj['observações']||obj['observacoes']||''});
+      const _il={id:nextLeadId++,nome,tel:obj['telefone']||'',tipo:obj['tipo']||'Imóvel',credito,etapa:etapaValida,origem:obj['origem']||'',responsavelId:resp.id,atendimento:obj['atendimento']||'',data:obj['data']||toDate(),obs:obj['observações']||obj['observacoes']||''};
+      leads.push(_il);
+      if(window._syncLead) window._syncLead(_il).catch(e=>console.warn(e));
       imported++;
     }
     input.value='';
@@ -3304,14 +3306,14 @@ function onDrop(e,etapa){
     // Se saindo de "Fechado / Convertido", estorna crédito do responsável
     if(old==='Fechado / Convertido'){
       const resp=users.find(x=>x.id===l.responsavelId);
-      if(resp){resp.vendas=Math.max(0,(resp.vendas||0)-1);resp.credito=Math.max(0,(resp.credito||0)-l.credito);}
+      if(resp){resp.vendas=Math.max(0,(resp.vendas||0)-1);resp.credito=Math.max(0,(resp.credito||0)-l.credito);if(window._syncUser) window._syncUser(resp).catch(e=>console.warn(e));}
     }
     l.etapa=etapa;
     if(window._syncLead) window._syncLead(l).catch(e=>console.warn(e));
     activities.push({icon:'ti-arrows-right-left',text:`${l.nome}: ${old} → ${etapa}`,time:'Agora'});
     if(etapa==='Fechado / Convertido'){
       const resp=users.find(x=>x.id===l.responsavelId);
-      if(resp){resp.vendas=(resp.vendas||0)+1;resp.credito=(resp.credito||0)+l.credito;}
+      if(resp){resp.vendas=(resp.vendas||0)+1;resp.credito=(resp.credito||0)+l.credito;if(window._syncUser) window._syncUser(resp).catch(e=>console.warn(e));}
       if(window._registrarVenda) window._registrarVenda(l, l.responsavelId).catch(e=>console.warn(e));
       activities.unshift({icon:'ti-circle-check',text:`${l.nome} fechado — ${fmtR(l.credito)}`,time:'Agora'});
       setTimeout(()=>showCelebra(resp?resp.nome:'Vendedor', l.credito), 100);
@@ -3389,7 +3391,8 @@ function saveLead(){
   // Se cadastrado já como Fechado, atualiza stats do responsável
   if(lead.etapa==='Fechado / Convertido'){
     const rr=users.find(u=>u.id===respId);
-    if(rr){rr.vendas=(rr.vendas||0)+1;rr.credito=(rr.credito||0)+credito;}
+    if(rr){rr.vendas=(rr.vendas||0)+1;rr.credito=(rr.credito||0)+credito;if(window._syncUser) window._syncUser(rr).catch(e=>console.warn(e));}
+    if(window._registrarVenda) window._registrarVenda(lead,respId).catch(e=>console.warn(e));
     activities.unshift({icon:'ti-circle-check',text:`${nome} fechado — ${fmtR(credito)}`,time:'Agora'});
     setTimeout(()=>alertarCadastroLance(nome, lead.id), 300);
   }
@@ -4000,7 +4003,9 @@ function syncLancesConvertidos(){
   convertidos.forEach(l=>{
     const jaTemLance=lances.some(la=>la.leadId===l.id&&!la._removido);
     if(!jaTemLance){
-      lances.push({id:nextLanceId++,leadId:l.id,clienteNome:l.nome,valor:l.credito||0,pct:0,dataOferta:new Date().toISOString().split('T')[0],assem:mesAtual(),obs:'',ofertado:false,_auto:true});
+      const _al={id:nextLanceId++,leadId:l.id,clienteNome:l.nome,valor:l.credito||0,pct:0,dataOferta:new Date().toISOString().split('T')[0],assem:mesAtual(),obs:'',ofertado:false,_auto:true};
+      lances.push(_al);
+      if(window._syncLance) window._syncLance(_al).catch(e=>console.warn(e));
     }
   });
   // Marca como removido lances automáticos de leads que saíram de convertido
@@ -4088,8 +4093,8 @@ function saveLance(){
   closeLanceModal();['lValor','lPct','lAssem','lObs'].forEach(id=>document.getElementById(id).value='');
   renderLances();
 }
-function marcarOfertado(id){const l=lances.find(x=>x.id===id);if(l){l.ofertado=true;activities.push({icon:'ti-gavel',text:`Lance de ${l.clienteNome} ofertado`,time:'Agora'});}renderLances();}
-function removeLance(id){if(!confirm('Remover lance?'))return;const l=lances.find(x=>x.id===id);if(l&&l._auto){l._removido=true;}else{lances=lances.filter(l=>l.id!==id);}renderLances();}
+function marcarOfertado(id){const l=lances.find(x=>x.id===id);if(l){l.ofertado=true;if(window._syncLance) window._syncLance(l).catch(e=>console.warn(e));activities.push({icon:'ti-gavel',text:`Lance de ${l.clienteNome} ofertado`,time:'Agora'});}renderLances();}
+function removeLance(id){if(!confirm('Remover lance?'))return;const l=lances.find(x=>x.id===id);if(l&&l._auto){l._removido=true;if(window._syncLance) window._syncLance(l).catch(e=>console.warn(e));}else{if(l?.sb_id){window._sb&&window._sb.from('lances').delete().eq('id',l.sb_id).catch(e=>console.warn(e));}lances=lances.filter(x=>x.id!==id);}renderLances();}
 
 // ─── RANKING ──────────────────────────────────────────────────────────────────
 function rankAtualizarSidebar(){
@@ -4622,6 +4627,8 @@ function selectAdmin(id){
 
 function deleteAdmin(id){
   if(!confirm('Remover esta administradora e todos os seus grupos?'))return;
+  const _da=administradoras.find(a=>a.id===id);
+  if(_da?.sb_id&&window._sb) window._sb.from('administradoras').delete().eq('id',_da.sb_id).catch(e=>console.warn(e));
   administradoras=administradoras.filter(a=>a.id!==id);
   if(!administradoras.find(a=>a.ativa)&&administradoras.length)administradoras[0].ativa=true;
   renderAdminList();
@@ -6853,6 +6860,7 @@ function uploadLogoEmpresa(e){
     empresa.logo=ev.target.result;
     const prev=document.getElementById('emp-logo-preview');
     if(prev)prev.innerHTML=`<img src="${empresa.logo}" style="max-width:100%;max-height:100%;object-fit:contain">`;
+    if(window._syncEmpresa) window._syncEmpresa().catch(e=>console.warn(e));
     showToast('Logo da empresa atualizada!','ti-check');
   };
   r.readAsDataURL(file);
@@ -6964,8 +6972,10 @@ function addPessoaRanking(){
   const h=getHier(hierarquiaId);
   const role=h?h.slug:'vendedor';
   const hperms=h?{...h.perms}:{};
-  users.push({id:nextUserId++,nome,email:'',role,managerId:1,hierarquiaId,
-    vendas:0,credito:0,foto,meta:metaRaw,hperms,perms:{...DPERMS[role]||DPERMS.vendedor}});
+  const _newU={id:nextUserId++,nome,email:'',role,managerId:1,hierarquiaId,
+    vendas:0,credito:0,foto,meta:metaRaw,hperms,perms:{...DPERMS[role]||DPERMS.vendedor}};
+  users.push(_newU);
+  if(window._syncUser) window._syncUser(_newU).catch(e=>console.warn(e));
   // limpar form
   if(nomeEl) nomeEl.value='';
   if(metaEl) metaEl.value='';
@@ -7106,12 +7116,14 @@ function saveEquipe(){
 }
 function deleteEquipe(id){
   if(!confirm('Excluir esta equipe?'))return;
+  const _deq=equipes.find(e=>e.id===id);
+  if(_deq?.sb_id&&window._sb) window._sb.from('equipes').delete().eq('id',_deq.sb_id).catch(e=>console.warn(e));
   equipes=equipes.filter(e=>e.id!==id);
   cfgRenderSection();
 }
 function removeMembro(eqId,uid){
   const eq=equipes.find(e=>e.id===eqId);
-  if(eq) eq.membroIds=(eq.membroIds||[]).filter(x=>x!==uid);
+  if(eq){eq.membroIds=(eq.membroIds||[]).filter(x=>x!==uid);if(window._syncEquipe) window._syncEquipe(eq).catch(e=>console.warn(e));}
   cfgRenderSection();
 }
 function toast(msg){
