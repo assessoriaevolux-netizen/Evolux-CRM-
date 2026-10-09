@@ -6533,7 +6533,8 @@ function uploadFoto(e) {
   reader.onload = function(ev) {
     const dataUrl = ev.target.result;
     const _meF=getMe(); if(_meF) _meF.foto = dataUrl; // FIX: nunca acessa users[0]
-    if(window._syncUser&&_meF) window._syncUser(_meF).catch(e=>console.warn(e));
+    if(window._syncUser&&_meF) window._syncUser(_meF).then(()=>updateSbUser()).catch(e=>console.warn(e));
+    updateSbUser();
     // Atualizar preview na seção conta
     const prev = document.getElementById('foto-preview-conta');
     if(prev) prev.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover">`;
@@ -6725,6 +6726,10 @@ async function criarEmpresaConfirm(){
   if(!nome){alert('Informe o nome da empresa.');return;}
   const {data,error}=await window._sb.from('empresas').insert({nome,plano,ativo:true}).select().single();
   if(error){alert('Erro: '+error.message);return;}
+  // Link admin to this new empresa
+  await window._sb.from('profiles').update({empresa_id: data.id}).eq('id', window._currentUserId);
+  const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
+  if(me) me.empresaId = data.id;
   document.getElementById('modal-nova-empresa')?.remove();
   // Gera link de convite com empresa_id
   const base=window.location.origin+window.location.pathname.replace('crm.html','index.html');
