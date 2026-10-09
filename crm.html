@@ -4901,6 +4901,17 @@ async function inviteUser(){
   users.push(newU);
   if(window._syncUser) await window._syncUser(newU); // FIX bug#9: await para garantir persistência
 
+  // Envia email de boas-vindas com credenciais via Edge Function
+  try{
+    const _meEmail=getMe();
+    const empresaEmail=empresas.find(e=>e.id===(_meEmail?.empresaId));
+    fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/send-welcome-email',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${window._session?.access_token||''}`},
+      body:JSON.stringify({nome:nomeVal,email,senha,empresaNome:empresaEmail?.nome||''})
+    }).then(r=>r.json()).then(d=>{if(!d.ok)console.warn('Email não enviado:',d.error);else console.log('Email enviado:',d.id);}).catch(e=>console.warn('Erro email:',e.message));
+  }catch(e){console.warn('Erro ao chamar send-welcome-email:',e.message);}
+
   // Limpa formulário
   document.getElementById('uNome').value='';
   document.getElementById('uEmail').value='';
