@@ -460,7 +460,7 @@
       logo_url: a.logo || null,
       grupos: a.grupos ? JSON.stringify(a.grupos) : null,
       ativa: a.ativa !== false,
-      taxa_fin: a.taxaFin || 1.25,
+      taxa_fin: a.taxaFin || 2.42,
       updated_at: new Date().toISOString()
     };
     if (a.sb_id) {
@@ -486,7 +486,7 @@
           logo: row.logo_url || null,
           grupos: row.grupos ? JSON.parse(row.grupos) : [],
           ativa: row.ativa !== false,
-          taxaFin: parseFloat(row.taxa_fin) || 1.25,
+          taxaFin: parseFloat(row.taxa_fin) || 2.42,
         });
       });
       nextAdminId = administradoras.length + 1;
@@ -2945,7 +2945,7 @@ let empresa={nome:'Minha Empresa',logo:null,whatsapp:'',email:''};
 window.empresa = empresa;
 let administradoras=[];
 window.administradoras = administradoras;
-let taxaFin=1.25,nextAdminId=1;
+let taxaFin=2.42,nextAdminId=1;
 window.nextAdminId = nextAdminId;
 function getAdmin(){return administradoras.find(a=>a.ativa)||administradoras[0]||null;}
 
@@ -3594,7 +3594,7 @@ window._simPrazosDisp=[]; // [{prazo, taxa, linhas:[{credito,p1,de}]}]
 function syncSim(){
   const a=getAdmin();
   const chip=document.getElementById('admin-chip-nome');if(chip)chip.textContent=a?a.nome:'—';
-  const tfEl=document.getElementById('sTaxaFin');if(tfEl)tfEl.value=(taxaFin*12).toFixed(2);
+  const tfEl=document.getElementById('sTaxaFin');if(tfEl)tfEl.value=taxaFin.toFixed(2);
   const sadm=document.getElementById('sAdminSel');
   if(sadm){
     sadm.innerHTML='<option value="">Selecionar administradora...</option><option value="__manual__">✏️ Digitar nome manualmente</option>'+
