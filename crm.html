@@ -62,10 +62,14 @@
   }
 
   // Merge linhas do Supabase no array users local
+  // NOTA: users é variável local do script principal; window.users === users (mesma ref)
   function mergeProfilesIntoUsers(data){
-    if(!window.users||!data||!data.length)return;
+    if(!data||!data.length)return;
+    // Se window.users ainda não está disponível, usa a referência local se possível
+    const arr = window.users || [];
+    if(!arr.length && !window.users) return;
     data.forEach(function(row,idx){
-      const local=window.users.find(u=>u.sb_id===row.id||u.email===row.email);
+      const local=arr.find(u=>u.sb_id===row.id||u.email===row.email);
       if(local){
         local.nome=row.nome||local.nome;
         local.foto=row.foto_url||local.foto;
@@ -75,18 +79,15 @@
         local.role=row.role||local.role;
         local.hierarquiaId=row.hierarquia_id||local.hierarquiaId;
         local.equipeId=row.equipe_id||local.equipeId;
-        local.sb_id=row.id; // garante linkagem
+        local.sb_id=row.id;
         local.empresaId=row.empresa_id||local.empresaId;
-        // FIX bug#11: atualiza permissões do Supabase (admin pode alterar em tempo real)
         if(row.perms){try{local.perms=JSON.parse(row.perms);}catch(e){}}
         if(row.hperms){try{local.hperms=JSON.parse(row.hperms);}catch(e){}}
       } else {
-        // Usuário novo não estava no array local — adiciona
-        const maxId=Math.max(...window.users.map(u=>u.id),99);
+        const maxId=Math.max(...arr.map(u=>u.id),99);
         const newU=sbRowToUser(row,idx);
         newU.id=maxId+1;
-        window.users.push(newU);
-        if(window.nextUserId&&window.nextUserId<=newU.id) window.nextUserId=newU.id+1;
+        arr.push(newU);
       }
     });
   }
@@ -180,15 +181,15 @@
   };
 
   window._syncAllUsers=async function(){
-    if(!window.users)return;
-    for(const u of window.users){await window._syncUser(u);}
+    const arr = window.users || [];
+    for(const u of arr){await window._syncUser(u);}
   };
 
   // ── LEADS ──────────────────────────────────────────────────────────────────
   window._syncLead = async function(lead) {
     const empresaId = await window._getEmpresaId();
-    if (!empresaId) return;
-    const resp = window.users && window.users.find(u => u.id === lead.responsavelId);
+    if (!empresaId) { console.warn('[_syncLead] sem empresaId, abortando'); return; }
+    const resp = users.find(u => u.id === lead.responsavelId);
     const payload = {
       empresa_id: empresaId,
       responsavel_id: resp?.sb_id || null,
@@ -222,12 +223,11 @@
     try {
       const { data, error } = await window._sb.from('leads').select('*').order('created_at', { ascending: false });
       if (error || !data) return;
-      if (!window.users) return;
       data.forEach(row => {
-        const existing = window.leads && window.leads.find(l => l.sb_id === row.id);
-        const resp = window.users.find(u => u.sb_id === row.responsavel_id);
+        const existing = leads.find(l => l.sb_id === row.id);
+        const resp = users.find(u => u.sb_id === row.responsavel_id);
         const mapped = {
-          id: existing ? existing.id : (window.nextLeadId++),
+          id: existing ? existing.id : (nextLeadId++),
           sb_id: row.id,
           nome: row.nome || '',
           tel: row.telefone || '',
@@ -238,23 +238,20 @@
           atendimento: row.atendimento || '',
           obs: row.obs || '',
           data: row.data_criacao ? row.data_criacao.split('-').reverse().join('/') : '',
-          responsavelId: resp ? resp.id : ((window.users[0] || {}).id || 1),
+          responsavelId: resp ? resp.id : (users[0]?.id || 1),
         };
-        if (existing) {
-          Object.assign(existing, mapped);
-        } else {
-          if (!window.leads) window.leads = [];
-          window.leads.push(mapped);
-        }
+        if (existing) { Object.assign(existing, mapped); }
+        else { leads.push(mapped); }
       });
+      window.nextLeadId = nextLeadId;
     } catch(e) { console.warn('loadLeads error:', e); }
   };
 
   // ── LANCES ─────────────────────────────────────────────────────────────────
   window._syncLance = async function(lance) {
     const empresaId = await window._getEmpresaId();
-    if (!empresaId) return;
-    const lead = window.leads && window.leads.find(l => l.id === lance.leadId);
+    if (!empresaId) { console.warn('[_syncLance] sem empresaId, abortando'); return; }
+    const lead = leads.find(l => l.id === lance.leadId);
     const payload = {
       empresa_id: empresaId,
       lead_id: lead?.sb_id || null,
@@ -283,10 +280,10 @@
       const { data, error } = await window._sb.from('lances').select('*').order('created_at', { ascending: false });
       if (error || !data) return;
       data.forEach(row => {
-        const existing = window.lances && window.lances.find(la => la.sb_id === row.id);
-        const lead = window.leads && window.leads.find(l => l.sb_id === row.lead_id);
+        const existing = lances.find(la => la.sb_id === row.id);
+        const lead = leads.find(l => l.sb_id === row.lead_id);
         const mapped = {
-          id: existing ? existing.id : (window.nextLanceId++),
+          id: existing ? existing.id : (nextLanceId++),
           sb_id: row.id,
           leadId: lead ? lead.id : null,
           clienteNome: row.cliente_nome || '',
@@ -299,17 +296,18 @@
           _removido: row.removido || false,
         };
         if (existing) { Object.assign(existing, mapped); }
-        else { if (!window.lances) window.lances = []; window.lances.push(mapped); }
+        else { lances.push(mapped); }
       });
+      window.nextLanceId = nextLanceId;
     } catch(e) { console.warn('loadLances error:', e); }
   };
 
   // ── EQUIPES ────────────────────────────────────────────────────────────────
   window._syncEquipe = async function(equipe) {
     const empresaId = await window._getEmpresaId();
-    if (!empresaId) return;
+    if (!empresaId) { console.warn('[_syncEquipe] sem empresaId, abortando'); return; }
     const membros = (equipe.membroIds || []).map(mid => {
-      const u = window.users && window.users.find(x => x.id === mid);
+      const u = users.find(x => x.id === mid);
       return u?.sb_id || null;
     }).filter(Boolean);
     const payload = {
@@ -334,21 +332,22 @@
       const { data, error } = await window._sb.from('equipes').select('*').order('nome');
       if (error || !data) return;
       data.forEach(row => {
-        const existing = window.equipes && window.equipes.find(e => e.sb_id === row.id);
+        const existing = equipes.find(e => e.sb_id === row.id);
         const membroIds = (row.membros_sb_ids || []).map(sbId => {
-          const u = window.users && window.users.find(x => x.sb_id === sbId);
+          const u = users.find(x => x.sb_id === sbId);
           return u ? u.id : null;
         }).filter(Boolean);
         const mapped = {
-          id: existing ? existing.id : (window.nextEquipeId++),
+          id: existing ? existing.id : (nextEquipeId++),
           sb_id: row.id,
           nome: row.nome || '',
           descricao: row.descricao || '',
           membroIds,
         };
         if (existing) { Object.assign(existing, mapped); }
-        else { if (!window.equipes) window.equipes = []; window.equipes.push(mapped); }
+        else { equipes.push(mapped); }
       });
+      window.nextEquipeId = nextEquipeId;
     } catch(e) { console.warn('loadEquipes error:', e); }
   };
 
@@ -381,17 +380,20 @@
     try {
       const { data, error } = await window._sb.from('hierarquias').select('*').order('ordem');
       if (error || !data || !data.length) return;
-      window.hierarquias = data.map((row, idx) => ({
-        id: idx + 1,
-        sb_id: row.id,
-        slug: row.slug || '',
-        nome: row.nome || '',
-        descricao: row.descricao || '',
-        ordem: row.ordem || idx + 1,
-        superiorId: row.superior_id || null,
-        status: row.status || 'ativa',
-        perms: row.perms ? JSON.parse(row.perms) : {},
-      }));
+      hierarquias.splice(0); // limpa sem quebrar referência
+      data.forEach((row, idx) => {
+        hierarquias.push({
+          id: idx + 1,
+          sb_id: row.id,
+          slug: row.slug || '',
+          nome: row.nome || '',
+          descricao: row.descricao || '',
+          ordem: row.ordem || idx + 1,
+          superiorId: row.superior_id || null,
+          status: row.status || 'ativa',
+          perms: row.perms ? JSON.parse(row.perms) : {},
+        });
+      });
     } catch(e) { console.warn('loadHierarquias error:', e); }
   };
 
@@ -422,24 +424,28 @@
     try {
       const { data, error } = await window._sb.from('administradoras').select('*').order('nome');
       if (error || !data || !data.length) return;
-      window.administradoras = data.map((row, idx) => ({
-        id: idx + 1,
-        sb_id: row.id,
-        nome: row.nome || '',
-        logo: row.logo_url || null,
-        grupos: row.grupos ? JSON.parse(row.grupos) : [],
-        ativa: row.ativa !== false,
-        taxaFin: parseFloat(row.taxa_fin) || 1.25,
-      }));
-      window.nextAdminId = window.administradoras.length + 1;
+      administradoras.splice(0); // limpa sem quebrar referência
+      data.forEach((row, idx) => {
+        administradoras.push({
+          id: idx + 1,
+          sb_id: row.id,
+          nome: row.nome || '',
+          logo: row.logo_url || null,
+          grupos: row.grupos ? JSON.parse(row.grupos) : [],
+          ativa: row.ativa !== false,
+          taxaFin: parseFloat(row.taxa_fin) || 1.25,
+        });
+      });
+      nextAdminId = administradoras.length + 1;
+      window.nextAdminId = nextAdminId;
     } catch(e) { console.warn('loadAdministradoras error:', e); }
   };
 
   // ── EVENTOS DO CALENDÁRIO ──────────────────────────────────────────────────
   window._syncEvento = async function(ev) {
     const empresaId = await window._getEmpresaId();
-    if (!empresaId) return;
-    const lead = window.leads && window.leads.find(l => l.id === ev.leadId);
+    if (!empresaId) { console.warn('[_syncEvento] sem empresaId, abortando'); return; }
+    const lead = leads.find(l => l.id === ev.leadId);
     const payload = {
       empresa_id: empresaId,
       user_id: window._currentUserId || null,
@@ -471,12 +477,11 @@
     try {
       const { data, error } = await window._sb.from('eventos_calendario').select('*').order('data');
       if (error || !data) return;
-      window.eventos = [];
-      window.nextEventoId = 1;
+      eventos.splice(0); nextEventoId = 1;
       data.forEach(row => {
-        const lead = window.leads && window.leads.find(l => l.sb_id === row.lead_id);
-        window.eventos.push({
-          id: window.nextEventoId++,
+        const lead = leads.find(l => l.sb_id === row.lead_id);
+        eventos.push({
+          id: nextEventoId++,
           sb_id: row.id,
           leadId: lead ? lead.id : null,
           leadNome: row.lead_nome || '',
@@ -487,6 +492,7 @@
           obs: row.obs || '',
         });
       });
+      window.nextEventoId = nextEventoId;
     } catch(e) { console.warn('loadEventos error:', e); }
   };
 
@@ -494,7 +500,7 @@
   window._registrarVenda = async function(lead, userId) {
     const empresaId = await window._getEmpresaId();
     if (!empresaId) return;
-    const user = window.users && window.users.find(u => u.id === userId);
+    const user = users.find(u => u.id === userId);
     await window._sb.from('vendas').insert({
       empresa_id: empresaId,
       user_id: user?.sb_id || null,
@@ -525,8 +531,8 @@
 
   window._loadEmpresa = async function() {
     try {
-      const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
-      const empresaId = me?.empresaId || null;
+      // usa _getEmpresaId que já tem fallback ao banco
+      const empresaId = await window._getEmpresaId();
       if (!empresaId) return;
       const { data, error } = await window._sb.from('empresas').select('*').eq('id', empresaId).single();
       if (error || !data) return;
@@ -541,14 +547,11 @@
 
   // ── CARREGAMENTO INICIAL COMPLETO ──────────────────────────────────────────
   window._loadAllData = async function() {
-    window.leads = [];
-    window.nextLeadId = 1;
-    window.lances = [];
-    window.nextLanceId = 1;
-    window.equipes = [];
-    window.nextEquipeId = 1;
-    window.eventos = [];
-    window.nextEventoId = 1;
+    // Limpa os arrays SEM trocar a referência (splice preserva window.X === localVar)
+    leads.splice(0); window.nextLeadId = 1; nextLeadId = 1;
+    lances.splice(0); window.nextLanceId = 1; nextLanceId = 1;
+    equipes.splice(0); window.nextEquipeId = 1; nextEquipeId = 1;
+    eventos.splice(0); window.nextEventoId = 1; nextEventoId = 1;
 
     await window._loadEmpresa().catch(e=>console.warn('[_loadAllData] loadEmpresa error:',e));
     await window._loadHierarquias().catch(e=>console.warn('[_loadAllData] loadHierarquias error:',e));
@@ -2781,6 +2784,7 @@ let hierarquias=[
   {id:4,slug:'vendedor',nome:'Vendedor',descricao:'Responsável pelas vendas',ordem:4,superiorId:3,status:'ativa',
    perms:{...HPERM_DEFAULTS.vendedor}},
 ];
+window.hierarquias = hierarquias; // mesma referência
 let nextHierArquiaId=5;
 
 function getHier(id){return hierarquias.find(h=>h.id===id);}
@@ -2800,27 +2804,36 @@ function applyHierToAll(hId){
 // ─── ESTADO ───────────────────────────────────────────────────────────────────
 // Estrutura nova: cada administradora tem grupos com crédito, prazo, vagas
 let empresa={nome:'Minha Empresa',logo:null,whatsapp:'',email:''};
+window.empresa = empresa;
 let administradoras=[];
+window.administradoras = administradoras;
 let taxaFin=1.25,nextAdminId=1;
+window.nextAdminId = nextAdminId;
 function getAdmin(){return administradoras.find(a=>a.ativa)||administradoras[0]||null;}
 
 let users=[
   {id:1,nome:'Erick',email:'assessoriaevolux@gmail.com',role:'master',managerId:null,vendas:0,credito:0,foto:null,meta:500000,hierarquiaId:1,empresaId:null,perms:{...DPERMS.gestor},hperms:{...HPERM_DEFAULTS.gestor}},
 ];
-window.users = users; // garante que window.users aponta pro mesmo array
+window.users = users; // mesma referência — window.users === users
 let nextUserId=2;
 window.nextUserId = nextUserId;
 let equipes=[];
+window.equipes = equipes;
 let nextEquipeId=1;
+window.nextEquipeId = nextEquipeId;
 let rankView='loja';
 
 let leads=[];
+window.leads = leads; // mesma referência — window.leads === leads
 let nextLeadId=1;
+window.nextLeadId = nextLeadId;
 
 let activities=[];
 
 let lances=[];
+window.lances = lances; // mesma referência — window.lances === lances
 let nextLanceId=1;
+window.nextLanceId = nextLanceId;
 let dragId=null;
 let waNumbers=[];
 let waSelected=new Set();
@@ -6070,12 +6083,10 @@ function renderRelatorios(){
 
 // ─── CALENDÁRIO ───────────────────────────────────────────────────────────────
 let calYear=new Date().getFullYear(),calMonth=new Date().getMonth();
-let eventos=[
-  {id:1,leadId:1,leadNome:'Ana Paula Ferreira',tipo:'reuniao',data:'2026-09-10',horaIni:'10:00',horaFim:'11:00',obs:'Apresentar proposta de imóvel'},
-  {id:2,leadId:2,leadNome:'Carlos Mendes',tipo:'followup',data:'2026-09-15',horaIni:'14:00',horaFim:'14:30',obs:'Follow-up sobre SUV'},
-  {id:3,leadId:3,leadNome:'Fernanda Lima',tipo:'lance',data:'2026-09-20',horaIni:'09:00',horaFim:'09:30',obs:'Lance embutido assembléia'},
-];
-let nextEventoId=4;
+let eventos=[];
+window.eventos = eventos; // mesma referência
+let nextEventoId=1;
+window.nextEventoId = nextEventoId;
 
 function renderCalendario(){
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
