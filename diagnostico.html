@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Diagnóstico Evolux CRM</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+body{font-family:monospace;background:#0a0a0a;color:#00ff88;padding:20px;font-size:13px}
+h2{color:#fff}
+.ok{color:#00ff88}.err{color:#ff4444}.warn{color:#ffaa00}.info{color:#88aaff}
+pre{background:#111;padding:12px;border-radius:6px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+button{background:#1db954;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;margin:4px;font-size:13px}
+button:hover{background:#17a348}
+.section{border:1px solid #333;border-radius:8px;padding:16px;margin:16px 0}
+</style>
+</head>
+<body>
+<h2>🔍 Diagnóstico Evolux CRM</h2>
+<div id="out"></div>
+
+<script>
+const SB_URL='https://uekeeutycmqsswrhspwv.supabase.co';
+const SB_KEY='sb_publishable_nJ-BnFkD8sG8mv4f7Uc-Uw_v87ZOIl9';
+const sb = supabase.createClient(SB_URL, SB_KEY);
+
+const out = document.getElementById('out');
+function log(msg, cls='') {
+  const d = document.createElement('div');
+  d.className = cls;
+  d.innerHTML = msg;
+  out.appendChild(d);
+}
+function section(title) {
+  const d = document.createElement('div');
+  d.className = 'section';
+  d.innerHTML = `<h3 style="margin:0 0 10px;color:#fff">${title}</h3>`;
+  out.appendChild(d);
+  return d;
+}
+
+async function run() {
+  out.innerHTML = '';
+  log('<h3>Iniciando diagnóstico...</h3>');
+
+  // 1. Sessão atual
+  const s = section('1. Sessão / Usuário logado');
+  const {data:{session}} = await sb.auth.getSession();
+  if (!session) {
+    s.innerHTML += '<div class="err">❌ Sem sessão ativa. <a href="index.html" style="color:#1db954">Faça login primeiro</a></div>';
+    return;
+  }
+  const uid = session.user.id;
+  const email = session.user.email;
+  s.innerHTML += `<div class="ok">✅ Logado como: <strong>${email}</strong></div>`;
+  s.innerHTML += `<div class="info">UID: ${uid}</div>`;
+
+  // 2. Profile no banco
+  const s2 = section('2. Profile no Supabase');
+  const {data:prof, error:profErr} = await sb.from('profiles').select('*').eq('id', uid).single();
+  if (profErr || !prof) {
+    s2.innerHTML += `<div class="err">❌ Profile não encontrado: ${profErr?.message}</div>`;
+  } else {
+    s2.innerHTML += `<pre>${JSON.stringify(prof, null, 2)}</pre>`;
+    if (!prof.empresa_id) {
+      s2.innerHTML += `<div class="err">❌ empresa_id é NULL — esse é o problema principal!</div>`;
+    } else {
+      s2.innerHTML += `<div class="ok">✅ empresa_id: ${prof.empresa_id}</div>`;
+    }
+  }
+
+  // 3. Todas as empresas
+  const s3 = section('3. Empresas no banco');
+  const {data:emps, error:empErr} = await sb.from('empresas').select('*').order('created_at');
+  if (empErr) {
+    s3.innerHTML += `<div class="err">❌ Erro ao listar empresas: ${empErr.message}</div>`;
+  } else if (!emps || !emps.length) {
+    s3.innerHTML += `<div class="warn">⚠️ Nenhuma empresa no banco!</div>`;
+  } else {
+    s3.innerHTML += `<div class="ok">✅ ${emps.length} empresa(s):</div>`;
+    s3.innerHTML += `<pre>${JSON.stringify(emps, null, 2)}</pre>`;
+  }
+
+  // 4. Todos os leads
+  const s4 = section('4. Leads no banco (todos)');
+  const {data:leads, error:leadErr} = await sb.from('leads').select('*').order('created_at', {ascending:false}).limit(20);
+  if (leadErr) {
+    s4.innerHTML += `<div class="err">❌ Erro ao listar leads: ${leadErr.message}</div>`;
+  } else if (!leads || !leads.length) {
+    s4.innerHTML += `<div class="warn">⚠️ Nenhum lead no banco — os leads não estão sendo salvos!</div>`;
+  } else {
+    s4.innerHTML += `<div class="ok">✅ ${leads.length} lead(s) no banco:</div>`;
+    s4.innerHTML += `<pre>${JSON.stringify(leads.map(l=>({id:l.id,nome:l.nome,empresa_id:l.empresa_id,etapa:l.etapa,created_at:l.created_at})), null, 2)}</pre>`;
+  }
+
+  // 5. Teste de INSERT direto
+  const s5 = section('5. Teste de INSERT direto no banco');
+  if (!prof?.empresa_id && emps?.length) {
+    s5.innerHTML += `<div class="warn">⚠️ Sem empresa_id no profile. Tentando corrigir...</div>`;
+    const empresaId = emps[0].id;
+    const {error:upErr} = await sb.from('profiles').update({empresa_id: empresaId}).eq('id', uid);
+    if (upErr) {
+      s5.innerHTML += `<div class="err">❌ Erro ao atualizar empresa_id: ${upErr.message}</div>`;
+    } else {
+      s5.innerHTML += `<div class="ok">✅ empresa_id atualizado para: ${empresaId}</div>`;
+    }
+  }
+  
+  if (prof?.empresa_id || emps?.length) {
+    const empresaId = prof?.empresa_id || emps[0]?.id;
+    const testLead = {
+      empresa_id: empresaId,
+      nome: `TESTE DIAGNÓSTICO ${Date.now()}`,
+      telefone: '(11) 99999-0000',
+      tipo: 'Imóvel',
+      credito: 100000,
+      etapa: 'Novo lead',
+      responsavel_id: uid,
+      updated_at: new Date().toISOString()
+    };
+    const {data:ins, error:insErr} = await sb.from('leads').insert(testLead).select().single();
+    if (insErr) {
+      s5.innerHTML += `<div class="err">❌ INSERT falhou: ${insErr.message}</div>`;
+      s5.innerHTML += `<div class="err">Código: ${insErr.code} | Detalhes: ${JSON.stringify(insErr.details)}</div>`;
+    } else {
+      s5.innerHTML += `<div class="ok">✅ INSERT funcionou! Lead ID: ${ins.id}</div>`;
+      // Limpar lead de teste
+      await sb.from('leads').delete().eq('id', ins.id);
+      s5.innerHTML += `<div class="info">(Lead de teste removido)</div>`;
+    }
+  }
+
+  // 6. RLS check
+  const s6 = section('6. Verificação de RLS (Row Level Security)');
+  const {data:rlsTest, error:rlsErr} = await sb.from('profiles').select('count').limit(1);
+  if (rlsErr?.code === '42501') {
+    s6.innerHTML += `<div class="err">❌ RLS bloqueando acesso: ${rlsErr.message}</div>`;
+  } else {
+    s6.innerHTML += `<div class="ok">✅ Acesso à tabela profiles OK</div>`;
+  }
+
+  log('<br><button onclick="run()">🔄 Rodar diagnóstico novamente</button>');
+  log('<button onclick="fixarEmpresa()">🔧 Corrigir empresa_id agora</button>');
+}
+
+async function fixarEmpresa() {
+  const {data:{session}} = await sb.auth.getSession();
+  if (!session) { alert('Sem sessão'); return; }
+  
+  const {data:emps} = await sb.from('empresas').select('*').eq('ativo', true).order('created_at').limit(1);
+  if (!emps?.length) { 
+    // Criar empresa nova
+    const {data:nova} = await sb.from('empresas').insert({nome:'Evolux Assessoria', plano:'basico', ativo:true}).select().single();
+    if (nova) {
+      await sb.from('profiles').update({empresa_id: nova.id}).eq('id', session.user.id);
+      alert(`Empresa criada e vinculada: ${nova.id}`);
+      run();
+    }
+    return;
+  }
+  
+  const {error} = await sb.from('profiles').update({empresa_id: emps[0].id}).eq('id', session.user.id);
+  if (error) { alert('Erro: ' + error.message); return; }
+  alert(`✅ empresa_id atualizado para: ${emps[0].id} (${emps[0].nome})`);
+  run();
+}
+
+run();
+</script>
+</body>
+</html>
