@@ -181,8 +181,7 @@
 
   // ── LEADS ──────────────────────────────────────────────────────────────────
   window._syncLead = async function(lead) {
-    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
-    const empresaId = me?.empresaId || null;
+    const empresaId = await window._getEmpresaId();
     if (!empresaId) return;
     const resp = window.users && window.users.find(u => u.id === lead.responsavelId);
     const payload = {
@@ -248,8 +247,7 @@
 
   // ── LANCES ─────────────────────────────────────────────────────────────────
   window._syncLance = async function(lance) {
-    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
-    const empresaId = me?.empresaId || null;
+    const empresaId = await window._getEmpresaId();
     if (!empresaId) return;
     const lead = window.leads && window.leads.find(l => l.id === lance.leadId);
     const payload = {
@@ -303,8 +301,7 @@
 
   // ── EQUIPES ────────────────────────────────────────────────────────────────
   window._syncEquipe = async function(equipe) {
-    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
-    const empresaId = me?.empresaId || null;
+    const empresaId = await window._getEmpresaId();
     if (!empresaId) return;
     const membros = (equipe.membroIds || []).map(mid => {
       const u = window.users && window.users.find(x => x.id === mid);
@@ -352,8 +349,7 @@
 
   // ── HIERARQUIAS ────────────────────────────────────────────────────────────
   window._syncHierarquia = async function(h) {
-    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
-    const empresaId = me?.empresaId || null;
+    const empresaId = await window._getEmpresaId();
     if (!empresaId) return;
     const payload = {
       empresa_id: empresaId,
@@ -396,8 +392,7 @@
 
   // ── ADMINISTRADORAS ────────────────────────────────────────────────────────
   window._syncAdministradora = async function(a) {
-    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
-    const empresaId = me?.empresaId || null;
+    const empresaId = await window._getEmpresaId();
     if (!empresaId) return;
     const payload = {
       empresa_id: empresaId,
@@ -437,8 +432,7 @@
 
   // ── EVENTOS DO CALENDÁRIO ──────────────────────────────────────────────────
   window._syncEvento = async function(ev) {
-    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
-    const empresaId = me?.empresaId || null;
+    const empresaId = await window._getEmpresaId();
     if (!empresaId) return;
     const lead = window.leads && window.leads.find(l => l.id === ev.leadId);
     const payload = {
@@ -493,8 +487,7 @@
 
   // ── VENDAS (histórico) ─────────────────────────────────────────────────────
   window._registrarVenda = async function(lead, userId) {
-    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
-    const empresaId = me?.empresaId || null;
+    const empresaId = await window._getEmpresaId();
     if (!empresaId) return;
     const user = window.users && window.users.find(u => u.id === userId);
     await window._sb.from('vendas').insert({
@@ -514,8 +507,7 @@
 
   // ── EMPRESA (dados gerais) ─────────────────────────────────────────────────
   window._syncEmpresa = async function() {
-    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
-    const empresaId = me?.empresaId || null;
+    const empresaId = await window._getEmpresaId();
     if (!empresaId || !window.empresa) return;
     await window._sb.from('empresas').update({
       nome: window.empresa.nome || '',
@@ -553,13 +545,13 @@
     window.eventos = [];
     window.nextEventoId = 1;
 
-    await window._loadEmpresa();
-    await window._loadHierarquias();
-    await window._loadAdministradoras();
-    await window._loadEquipes();
-    await window._loadLeads();
-    await window._loadLances();
-    await window._loadEventos();
+    await window._loadEmpresa().catch(e=>console.warn('[_loadAllData] loadEmpresa error:',e));
+    await window._loadHierarquias().catch(e=>console.warn('[_loadAllData] loadHierarquias error:',e));
+    await window._loadAdministradoras().catch(e=>console.warn('[_loadAllData] loadAdministradoras error:',e));
+    await window._loadEquipes().catch(e=>console.warn('[_loadAllData] loadEquipes error:',e));
+    await window._loadLeads().catch(e=>console.warn('[_loadAllData] loadLeads error:',e));
+    await window._loadLances().catch(e=>console.warn('[_loadAllData] loadLances error:',e));
+    await window._loadEventos().catch(e=>console.warn('[_loadAllData] loadEventos error:',e));
 
     try { window.renderDashboard && window.renderDashboard(); } catch(e) {}
     try { window.renderKanban && window.renderKanban(); } catch(e) {}
@@ -569,6 +561,21 @@
     try { window.renderLances && window.renderLances(); } catch(e) {}
     try { window.renderUserList && window.renderUserList(); } catch(e) {}
     try { window.populateSelects && window.populateSelects(); } catch(e) {}
+  };
+
+  // ── Helper: retorna empresaId do usuário logado, com fallback ao Supabase ───
+  window._getEmpresaId = async function() {
+    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
+    if (me?.empresaId) return me.empresaId;
+    // Fallback: fetch from DB
+    try {
+      const {data} = await window._sb.from('profiles').select('empresa_id').eq('id', window._currentUserId).single();
+      if (data?.empresa_id) {
+        if (me) me.empresaId = data.empresa_id;
+        return data.empresa_id;
+      }
+    } catch(e) {}
+    return null;
   };
 
   // ── 4. Realtime: escuta mudanças na tabela profiles ───────────────────────
@@ -2966,7 +2973,7 @@ function showTab(id,btn){
 // Oculta/mostra botões do nav de acordo com permissões do usuário logado
 function applyNavPermissions(){
   // Mostra itens exclusivos do superadmin
-  const isSuperAdmin=getMe()&&getMe().role==='superadmin';
+  const isSuperAdmin=getMe()&&(getMe().role==='superadmin'||getMe().role==='master');
   document.querySelectorAll('.sb-superadmin-only').forEach(el=>{el.style.display=isSuperAdmin?'':'none';});
   const me=_getMeRole();
   if(!me) return;
@@ -6539,29 +6546,45 @@ function alertarCadastroLance(nomeLead, leadId) {
 
 async function uploadFoto(e) {
   const file = e.target.files[0]; if(!file) return;
+  const _meF = getMe(); if(!_meF) return;
+
   try {
+    // Try Supabase Storage first
     const ext = file.name.split('.').pop() || 'jpg';
     const path = `${window._currentUserId}/${Date.now()}.${ext}`;
-    const { data: upData, error: upError } = await window._sb.storage.from('avatars').upload(path, file, { upsert: true });
-    if (upError) { console.warn('Storage upload error:', upError); return; }
-    const { data: urlData } = window._sb.storage.from('avatars').getPublicUrl(path);
-    const publicUrl = urlData.publicUrl;
-    const _meF = getMe();
-    if (_meF) _meF.foto = publicUrl;
-    if (window._syncUser && _meF) await window._syncUser(_meF).catch(e => console.warn(e));
+    const { error: upError } = await window._sb.storage.from('avatars').upload(path, file, { upsert: true });
+
+    if (!upError) {
+      const { data: urlData } = window._sb.storage.from('avatars').getPublicUrl(path);
+      _meF.foto = urlData.publicUrl;
+    } else {
+      // Fallback: compress and save as base64
+      console.warn('Storage upload failed, falling back to base64:', upError);
+      const canvas = document.createElement('canvas');
+      const img = new Image();
+      const reader = new FileReader();
+      await new Promise(resolve => {
+        reader.onload = ev => { img.src = ev.target.result; img.onload = resolve; };
+        reader.readAsDataURL(file);
+      });
+      canvas.width = 200; canvas.height = 200;
+      const ctx = canvas.getContext('2d');
+      const size = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width-size)/2, (img.height-size)/2, size, size, 0, 0, 200, 200);
+      _meF.foto = canvas.toDataURL('image/jpeg', 0.7);
+    }
+
+    if (window._syncUser) await window._syncUser(_meF);
     updateSbUser();
-    // Atualizar preview na seção conta
     const prev = document.getElementById('foto-preview-conta');
-    if (prev) prev.innerHTML = `<img src="${publicUrl}" style="width:100%;height:100%;object-fit:cover">`;
-    // Notificar
-    const toast = document.createElement('div');
-    toast.style.cssText='position:fixed;bottom:24px;right:24px;background:#1a6e3c;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)';
-    toast.innerHTML='<i class="ti ti-check" style="margin-right:6px"></i>Foto de perfil atualizada!';
-    document.body.appendChild(toast);
-    setTimeout(()=>toast.remove(), 3000);
+    if (prev) prev.innerHTML = `<img src="${_meF.foto}" style="width:100%;height:100%;object-fit:cover">`;
+    showToast('Foto atualizada!', 'ti-check');
     // Atualizar ranking
     if(document.getElementById('ranking-rows')) renderRanking();
-  } catch(err) { console.warn('uploadFoto error:', err); }
+  } catch(err) {
+    console.warn('uploadFoto error:', err);
+    showToast('Erro ao salvar foto', 'ti-alert-triangle');
+  }
 }
 function toggleDarkMode(on) {
   document.documentElement.setAttribute('data-theme', on?'dark':'light');
@@ -7169,9 +7192,9 @@ function getVisiveisParaMim(){
   const me=getMe();
   if(!me) return new Set();
   // superadmin vê todos
-  if(me.role==='superadmin') return new Set(users.map(u=>u.id));
+  if(me.role==='superadmin'||me.role==='master') return new Set(users.map(u=>u.id));
   // filtra usuários da mesma empresa
-  const usersEmpresa=users.filter(u=>u.empresaId===me.empresaId||me.role==='superadmin');
+  const usersEmpresa=users.filter(u=>u.empresaId===me.empresaId||me.role==='superadmin'||me.role==='master');
   const meuNivel=getNivelHier(me);
   // Nível 1 (Gestor/Admin) vê todos da empresa
   if(meuNivel===1||me.role==='admin') return new Set(usersEmpresa.map(u=>u.id));
@@ -7389,7 +7412,7 @@ async function _initCRM(){
   try{renderRanking();}catch(e){}
   try{renderUserList();}catch(e){}
   // Carrega dados persistidos do Supabase após profiles prontos
-  if(window._loadAllData) window._loadAllData();
+  if(window._loadAllData) await window._loadAllData();
 }
 _initCRM();
 
