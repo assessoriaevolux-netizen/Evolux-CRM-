@@ -173,7 +173,10 @@
     console.log('[_syncUser] upserting conflict='+conflict, {id:payload.id, email:payload.email});
     const {data,error}=await window._sb.from('profiles').upsert(payload,{onConflict:conflict}).select().single();
     if(error){console.warn('Erro ao salvar profile:',error);return;}
-    if(data) u.sb_id=data.id;
+    if(data){
+      u.sb_id=data.id;
+      if(data.empresa_id) u.empresaId=data.empresa_id;
+    }
   };
 
   window._syncAllUsers=async function(){
@@ -6578,6 +6581,8 @@ async function uploadFoto(e) {
       _meF.foto = canvas.toDataURL('image/jpeg', 0.7);
     }
 
+    // Garante sb_id antes de sincronizar
+    if (!_meF.sb_id && window._currentUserId) _meF.sb_id = window._currentUserId;
     if (window._syncUser) await window._syncUser(_meF);
     updateSbUser();
     const prev = document.getElementById('foto-preview-conta');
@@ -7409,7 +7414,7 @@ async function _initCRM(){
   // PASSO 3: Garante novamente sb_id e empresaId do usuário atual (após merge)
   const meCheck = users.find(u => u.sb_id === _uid || u.email === _email);
   if(meCheck){
-    if(!meCheck.sb_id && _uid) meCheck.sb_id = _uid;
+    if(_uid) meCheck.sb_id = _uid; // sempre força o auth UID correto
     if(!meCheck.empresaId){
       try{
         const {data:profData}=await window._sb.from('profiles').select('empresa_id').eq('id',_uid).single();
