@@ -105,42 +105,25 @@
     const role=session.user.user_metadata?.role||'vendedor';
     const meta=session.user.user_metadata?.meta||500000;
 
-    // Garante que o profile do usuário logado existe e tem empresa_id
+    // Garante que o profile do usuário logado existe
     try{
       const {data:existing}=await window._sb.from('profiles').select('*').eq('id',session.user.id).single();
-      let empresaIdToUse = existing?.empresa_id || null;
 
       if(!existing){
-        // Cria profile novo
-        const {data:newProf}=await window._sb.from('profiles').upsert({
+        // Cria profile novo — sem empresa_id por enquanto (será associado depois)
+        await window._sb.from('profiles').upsert({
           id:session.user.id,email,nome,role,meta,vendas:0,credito:0
-        },{onConflict:'id'}).select().single();
-        if(newProf) empresaIdToUse = newProf.empresa_id || null;
+        },{onConflict:'id'});
       }
 
-      // Se não tem empresa_id, cria empresa automaticamente para este usuário
-      if(!empresaIdToUse){
-        console.log('[profilesLoad] sem empresa_id, criando empresa automaticamente...');
-        const nomeEmpresa = nome || email?.split('@')[0] || 'Minha Empresa';
-        const {data:novaEmpresa,error:errEmp}=await window._sb.from('empresas').insert({
-          nome: nomeEmpresa,
-          plano: 'basico',
-          ativo: true
-        }).select().single();
-        if(!errEmp && novaEmpresa){
-          empresaIdToUse = novaEmpresa.id;
-          console.log('[profilesLoad] empresa criada:', empresaIdToUse);
-          // Vincula profile à empresa recém-criada
-          await window._sb.from('profiles').update({
-            empresa_id: empresaIdToUse
-          }).eq('id', session.user.id);
-        }else{
-          console.warn('[profilesLoad] erro ao criar empresa:', errEmp);
-        }
+      // Guarda empresa_id se já tiver (nunca cria empresa automaticamente aqui)
+      const empresaIdExistente = existing?.empresa_id || null;
+      if(empresaIdExistente){
+        window._empresaIdDireto = empresaIdExistente;
+        console.log('[profilesLoad] empresa_id encontrado:', empresaIdExistente);
+      } else {
+        console.log('[profilesLoad] profile sem empresa_id — master pode criar empresa em Empresas');
       }
-
-      // Guarda empresa_id globalmente para uso imediato antes do _initCRM
-      if(empresaIdToUse) window._empresaIdDireto = empresaIdToUse;
 
     }catch(e){console.warn('Profile upsert:',e);}
 
@@ -228,8 +211,23 @@
 
   // ── LEADS ──────────────────────────────────────────────────────────────────
   window._syncLead = async function(lead) {
-    const empresaId = await window._getEmpresaId();
-    if (!empresaId) { console.warn('[_syncLead] sem empresaId, abortando'); return; }
+    // Se o lead já tem empresa_id (foi carregado do DB), usa ele diretamente
+    let empresaId = lead.empresa_id || await window._getEmpresaId();
+    if (!empresaId) {
+      // Último recurso: busca a primeira empresa ativa do banco
+      try {
+        const {data:emp} = await window._sb.from('empresas').select('id').eq('ativo',true).limit(1).single();
+        if (emp?.id) {
+          empresaId = emp.id;
+          window._empresaIdDireto = empresaId;
+          // Atualiza o profile do usuário com esta empresa
+          await window._sb.from('profiles').update({empresa_id:empresaId}).eq('id',window._currentUserId);
+          const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
+          if (me) me.empresaId = empresaId;
+        }
+      } catch(e) {}
+    }
+    if (!empresaId) { console.warn('[_syncLead] sem empresaId mesmo após fallback, abortando'); return; }
     const resp = users.find(u => u.id === lead.responsavelId);
     const payload = {
       empresa_id: empresaId,
@@ -262,14 +260,23 @@
 
   window._loadLeads = async function() {
     try {
-      const { data, error } = await window._sb.from('leads').select('*').order('created_at', { ascending: false });
-      if (error || !data) return;
+      // Master vê todos os leads; outros filtram por empresa
+      const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
+      const isMaster = me?.role === 'master';
+      let query = window._sb.from('leads').select('*').order('created_at', { ascending: false });
+      if (!isMaster) {
+        const empresaId = await window._getEmpresaId();
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+      }
+      const { data, error } = await query;
+      if (error || !data) { console.warn('[_loadLeads] erro:', error); return; }
       data.forEach(row => {
         const existing = leads.find(l => l.sb_id === row.id);
         const resp = users.find(u => u.sb_id === row.responsavel_id);
         const mapped = {
           id: existing ? existing.id : (nextLeadId++),
           sb_id: row.id,
+          empresa_id: row.empresa_id || null, // preserva para _syncLead reusar
           nome: row.nome || '',
           tel: row.telefone || '',
           tipo: row.tipo || 'Imóvel',
@@ -281,6 +288,8 @@
           data: row.data_criacao ? row.data_criacao.split('-').reverse().join('/') : '',
           responsavelId: resp ? resp.id : (users[0]?.id || 1),
         };
+        // Também atualiza _empresaIdDireto se ainda não tiver (aproveita empresa do lead)
+        if (row.empresa_id && !window._empresaIdDireto) window._empresaIdDireto = row.empresa_id;
         if (existing) { Object.assign(existing, mapped); }
         else { leads.push(mapped); }
       });
@@ -7468,7 +7477,7 @@ async function _initCRM(){
   }catch(e){console.warn('_initCRM profiles fetch:',e);}
   delete window._pendingProfiles;
 
-  // PASSO 3: Garante novamente sb_id e empresaId do usuário atual (após merge)
+  // PASSO 3: Garante sb_id e empresaId do usuário atual (após merge)
   const meCheck = users.find(u => u.sb_id === _uid || u.email === _email);
   if(meCheck){
     if(_uid) meCheck.sb_id = _uid; // sempre força o auth UID correto
@@ -7485,6 +7494,21 @@ async function _initCRM(){
         }
       }catch(e){}
     }
+  }
+
+  // PASSO 4 (master): se ainda sem empresa, busca a empresa mais antiga no banco e vincula
+  if(meCheck && !meCheck.empresaId && meCheck.role==='master'){
+    try{
+      const {data:emps}=await window._sb.from('empresas').select('id,nome').eq('ativo',true).order('created_at',{ascending:true}).limit(1);
+      if(emps&&emps.length){
+        const empId=emps[0].id;
+        meCheck.empresaId=empId;
+        window._empresaIdDireto=empId;
+        // Persiste no profile para próximas sessões não precisarem reprocessar
+        await window._sb.from('profiles').update({empresa_id:empId}).eq('id',_uid);
+        console.log('[_initCRM] master vinculado à empresa existente:', empId, emps[0].nome);
+      }
+    }catch(e){console.warn('[_initCRM] fallback empresa master:',e);}
   }
 
   // Agora renderiza com o usuário correto
