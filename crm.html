@@ -615,10 +615,35 @@
       if (!empresaId) return;
       const me = window.getMe ? window.getMe() : null;
       const role = me?.role || 'vendedor';
-      const isLider = ['master','admin','gestor','supervisor'].includes(role);
+
       let q = window._sb.from('atividades').select('*').eq('empresa_id', empresaId).order('created_at', { ascending: false }).limit(50);
-      // Vendedor e consultor só veem as próprias atividades
-      if (!isLider && me?.sb_id) q = q.eq('user_id', me.sb_id);
+
+      if (['master','admin','gestor'].includes(role)) {
+        // Gestor, admin e master: veem TUDO da empresa — sem filtro adicional
+
+      } else if (role === 'supervisor') {
+        // Supervisor: vê atividades dos membros das equipes que supervisiona + as próprias
+        const minhasEquipes = (window.equipes||[]).filter(e => e.supervisorId === me?.id);
+        const membrosIds = minhasEquipes.flatMap(e => e.membroIds||[]);
+        const todosIds = [...new Set([me?.id, ...membrosIds].filter(Boolean))];
+        // Busca sb_ids desses usuários locais
+        const sbIds = todosIds.map(lid => (window.users||[]).find(u=>u.id===lid)?.sb_id).filter(Boolean);
+        if (sbIds.length) q = q.in('user_id', sbIds);
+        else if (me?.sb_id) q = q.eq('user_id', me.sb_id);
+
+      } else if (role === 'representante') {
+        // Representante: vê as próprias + dos supervisores das equipes que participa
+        const minhaEquipe = (window.equipes||[]).find(e=>(e.membroIds||[]).includes(me?.id));
+        const supLocal = minhaEquipe ? (window.users||[]).find(u=>u.id===minhaEquipe.supervisorId) : null;
+        const ids = [me?.sb_id, supLocal?.sb_id].filter(Boolean);
+        if (ids.length) q = q.in('user_id', ids);
+        else if (me?.sb_id) q = q.eq('user_id', me.sb_id);
+
+      } else {
+        // Vendedor / consultor / outros: só as próprias
+        if (me?.sb_id) q = q.eq('user_id', me.sb_id);
+      }
+
       const { data, error } = await q;
       if (error || !data) return;
       // Mapeia timestamps para label legível
