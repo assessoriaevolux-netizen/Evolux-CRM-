@@ -608,6 +608,14 @@
 
     await window._loadEmpresa().catch(e=>console.warn('[_loadAllData] loadEmpresa error:',e));
     await window._loadHierarquias().catch(e=>console.warn('[_loadAllData] loadHierarquias error:',e));
+    // Após carregar hierarquias, reaplicar hperms em todos os usuários
+    if(window.users && window.hierarquias){
+      window.users.forEach(u=>{
+        const h=window.hierarquias.find(x=>x.sb_id===u.hierarquiaId||x.id===u.hierarquiaId);
+        if(h&&h.perms) u.hperms={...h.perms};
+      });
+    }
+    try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
     await window._loadAdministradoras().catch(e=>console.warn('[_loadAllData] loadAdministradoras error:',e));
     await window._loadEquipes().catch(e=>console.warn('[_loadAllData] loadEquipes error:',e));
     await window._loadLeads().catch(e=>console.warn('[_loadAllData] loadLeads error:',e));
@@ -2815,7 +2823,7 @@ const RC=new Proxy(RC_STATIC,{get(t,k){
 }});
 // Helper: label e classe CSS de hierarquia para um user
 function getHierLabel(u){
-  if(u.hierarquiaId){const h=hierarquias&&hierarquias.find(x=>x.id===u.hierarquiaId);if(h)return h.nome;}
+  if(u.hierarquiaId){const h=hierarquias&&hierarquias.find(x=>x.sb_id===u.hierarquiaId||x.id===u.hierarquiaId);if(h)return h.nome;}
   return RL_STATIC[u.role]||u.role||'—';
 }
 function getHierClass(u){return RC_STATIC[u.role]||'rv';}
@@ -3513,7 +3521,7 @@ function populateSelects(){
   document.querySelectorAll('.ulist-hier-sel').forEach(function(sel){
     const uid=parseInt(sel.getAttribute('data-uid'));
     const u=users.find(x=>x.id===uid);
-    sel.innerHTML='<option value="">Hierarquia...</option>'+hierarquias.slice().sort((a,b)=>a.ordem-b.ordem).map(h=>`<option value="${h.id}"${u&&u.hierarquiaId===h.id?' selected':''}>${h.nome}</option>`).join('');
+    sel.innerHTML='<option value="">Hierarquia...</option>'+hierarquias.slice().sort((a,b)=>a.ordem-b.ordem).map(h=>`<option value="${h.id}"${u&&(u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id)?' selected':''}>${h.nome}</option>`).join('');
   });
 }
 function renderTable(){
@@ -5532,7 +5540,7 @@ function renderUserList(){
           <div style="display:flex;align-items:center;gap:6px">
             <select class="fi ulist-hier-sel" data-uid="${u.id}" style="font-size:11.5px;padding:4px 8px;height:auto">
               <option value="">Hierarquia...</option>
-              ${hierarquias.map(h=>`<option value="${h.id}" ${u.hierarquiaId===h.id?'selected':''}>${h.nome}</option>`).join('')}
+              ${hierarquias.map(h=>`<option value="${h.id}" ${(u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id)?'selected':''}>${h.nome}</option>`).join('')}
             </select>
             <button class="btn bd bsm ulist-remove-btn" data-uid="${u.id}" title="Remover usuário"><i class="ti ti-trash"></i></button>
           </div>
@@ -5557,10 +5565,14 @@ function renderUserList(){
 }
 function changeUserHier(userId,hierIdStr){
   const u=users.find(x=>x.id===userId);if(!u||u.role==='admin')return; // FIX bug#6
+  // hierIdStr é o h.id numérico local (vem do <option value="${h.id}">)
   const hid=parseInt(hierIdStr)||null;
-  u.hierarquiaId=hid;
   const h=hid?getHier(hid):null;
-  if(h)u.hperms={...h.perms};
+  // Salva o UUID do banco em hierarquiaId (padrão do sistema após correção)
+  u.hierarquiaId=h?h.sb_id:null;
+  if(h&&h.perms) u.hperms={...h.perms};
+  // Persiste no Supabase
+  if(window._syncUser) window._syncUser(u).catch(e=>console.warn('[changeUserHier] sync err:',e));
   renderUserList();
 }
 async function removeUser(id){
@@ -7541,17 +7553,24 @@ async function _initCRM(){
         local.empresaId=row.empresa_id||local.empresaId;
         if(row.perms){try{local.perms=JSON.parse(row.perms);}catch(e){}}
         if(row.hperms){try{local.hperms=JSON.parse(row.hperms);}catch(e){}}
+        // Reaplicar hperms da hierarquia (garante sync com regras atuais do cargo)
+        if(local.hierarquiaId && window.hierarquias){
+          const _h=window.hierarquias.find(x=>x.sb_id===local.hierarquiaId||x.id===local.hierarquiaId);
+          if(_h&&_h.perms) local.hperms={..._h.perms};
+        }
       } else {
         const maxId=Math.max(...users.map(u=>u.id),99);
+        const _hierUUID=row.hierarquia_id||null;
+        const _hDef=window.hierarquias&&_hierUUID?window.hierarquias.find(x=>x.sb_id===_hierUUID||x.id===_hierUUID):null;
         const newU={
           id:maxId+1, sb_id:row.id, nome:row.nome||'', email:row.email||'',
-          role:row.role||'vendedor', hierarquiaId:row.hierarquia_id||null,
+          role:row.role||'vendedor', hierarquiaId:_hierUUID,
           equipeId:row.equipe_id||null, managerId:null,
           vendas:row.vendas||0, credito:row.credito||0, meta:row.meta||500000,
           foto:row.foto_url||null,
           empresaId:row.empresa_id||null,
           perms:row.perms?JSON.parse(row.perms):{},
-          hperms:row.hperms?JSON.parse(row.hperms):{}
+          hperms:_hDef?{..._hDef.perms}:(row.hperms?JSON.parse(row.hperms):{})
         };
         users.push(newU);
         if(nextUserId<=newU.id) nextUserId=newU.id+1;
@@ -7784,7 +7803,7 @@ function populateHierSelects(){
     const uid=parseInt(sel.getAttribute('data-uid'));
     const u=users.find(x=>x.id===uid);
     const curVal=u?u.hierarquiaId:'';
-    sel.innerHTML='<option value="">Hierarquia...</option>'+sorted.map(h=>`<option value="${h.id}" ${u&&u.hierarquiaId===h.id?'selected':''}>${h.nome}</option>`).join('');
+    sel.innerHTML='<option value="">Hierarquia...</option>'+sorted.map(h=>`<option value="${h.id}" ${u&&(u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id)?'selected':''}>${h.nome}</option>`).join('');
   });
 }
 
