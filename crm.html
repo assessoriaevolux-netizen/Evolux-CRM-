@@ -165,10 +165,12 @@
       hperms:u.hperms?JSON.stringify(u.hperms):null,
       updated_at:new Date().toISOString()
     };
-    if(u.sb_id) payload.id=u.sb_id;
+    // sb_id só vai no payload se for uma UUID real (não undefined/null/string vazia)
+    const hasSbId = u.sb_id && typeof u.sb_id === 'string' && u.sb_id.length > 10;
+    if(hasSbId) payload.id=u.sb_id;
     if(u.whatsapp!==undefined) payload.whatsapp=u.whatsapp||null;
-    const conflict = u.sb_id ? 'id' : 'email';
-    console.log('[_syncUser] upserting conflict='+conflict, payload);
+    const conflict = hasSbId ? 'id' : 'email';
+    console.log('[_syncUser] upserting conflict='+conflict, {id:payload.id, email:payload.email});
     const {data,error}=await window._sb.from('profiles').upsert(payload,{onConflict:conflict}).select().single();
     if(error){console.warn('Erro ao salvar profile:',error);return;}
     if(data) u.sb_id=data.id;
@@ -2802,7 +2804,9 @@ function getAdmin(){return administradoras.find(a=>a.ativa)||administradoras[0]|
 let users=[
   {id:1,nome:'Erick',email:'assessoriaevolux@gmail.com',role:'master',managerId:null,vendas:0,credito:0,foto:null,meta:500000,hierarquiaId:1,empresaId:null,perms:{...DPERMS.gestor},hperms:{...HPERM_DEFAULTS.gestor}},
 ];
+window.users = users; // garante que window.users aponta pro mesmo array
 let nextUserId=2;
+window.nextUserId = nextUserId;
 let equipes=[];
 let nextEquipeId=1;
 let rankView='loja';
@@ -7343,11 +7347,28 @@ async function _initCRM(){
   // Aguarda o carregamento de profiles (getSession + fetch profiles)
   try{ await window._profilesLoadPromise; }catch(e){ console.warn('profilesLoad err:',e); }
 
-  // Helper: aplica um array de rows do Supabase no array users local
+  // PASSO 1: Associa o usuário logado ao array users IMEDIATAMENTE
+  // window.users aponta para o mesmo array que `users` (atribuído logo após let users=[...])
+  const _uid = window._currentUserId;
+  const _email = window._session?.user?.email;
+  if(_uid && _email) {
+    // Procura por email ou sb_id
+    let meLocal = users.find(u => u.sb_id === _uid || u.email === _email);
+    if(!meLocal && users.length > 0) {
+      // Se não achou, usa o primeiro user (admin hardcoded) e associa
+      meLocal = users[0];
+    }
+    if(meLocal) {
+      meLocal.sb_id = _uid;
+      if(!meLocal.email) meLocal.email = _email;
+    }
+  }
+
+  // PASSO 2: Busca profile completo do Supabase e aplica em todos os users
   function applyRows(data){
     if(!data||!data.length)return;
     data.forEach(function(row){
-      const local=window.users.find(u=>u.sb_id===row.id||u.email===row.email);
+      const local=users.find(u=>u.sb_id===row.id||u.email===row.email);
       if(local){
         local.nome=row.nome||local.nome;
         local.foto=row.foto_url||local.foto;
@@ -7362,7 +7383,7 @@ async function _initCRM(){
         if(row.perms){try{local.perms=JSON.parse(row.perms);}catch(e){}}
         if(row.hperms){try{local.hperms=JSON.parse(row.hperms);}catch(e){}}
       } else {
-        const maxId=Math.max(...window.users.map(u=>u.id),99);
+        const maxId=Math.max(...users.map(u=>u.id),99);
         const newU={
           id:maxId+1, sb_id:row.id, nome:row.nome||'', email:row.email||'',
           role:row.role||'vendedor', hierarquiaId:row.hierarquia_id||null,
@@ -7373,27 +7394,25 @@ async function _initCRM(){
           perms:row.perms?JSON.parse(row.perms):{},
           hperms:row.hperms?JSON.parse(row.hperms):{}
         };
-        window.users.push(newU);
-        if(window.nextUserId&&window.nextUserId<=newU.id) window.nextUserId=newU.id+1;
+        users.push(newU);
+        if(nextUserId<=newU.id) nextUserId=newU.id+1;
       }
     });
   }
 
-  // Sempre busca profiles frescos do Supabase (garante sb_id e empresaId corretos)
   try{
     const {data}=await window._sb.from('profiles').select('*').order('credito',{ascending:false});
     if(data&&data.length) applyRows(data);
   }catch(e){console.warn('_initCRM profiles fetch:',e);}
-  // Limpa pendingProfiles pois já aplicamos acima
   delete window._pendingProfiles;
 
-  // Garante que o usuário atual tem sb_id e empresaId definidos
-  const meCheck = window.users.find(u => u.sb_id === window._currentUserId || u.email === window._session?.user?.email);
+  // PASSO 3: Garante novamente sb_id e empresaId do usuário atual (após merge)
+  const meCheck = users.find(u => u.sb_id === _uid || u.email === _email);
   if(meCheck){
-    if(!meCheck.sb_id) meCheck.sb_id = window._currentUserId;
+    if(!meCheck.sb_id && _uid) meCheck.sb_id = _uid;
     if(!meCheck.empresaId){
       try{
-        const {data:profData}=await window._sb.from('profiles').select('empresa_id').eq('id',window._currentUserId).single();
+        const {data:profData}=await window._sb.from('profiles').select('empresa_id').eq('id',_uid).single();
         if(profData?.empresa_id) meCheck.empresaId=profData.empresa_id;
       }catch(e){}
     }
