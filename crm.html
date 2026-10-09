@@ -707,6 +707,32 @@
         console.log('[hierarquias-sync] permissões atualizadas em tempo real');
       })
       .subscribe();
+
+      // Realtime leads (filtrado por empresa) → atualiza dashboard, funil e tabela
+      const _leadsChanOpts={event:'*',schema:'public',table:'leads'};
+      if(_profFilter) _leadsChanOpts.filter=_profFilter;
+      window._sb.channel('leads-sync')
+        .on('postgres_changes',_leadsChanOpts,async function(){
+          await window._loadLeads();
+          try{window.renderDashboard&&window.renderDashboard();}catch(e){}
+          try{window.renderKanban&&window.renderKanban();}catch(e){}
+          try{window.renderTable&&window.renderTable();}catch(e){}
+          try{window.renderRanking&&window.renderRanking();}catch(e){}
+        })
+        .subscribe();
+
+      // Realtime lances (filtrado por empresa) → atualiza painel de lances e ranking
+      const _lancesChanOpts={event:'*',schema:'public',table:'lances'};
+      if(_profFilter) _lancesChanOpts.filter=_profFilter;
+      window._sb.channel('lances-sync')
+        .on('postgres_changes',_lancesChanOpts,async function(){
+          await window._loadLances();
+          try{window.renderLances&&window.renderLances();}catch(e){}
+          try{window.renderRanking&&window.renderRanking();}catch(e){}
+          try{window.renderDashboard&&window.renderDashboard();}catch(e){}
+        })
+        .subscribe();
+
     }; // fim _subscribeRealtime
 
     // Tenta assinar imediatamente se empresa_id já disponível, senão aguarda até 3s
@@ -3192,8 +3218,11 @@ function applyNavPermissions(){
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 function renderDashboard(){
-  const t=leads.length,f=leads.filter(l=>l.etapa==='Fechado / Convertido').length;
-  const p=leads.filter(l=>l.etapa==='Perdido').length,a=t-f-p;
+  // Filtro defensivo multi-tenant — só leads da empresa logada
+  const _meDash=getMe();const _empDash=_meDash?.empresaId;
+  const _leadsD=_empDash?leads.filter(l=>l.empresaId===_empDash):leads;
+  const t=_leadsD.length,f=_leadsD.filter(l=>l.etapa==='Fechado / Convertido').length;
+  const p=_leadsD.filter(l=>l.etapa==='Perdido').length,a=t-f-p;
   const tx=t?Math.round(f/t*100):0;
   // hero strip
   const hr=new Date().getHours();
@@ -3205,9 +3234,9 @@ function renderDashboard(){
   const meNome=meUser?meUser.nome.split(' ')[0]:'';
   document.getElementById('hero-greeting-txt').textContent=`${saud}${meNome?', '+meNome:''} 👋`;
   document.getElementById('hero-date-txt').textContent=`${dias[nd.getDay()]}, ${nd.getDate()} de ${meses[nd.getMonth()]} de ${nd.getFullYear()}${getAdmin()?` · ${getAdmin().nome}`:''}` ;
-  const pip=leads.filter(l=>!['Fechado / Convertido','Perdido'].includes(l.etapa));
+  const pip=_leadsD.filter(l=>!['Fechado / Convertido','Perdido'].includes(l.etapa));
   const pipVal=pip.reduce((s,l)=>s+l.credito,0);
-  const credTotal=leads.filter(l=>l.etapa==='Fechado / Convertido').reduce((s,l)=>s+l.credito,0);
+  const credTotal=_leadsD.filter(l=>l.etapa==='Fechado / Convertido').reduce((s,l)=>s+l.credito,0);
   document.getElementById('hero-pipeline').textContent=pipVal>=1000000?'R$'+Math.round(pipVal/100000)/10+'M':pipVal>=1000?'R$'+Math.round(pipVal/1000)+'k':a;
   document.getElementById('hero-conversao').textContent=tx+'%';
   const rankTotal=credTotal;
@@ -3232,8 +3261,8 @@ function renderDashboard(){
     const desc=txt.slice(nome.length).replace(/^[\s:—–]+/,'');
     return `<div class="act2-item"><div class="act2-av ${avCls}"><i class="ti ${avIcon}"></i></div><div class="act2-body"><div class="act2-name"><strong>${nome}</strong>${desc?' '+desc:''}</div><div class="act2-time">${act.time}</div></div><span class="act2-badge ${badgeCls}">${badgeTxt}</span><button class="act2-menu"><i class="ti ti-dots-vertical"></i></button></div>`;
   }).join(''):'<p style="color:var(--tm);font-size:12.5px;padding:12px 0">Nenhuma atividade ainda.</p>';
-  const max=Math.max(...ETAPAS.map(e=>leads.filter(l=>l.etapa===e).length),1);
-  document.getElementById('dash-etapas').innerHTML=ETAPAS.map((e,i)=>{const c=leads.filter(l=>l.etapa===e).length;return `<div class="br"><span class="brl">${e}</span><div class="brt"><div class="brf" style="width:${Math.round(c/max*100)}%;background:${EC[i]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
+  const max=Math.max(...ETAPAS.map(e=>_leadsD.filter(l=>l.etapa===e).length),1);
+  document.getElementById('dash-etapas').innerHTML=ETAPAS.map((e,i)=>{const c=_leadsD.filter(l=>l.etapa===e).length;return `<div class="br"><span class="brl">${e}</span><div class="brt"><div class="brf" style="width:${Math.round(c/max*100)}%;background:${EC[i]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
 }
 
 // ─── FUNIL SELECAO ────────────────────────────────────────────────────────────
