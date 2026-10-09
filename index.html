@@ -309,6 +309,50 @@ input.form-input:focus{
     </div>
   </div>
 
+  <!-- CADASTRO VIA CONVITE -->
+  <div class="view" id="view-convite">
+    <div class="form-header">
+      <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(29,185,84,.1);border:1px solid rgba(29,185,84,.2);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:#16a34a;margin-bottom:16px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 14 19.79 19.79 0 0 1 1.61 5.38 2 2 0 0 1 3.58 3h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 10.1a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 17.58z"/></svg>
+        Convite recebido
+      </div>
+      <h1>Crie sua conta</h1>
+      <p id="convite-empresa-label">Você foi convidado para acessar o CRM.</p>
+    </div>
+    <div class="alert err" id="convite-err"><span>⚠&nbsp;</span><span id="convite-err-msg"></span></div>
+    <div class="field">
+      <div class="field-label"><label for="c-nome">Seu nome completo</label></div>
+      <div class="field-wrap">
+        <svg class="fi" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <input type="text" id="c-nome" class="form-input" placeholder="João Silva" autocomplete="name">
+      </div>
+    </div>
+    <div class="field">
+      <div class="field-label"><label for="c-email">Seu e-mail</label></div>
+      <div class="field-wrap">
+        <svg class="fi" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 7l10 7 10-7"/></svg>
+        <input type="email" id="c-email" class="form-input" placeholder="seu@email.com" autocomplete="email">
+      </div>
+    </div>
+    <div class="field">
+      <div class="field-label"><label for="c-senha">Crie uma senha</label></div>
+      <div class="field-wrap">
+        <svg class="fi" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <input type="password" id="c-senha" class="form-input" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+        <button class="btn-toggle-pw" type="button" onclick="togglePw('c-senha',this)" tabindex="-1">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+    </div>
+    <button class="btn-submit" id="btn-convite" onclick="fazerCadastroConvite()">
+      <div class="spinner"></div>
+      <span class="btn-text">Criar conta e entrar</span>
+    </button>
+    <div class="form-footer">
+      <a href="#" onclick="showView('login');return false;">Já tenho conta? Entrar</a>
+    </div>
+  </div>
+
   <!-- RECUPERAR SENHA -->
   <div class="view" id="view-reset">
     <div class="form-header">
@@ -351,11 +395,60 @@ const SUPABASE_URL = 'https://uekeeutycmqsswrhspwv.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_nJ-BnFkD8sG8mv4f7Uc-Uw_v87ZOIl9';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Redireciona se já estiver logado
+// Detecta convite na URL
+const _urlParams = new URLSearchParams(window.location.search);
+const _conviteEmpresaId = _urlParams.get('convite');
+const _conviteEmpresaNome = _urlParams.get('empresa');
+
+// Redireciona se já estiver logado (mas não se vier de convite)
 (async()=>{
   const {data:{session}} = await sb.auth.getSession();
-  if(session) window.location.href = 'crm.html';
+  if(session && !_conviteEmpresaId) window.location.href = 'crm.html';
+  // Se vier com convite, mostra tela de cadastro
+  if(_conviteEmpresaId){
+    showView('convite');
+    const label = document.getElementById('convite-empresa-label');
+    if(label && _conviteEmpresaNome) label.innerHTML = `Você foi convidado para acessar o CRM da <strong>${decodeURIComponent(_conviteEmpresaNome)}</strong>.`;
+  }
 })();
+
+async function fazerCadastroConvite(){
+  const nome = document.getElementById('c-nome').value.trim();
+  const email = document.getElementById('c-email').value.trim();
+  const senha = document.getElementById('c-senha').value;
+  const btn = document.getElementById('btn-convite');
+  hideErr('convite-err');
+  if(!nome){ showErr('convite-err','Informe seu nome.'); return; }
+  if(!email){ showErr('convite-err','Informe seu e-mail.'); return; }
+  if(!senha||senha.length<6){ showErr('convite-err','A senha deve ter pelo menos 6 caracteres.'); return; }
+  setLoading(btn, true);
+
+  // Cria usuário no Supabase Auth
+  const {data, error} = await sb.auth.signUp({
+    email,
+    password: senha,
+    options: { data: { nome, empresa_id: _conviteEmpresaId, role: 'vendedor' } }
+  });
+
+  if(error){
+    setLoading(btn, false);
+    showErr('convite-err', error.message==='User already registered' ? 'Este e-mail já está cadastrado. Use a opção "Já tenho conta".' : 'Erro ao criar conta: '+error.message);
+    return;
+  }
+
+  // Cria perfil vinculado à empresa
+  await sb.from('profiles').upsert({
+    id: data.user.id,
+    email,
+    nome,
+    role: 'vendedor',
+    empresa_id: _conviteEmpresaId
+  });
+
+  btn.querySelector('.btn-text').textContent = '✓  Conta criada!';
+  btn.style.background = 'linear-gradient(135deg,#14532d,#16a34a)';
+  setTimeout(()=>{ window.location.href = 'crm.html'; }, 800);
+}
 
 function showView(v){
   document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));

@@ -6270,24 +6270,67 @@ async function renderEmpresas(){
   await loadEmpresas();
   const list=document.getElementById('empresas-list');if(!list)return;
   if(!_empresasCache.length){list.innerHTML='<p style="color:var(--fg2)">Nenhuma empresa cadastrada ainda.</p>';return;}
-  list.innerHTML=_empresasCache.map(e=>`
-    <div style="background:var(--w);border:1px solid var(--c2);border-radius:12px;padding:16px;display:flex;align-items:center;gap:16px">
-      <div style="width:48px;height:48px;border-radius:10px;background:var(--gs);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--g)">${e.nome.charAt(0)}</div>
-      <div style="flex:1">
-        <div style="font-weight:600;font-size:14px">${e.nome}</div>
-        <div style="font-size:12px;color:var(--fg2);margin-top:2px">Plano: <strong>${e.plano||'básico'}</strong> · ${e.ativo?'<span style="color:var(--g)">Ativo</span>':'<span style="color:var(--r)">Inativo</span>'}</div>
+  const base=window.location.origin+window.location.pathname.replace('crm.html','index.html');
+  list.innerHTML=_empresasCache.map(e=>{
+    const link=`${base}?convite=${e.id}&empresa=${encodeURIComponent(e.nome)}`;
+    return `<div style="background:var(--w);border:1px solid var(--c2);border-radius:12px;padding:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <div style="width:48px;height:48px;border-radius:10px;background:var(--gs);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--g);flex-shrink:0">${e.nome.charAt(0)}</div>
+      <div style="flex:1;min-width:160px">
+        <div style="font-weight:700;font-size:14px">${e.nome}</div>
+        <div style="font-size:12px;color:var(--tm);margin-top:2px">Plano: <strong>${e.plano||'básico'}</strong> · ${e.ativo?'<span style="color:var(--g)">● Ativo</span>':'<span style="color:#dc2626">● Inativo</span>'}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;background:var(--c0);border:1px solid var(--c2);border-radius:7px;padding:6px 10px">
+          <i class="ti ti-link" style="font-size:13px;color:var(--tm);flex-shrink:0"></i>
+          <span style="font-size:11px;color:var(--tm);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${link}</span>
+          <button onclick="navigator.clipboard.writeText('${link}').then(()=>showToast('Link copiado!','ti-check'))" style="border:none;background:var(--g);color:#fff;border-radius:5px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0"><i class="ti ti-copy"></i> Copiar</button>
+        </div>
       </div>
-      <button class="btn bd bsm" onclick="toggleEmpresaAtivo('${e.id}',${e.ativo})">${e.ativo?'Desativar':'Ativar'}</button>
-    </div>
-  `).join('');
+      <button class="btn bd bsm" onclick="toggleEmpresaAtivo('${e.id}',${e.ativo})" style="flex-shrink:0">${e.ativo?'Desativar':'Ativar'}</button>
+    </div>`;
+  }).join('');
 }
 async function openNovaEmpresaModal(){
-  const nome=prompt('Nome da empresa:');if(!nome||!nome.trim())return;
-  const plano=prompt('Plano (basico / pro / master):','basico')||'basico';
-  const {data,error}=await window._sb.from('empresas').insert({nome:nome.trim(),plano,ativo:true}).select().single();
+  // Modal bonito ao invés de prompt
+  const html=`<div id="modal-nova-empresa" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">
+    <div style="background:var(--w);border-radius:16px;padding:28px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="font-size:17px;font-weight:800;margin-bottom:4px">Nova empresa</div>
+      <div style="font-size:13px;color:var(--tm);margin-bottom:20px">Preencha os dados da empresa cliente</div>
+      <div class="field" style="margin-bottom:12px"><label>Nome da empresa</label><input type="text" id="ne-nome" class="fi" placeholder="Ex: Corretor Silva Consórcios" autofocus></div>
+      <div class="field" style="margin-bottom:20px"><label>Plano</label><select id="ne-plano" class="fi"><option value="basico">Básico</option><option value="pro">Pro</option><option value="master">Master</option></select></div>
+      <div style="display:flex;gap:10px">
+        <button onclick="document.getElementById('modal-nova-empresa').remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+        <button onclick="criarEmpresaConfirm()" style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-building-plus"></i> Criar empresa</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(()=>document.getElementById('ne-nome')?.focus(),100);
+}
+async function criarEmpresaConfirm(){
+  const nome=document.getElementById('ne-nome')?.value.trim();
+  const plano=document.getElementById('ne-plano')?.value||'basico';
+  if(!nome){alert('Informe o nome da empresa.');return;}
+  const {data,error}=await window._sb.from('empresas').insert({nome,plano,ativo:true}).select().single();
   if(error){alert('Erro: '+error.message);return;}
-  alert('Empresa "'+nome+'" criada! ID: '+data.id+'\n\nPasse esse ID para o gestor usar no cadastro.');
-  renderEmpresas();
+  document.getElementById('modal-nova-empresa')?.remove();
+  // Gera link de convite com empresa_id
+  const base=window.location.origin+window.location.pathname.replace('crm.html','index.html');
+  const link=`${base}?convite=${data.id}&empresa=${encodeURIComponent(nome)}`;
+  // Modal com link de convite
+  const html2=`<div id="modal-convite" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">
+    <div style="background:var(--w);border-radius:16px;padding:28px;width:100%;max-width:460px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="text-align:center;margin-bottom:20px">
+        <div style="width:56px;height:56px;background:rgba(29,185,84,.1);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 12px"><i class="ti ti-check" style="font-size:26px;color:var(--g)"></i></div>
+        <div style="font-size:17px;font-weight:800">Empresa criada!</div>
+        <div style="font-size:13px;color:var(--tm);margin-top:4px">Compartilhe o link abaixo com o gestor da <strong>${nome}</strong></div>
+      </div>
+      <div style="background:var(--c0);border:1px solid var(--c2);border-radius:10px;padding:12px 14px;font-size:12px;word-break:break-all;color:var(--tx);margin-bottom:14px;font-family:monospace">${link}</div>
+      <div style="display:flex;gap:10px">
+        <button onclick="navigator.clipboard.writeText('${link}').then(()=>showToast('Link copiado!','ti-check'));document.getElementById('modal-convite').remove();renderEmpresas();" style="flex:2;padding:11px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-copy"></i> Copiar link</button>
+        <button onclick="document.getElementById('modal-convite').remove();renderEmpresas();" style="flex:1;padding:11px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Fechar</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html2);
 }
 async function toggleEmpresaAtivo(id,atual){
   await window._sb.from('empresas').update({ativo:!atual}).eq('id',id);
