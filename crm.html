@@ -166,7 +166,10 @@
       updated_at:new Date().toISOString()
     };
     if(u.sb_id) payload.id=u.sb_id;
-    const {data,error}=await window._sb.from('profiles').upsert(payload,{onConflict:'email'}).select().single();
+    if(u.whatsapp!==undefined) payload.whatsapp=u.whatsapp||null;
+    const conflict = u.sb_id ? 'id' : 'email';
+    console.log('[_syncUser] upserting conflict='+conflict, payload);
+    const {data,error}=await window._sb.from('profiles').upsert(payload,{onConflict:conflict}).select().single();
     if(error){console.warn('Erro ao salvar profile:',error);return;}
     if(data) u.sb_id=data.id;
   };
@@ -6843,8 +6846,9 @@ function salvarConfiguracoesConta(){
   if(empNomeEl) empresa.nome=empNomeEl.value.trim()||empresa.nome;
   if(empWaEl) empresa.whatsapp=empWaEl.value.trim();
   if(empEmailEl) empresa.email=empEmailEl.value.trim();
-  if(window._syncUser&&me) window._syncUser(me).catch(e=>console.warn(e));
-  if(window._syncEmpresa) window._syncEmpresa().catch(e=>console.warn(e));
+  console.log('[salvarConfig] me=', me, 'role=', me?.role, 'sb_id=', me?.sb_id);
+  if(window._syncUser&&me) window._syncUser(me).catch(e=>console.warn('[salvarConfig] _syncUser error:',e));
+  if(window._syncEmpresa) window._syncEmpresa().catch(e=>console.warn('[salvarConfig] _syncEmpresa error:',e));
 
   // Atualiza o dashboard se estiver visível
   const dashTab = document.getElementById('tab-dashboard');
