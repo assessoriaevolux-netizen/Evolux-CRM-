@@ -641,14 +641,77 @@
     return null;
   };
 
-  // ── 4. Realtime: escuta mudanças na tabela profiles ───────────────────────
+  // ── 4. Realtime: escuta mudanças na tabela profiles e hierarquias ──────────
   window.addEventListener('load',function(){
+    // Realtime profiles
     window._sb.channel('profiles-sync')
       .on('postgres_changes',{event:'*',schema:'public',table:'profiles'},function(){
         window._loadProfiles();
       })
       .subscribe();
+
+    // Realtime hierarquias — atualiza permissões de todos em tempo real
+    window._sb.channel('hierarquias-sync')
+      .on('postgres_changes',{event:'*',schema:'public',table:'hierarquias'},async function(){
+        await window._loadHierarquias();
+        // Reaplicar hperms de todos os usuários locais com base nas hierarquias atualizadas
+        if(window.users && window.hierarquias){
+          window.users.forEach(u=>{
+            const h=window.hierarquias.find(x=>x.id===u.hierarquiaId||x.sb_id===u.hierarquiaSbId);
+            if(h&&h.perms) u.hperms={...h.perms};
+          });
+        }
+        // Reaplicar nav e renderizar
+        try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
+        try{window.renderConfig&&window.renderConfig();}catch(e){}
+      })
+      .subscribe();
   });
+
+  // ── 5. Garante hierarquia padrão para empresa sem hierarquias no banco ─────
+  window._ensureHierarquiasPadrao = async function() {
+    const empresaId = await window._getEmpresaId();
+    if (!empresaId) return;
+    try {
+      const {data, error} = await window._sb.from('hierarquias').select('id').eq('empresa_id', empresaId).limit(1);
+      if (error || (data && data.length > 0)) return; // já tem hierarquias
+
+      // Cria hierarquias padrão para esta empresa
+      const allPermsFalse = () => Object.fromEntries(allHPermIds().map(id=>[id,false]));
+      const allPermsTrue  = () => Object.fromEntries(allHPermIds().map(id=>[id,true]));
+      const supervisorPerms = () => {
+        const p = allPermsFalse();
+        ['leads_view','leads_create','leads_edit','funil_view','funil_move',
+         'simulador_view','lances_view','ranking_view','config_view'].forEach(k=>{if(k in p) p[k]=true;});
+        return p;
+      };
+      const vendedorPerms = () => {
+        const p = allPermsFalse();
+        ['leads_view','leads_create','leads_edit','funil_view','funil_move',
+         'simulador_view','lances_view','ranking_view'].forEach(k=>{if(k in p) p[k]=true;});
+        return p;
+      };
+
+      const padroes = [
+        {slug:'gestor',     nome:'Gestor',      descricao:'Acesso total à empresa',        ordem:1, perms:allPermsTrue()},
+        {slug:'supervisor', nome:'Supervisor',   descricao:'Gerencia equipe e leads',       ordem:2, perms:supervisorPerms()},
+        {slug:'representante',nome:'Representante',descricao:'Acesso padrão de vendas',    ordem:3, perms:vendedorPerms()},
+        {slug:'vendedor',   nome:'Vendedor',     descricao:'Acesso básico ao funil',        ordem:4, perms:vendedorPerms()},
+      ];
+
+      for(const h of padroes){
+        await window._sb.from('hierarquias').insert({
+          empresa_id: empresaId,
+          slug: h.slug, nome: h.nome, descricao: h.descricao,
+          ordem: h.ordem, status: 'ativa',
+          perms: JSON.stringify(h.perms),
+          updated_at: new Date().toISOString()
+        });
+      }
+      console.log('[_ensureHierarquiasPadrao] hierarquias padrão criadas para empresa', empresaId);
+      await window._loadHierarquias();
+    } catch(e) { console.warn('[_ensureHierarquiasPadrao] erro:', e); }
+  };
 })();
 </script>
 <style>
@@ -7533,6 +7596,8 @@ async function _initCRM(){
   try{renderUserList();}catch(e){}
   // Carrega dados persistidos do Supabase após profiles prontos
   if(window._loadAllData) await window._loadAllData();
+  // Garante hierarquias padrão para a empresa (cria se não existir nenhuma)
+  try{ if(window._ensureHierarquiasPadrao) await window._ensureHierarquiasPadrao(); }catch(e){ console.warn('ensureHierarquias err:',e); }
 }
 _initCRM();
 
