@@ -2923,7 +2923,7 @@ let nextHierArquiaId=5;
 
 function getHier(id){return hierarquias.find(h=>h.id===id||h.sb_id===id);}
 function getHierBySlug(slug){return hierarquias.find(h=>h.slug===slug);}
-function hierUsersCount(hId){return users.filter(u=>u.hierarquiaId===hId).length;}
+function hierUsersCount(hId){const h=getHier(hId);if(!h)return 0;return users.filter(u=>u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id).length;}
 function hierPermCount(h){return h.perms?Object.values(h.perms).filter(Boolean).length:0;}
 function hierAtivas(){return hierarquias.filter(h=>h.status==='ativa').sort((a,b)=>a.ordem-b.ordem);}
 function applyHierToUser(u){
@@ -2932,7 +2932,11 @@ function applyHierToUser(u){
 }
 function applyHierToAll(hId){
   const h=getHier(hId);if(!h)return;
-  users.filter(u=>u.hierarquiaId===hId).forEach(u=>{u.hperms={...h.perms};});
+  users.filter(u=>u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id).forEach(u=>{
+    u.hperms={...h.perms};
+    if(window._syncUser) window._syncUser(u).catch(e=>console.warn('[applyHierToAll]',e));
+  });
+  try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
 }
 
 // ─── ESTADO ───────────────────────────────────────────────────────────────────
@@ -5399,14 +5403,16 @@ async function inviteUser(){
   if(senha!==senhaConf){alert('As senhas não coincidem. Verifique e tente novamente.');return;}
   if(users.find(u=>u.email===email)){alert('Este e-mail já está cadastrado no sistema.');return;}
   const hierSel=document.getElementById('uHierarquia');
-  const hierarquiaId=hierSel?parseInt(hierSel.value)||null:null;
-  if(!hierarquiaId){alert('Selecione a hierarquia do usuário.');return;}
+  const hierLocalId=hierSel?parseInt(hierSel.value)||null:null;
+  if(!hierLocalId){alert('Selecione a hierarquia do usuário.');return;}
+  const selH=getHier(hierLocalId);
+  // Sempre usa UUID do banco para armazenar/enviar ao Supabase
+  const hierarquiaId=selH?(selH.sb_id||selH.id):hierLocalId;
   const metaEl=document.getElementById('uMeta');
   const metaRaw=metaEl?unM(metaEl.value)||0:0;
   if(!metaRaw){alert('Informe a meta do usuário.');return;}
   const equipeEl=document.getElementById('uEquipe');
   const equipeId=equipeEl?parseInt(equipeEl.value)||null:null;
-  const selH=getHier(hierarquiaId);
   const role=selH&&selH.slug==='gestor'?'gestor':selH&&selH.slug==='representante'?'representante':'vendedor';
   const btn=document.getElementById('btn-invite-user');
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>Cadastrando...';}
