@@ -2083,7 +2083,7 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
 </div>
 
 <!-- ═══ EMPRESAS (superadmin) ═══ -->
-<div id="tab-empresas" class="content" style="display:none;padding:24px">
+<div id="tab-empresas" class="content" style="padding:24px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
     <h2 style="font-size:18px;font-weight:700">Empresas cadastradas</h2>
     <button class="btn bp" onclick="openNovaEmpresaModal()"><i class="ti ti-building-plus"></i> Nova empresa</button>
@@ -5068,10 +5068,6 @@ function cfgRenderSection(){
       <div class="g2"><div class="field"><label>Fuso horário</label><select class="fi"><option>(GMT-03:00) Brasília</option><option>(GMT-04:00) Manaus</option></select></div><div class="field"><label>País</label><select class="fi"><option>Brasil</option></select></div></div>
       <div class="field"><label>Formato de data</label><select class="fi"><option selected>DD/MM/AAAA</option></select></div>
       <button class="btn bp" style="margin-top:6px" onclick="salvarConfiguracoesConta()"><i class="ti ti-check"></i>Salvar configurações</button>
-      <div class="cfg-divider"></div>
-      <div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:8px"><i class="ti ti-logout" style="margin-right:6px"></i>Sair da conta</div>
-      <div style="font-size:12.5px;color:var(--tm);margin-bottom:12px">Você será redirecionado para a tela de login.</div>
-      <button onclick="fazerLogout()" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border:1.5px solid rgba(220,38,38,.35);border-radius:8px;background:rgba(220,38,38,.07);color:#dc2626;font-size:13px;font-weight:700;cursor:pointer;transition:.2s" onmouseover="this.style.background='rgba(220,38,38,.15)'" onmouseout="this.style.background='rgba(220,38,38,.07)'"><i class="ti ti-logout" style="font-size:15px"></i>Sair do CRM</button>
     </div>`,
 
     admins:`<div class="cfg-card">
@@ -5386,6 +5382,10 @@ function cfgRenderSection(){
       <div class="field"><label>Senha atual</label><input type="password" class="fi" placeholder="••••••••"></div>
       <div class="g2"><div class="field"><label>Nova senha</label><input type="password" class="fi" placeholder="Nova senha"></div><div class="field"><label>Confirmar</label><input type="password" class="fi" placeholder="Confirmar"></div></div>
       <button class="btn bp" onclick="integConectar('senha')"><i class="ti ti-lock"></i>Alterar senha</button>
+      <div class="cfg-divider"></div>
+      <div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:6px"><i class="ti ti-logout" style="margin-right:6px"></i>Encerrar sessão</div>
+      <div style="font-size:12px;color:var(--tm);margin-bottom:12px">Você será desconectado e redirecionado para a tela de login.</div>
+      <button onclick="fazerLogout()" style="display:inline-flex;align-items:center;gap:8px;padding:10px 22px;border:1.5px solid rgba(220,38,38,.35);border-radius:8px;background:rgba(220,38,38,.07);color:#dc2626;font-size:13px;font-weight:700;cursor:pointer;transition:.2s" onmouseover="this.style.background='rgba(220,38,38,.15)'" onmouseout="this.style.background='rgba(220,38,38,.07)'"><i class="ti ti-logout" style="font-size:15px"></i>Sair do CRM</button>
     </div>`,
 
     plano:`<div class="cfg-card">
