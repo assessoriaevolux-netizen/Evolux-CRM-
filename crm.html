@@ -176,6 +176,398 @@
     for(const u of window.users){await window._syncUser(u);}
   };
 
+  // ── LEADS ──────────────────────────────────────────────────────────────────
+  window._syncLead = async function(lead) {
+    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
+    const empresaId = me?.empresaId || null;
+    if (!empresaId) return;
+    const resp = window.users && window.users.find(u => u.id === lead.responsavelId);
+    const payload = {
+      empresa_id: empresaId,
+      responsavel_id: resp?.sb_id || null,
+      nome: lead.nome || '',
+      telefone: lead.tel || '',
+      tipo: lead.tipo || 'Imóvel',
+      credito: lead.credito || 0,
+      etapa: lead.etapa || 'Novo lead',
+      origem: lead.origem || '',
+      atendimento: lead.atendimento || '',
+      obs: lead.obs || '',
+      data_criacao: lead.data ? lead.data.split('/').reverse().join('-') : new Date().toISOString().split('T')[0],
+      updated_at: new Date().toISOString()
+    };
+    if (lead.sb_id) {
+      payload.id = lead.sb_id;
+      const { data, error } = await window._sb.from('leads').upsert(payload, { onConflict: 'id' }).select().single();
+      if (!error && data) lead.sb_id = data.id;
+    } else {
+      const { data, error } = await window._sb.from('leads').insert(payload).select().single();
+      if (!error && data) lead.sb_id = data.id;
+    }
+  };
+
+  window._deleteLead = async function(sb_id) {
+    if (!sb_id) return;
+    await window._sb.from('leads').delete().eq('id', sb_id);
+  };
+
+  window._loadLeads = async function() {
+    try {
+      const { data, error } = await window._sb.from('leads').select('*').order('created_at', { ascending: false });
+      if (error || !data) return;
+      if (!window.users) return;
+      data.forEach(row => {
+        const existing = window.leads && window.leads.find(l => l.sb_id === row.id);
+        const resp = window.users.find(u => u.sb_id === row.responsavel_id);
+        const mapped = {
+          id: existing ? existing.id : (window.nextLeadId++),
+          sb_id: row.id,
+          nome: row.nome || '',
+          tel: row.telefone || '',
+          tipo: row.tipo || 'Imóvel',
+          credito: parseFloat(row.credito) || 0,
+          etapa: row.etapa || 'Novo lead',
+          origem: row.origem || '',
+          atendimento: row.atendimento || '',
+          obs: row.obs || '',
+          data: row.data_criacao ? row.data_criacao.split('-').reverse().join('/') : '',
+          responsavelId: resp ? resp.id : ((window.users[0] || {}).id || 1),
+        };
+        if (existing) {
+          Object.assign(existing, mapped);
+        } else {
+          if (!window.leads) window.leads = [];
+          window.leads.push(mapped);
+        }
+      });
+    } catch(e) { console.warn('loadLeads error:', e); }
+  };
+
+  // ── LANCES ─────────────────────────────────────────────────────────────────
+  window._syncLance = async function(lance) {
+    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
+    const empresaId = me?.empresaId || null;
+    if (!empresaId) return;
+    const lead = window.leads && window.leads.find(l => l.id === lance.leadId);
+    const payload = {
+      empresa_id: empresaId,
+      lead_id: lead?.sb_id || null,
+      cliente_nome: lance.clienteNome || '',
+      valor: lance.valor || 0,
+      pct: lance.pct || 0,
+      data_oferta: lance.dataOferta || new Date().toISOString().split('T')[0],
+      assembleia: lance.assem || '',
+      obs: lance.obs || '',
+      ofertado: lance.ofertado || false,
+      removido: lance._removido || false,
+      updated_at: new Date().toISOString()
+    };
+    if (lance.sb_id) {
+      payload.id = lance.sb_id;
+      const { data, error } = await window._sb.from('lances').upsert(payload, { onConflict: 'id' }).select().single();
+      if (!error && data) lance.sb_id = data.id;
+    } else {
+      const { data, error } = await window._sb.from('lances').insert(payload).select().single();
+      if (!error && data) lance.sb_id = data.id;
+    }
+  };
+
+  window._loadLances = async function() {
+    try {
+      const { data, error } = await window._sb.from('lances').select('*').order('created_at', { ascending: false });
+      if (error || !data) return;
+      data.forEach(row => {
+        const existing = window.lances && window.lances.find(la => la.sb_id === row.id);
+        const lead = window.leads && window.leads.find(l => l.sb_id === row.lead_id);
+        const mapped = {
+          id: existing ? existing.id : (window.nextLanceId++),
+          sb_id: row.id,
+          leadId: lead ? lead.id : null,
+          clienteNome: row.cliente_nome || '',
+          valor: parseFloat(row.valor) || 0,
+          pct: parseFloat(row.pct) || 0,
+          dataOferta: row.data_oferta || '',
+          assem: row.assembleia || '',
+          obs: row.obs || '',
+          ofertado: row.ofertado || false,
+          _removido: row.removido || false,
+        };
+        if (existing) { Object.assign(existing, mapped); }
+        else { if (!window.lances) window.lances = []; window.lances.push(mapped); }
+      });
+    } catch(e) { console.warn('loadLances error:', e); }
+  };
+
+  // ── EQUIPES ────────────────────────────────────────────────────────────────
+  window._syncEquipe = async function(equipe) {
+    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
+    const empresaId = me?.empresaId || null;
+    if (!empresaId) return;
+    const membros = (equipe.membroIds || []).map(mid => {
+      const u = window.users && window.users.find(x => x.id === mid);
+      return u?.sb_id || null;
+    }).filter(Boolean);
+    const payload = {
+      empresa_id: empresaId,
+      nome: equipe.nome || '',
+      descricao: equipe.descricao || '',
+      membros_sb_ids: membros,
+      updated_at: new Date().toISOString()
+    };
+    if (equipe.sb_id) {
+      payload.id = equipe.sb_id;
+      const { data, error } = await window._sb.from('equipes').upsert(payload, { onConflict: 'id' }).select().single();
+      if (!error && data) equipe.sb_id = data.id;
+    } else {
+      const { data, error } = await window._sb.from('equipes').insert(payload).select().single();
+      if (!error && data) equipe.sb_id = data.id;
+    }
+  };
+
+  window._loadEquipes = async function() {
+    try {
+      const { data, error } = await window._sb.from('equipes').select('*').order('nome');
+      if (error || !data) return;
+      data.forEach(row => {
+        const existing = window.equipes && window.equipes.find(e => e.sb_id === row.id);
+        const membroIds = (row.membros_sb_ids || []).map(sbId => {
+          const u = window.users && window.users.find(x => x.sb_id === sbId);
+          return u ? u.id : null;
+        }).filter(Boolean);
+        const mapped = {
+          id: existing ? existing.id : (window.nextEquipeId++),
+          sb_id: row.id,
+          nome: row.nome || '',
+          descricao: row.descricao || '',
+          membroIds,
+        };
+        if (existing) { Object.assign(existing, mapped); }
+        else { if (!window.equipes) window.equipes = []; window.equipes.push(mapped); }
+      });
+    } catch(e) { console.warn('loadEquipes error:', e); }
+  };
+
+  // ── HIERARQUIAS ────────────────────────────────────────────────────────────
+  window._syncHierarquia = async function(h) {
+    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
+    const empresaId = me?.empresaId || null;
+    if (!empresaId) return;
+    const payload = {
+      empresa_id: empresaId,
+      slug: h.slug || '',
+      nome: h.nome || '',
+      descricao: h.descricao || '',
+      ordem: h.ordem || 1,
+      superior_id: h.superiorId || null,
+      status: h.status || 'ativa',
+      perms: h.perms ? JSON.stringify(h.perms) : null,
+      updated_at: new Date().toISOString()
+    };
+    if (h.sb_id) {
+      payload.id = h.sb_id;
+      const { data, error } = await window._sb.from('hierarquias').upsert(payload, { onConflict: 'id' }).select().single();
+      if (!error && data) h.sb_id = data.id;
+    } else {
+      const { data, error } = await window._sb.from('hierarquias').insert(payload).select().single();
+      if (!error && data) h.sb_id = data.id;
+    }
+  };
+
+  window._loadHierarquias = async function() {
+    try {
+      const { data, error } = await window._sb.from('hierarquias').select('*').order('ordem');
+      if (error || !data || !data.length) return;
+      window.hierarquias = data.map((row, idx) => ({
+        id: idx + 1,
+        sb_id: row.id,
+        slug: row.slug || '',
+        nome: row.nome || '',
+        descricao: row.descricao || '',
+        ordem: row.ordem || idx + 1,
+        superiorId: row.superior_id || null,
+        status: row.status || 'ativa',
+        perms: row.perms ? JSON.parse(row.perms) : {},
+      }));
+    } catch(e) { console.warn('loadHierarquias error:', e); }
+  };
+
+  // ── ADMINISTRADORAS ────────────────────────────────────────────────────────
+  window._syncAdministradora = async function(a) {
+    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
+    const empresaId = me?.empresaId || null;
+    if (!empresaId) return;
+    const payload = {
+      empresa_id: empresaId,
+      nome: a.nome || '',
+      logo_url: a.logo || null,
+      grupos: a.grupos ? JSON.stringify(a.grupos) : null,
+      ativa: a.ativa !== false,
+      taxa_fin: a.taxaFin || 1.25,
+      updated_at: new Date().toISOString()
+    };
+    if (a.sb_id) {
+      payload.id = a.sb_id;
+      const { data, error } = await window._sb.from('administradoras').upsert(payload, { onConflict: 'id' }).select().single();
+      if (!error && data) a.sb_id = data.id;
+    } else {
+      const { data, error } = await window._sb.from('administradoras').insert(payload).select().single();
+      if (!error && data) a.sb_id = data.id;
+    }
+  };
+
+  window._loadAdministradoras = async function() {
+    try {
+      const { data, error } = await window._sb.from('administradoras').select('*').order('nome');
+      if (error || !data || !data.length) return;
+      window.administradoras = data.map((row, idx) => ({
+        id: idx + 1,
+        sb_id: row.id,
+        nome: row.nome || '',
+        logo: row.logo_url || null,
+        grupos: row.grupos ? JSON.parse(row.grupos) : [],
+        ativa: row.ativa !== false,
+        taxaFin: parseFloat(row.taxa_fin) || 1.25,
+      }));
+      window.nextAdminId = window.administradoras.length + 1;
+    } catch(e) { console.warn('loadAdministradoras error:', e); }
+  };
+
+  // ── EVENTOS DO CALENDÁRIO ──────────────────────────────────────────────────
+  window._syncEvento = async function(ev) {
+    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
+    const empresaId = me?.empresaId || null;
+    if (!empresaId) return;
+    const lead = window.leads && window.leads.find(l => l.id === ev.leadId);
+    const payload = {
+      empresa_id: empresaId,
+      user_id: window._currentUserId || null,
+      lead_id: lead?.sb_id || null,
+      lead_nome: ev.leadNome || '',
+      tipo: ev.tipo || 'reuniao',
+      data: ev.data || new Date().toISOString().split('T')[0],
+      hora_ini: ev.horaIni || '',
+      hora_fim: ev.horaFim || '',
+      obs: ev.obs || '',
+      updated_at: new Date().toISOString()
+    };
+    if (ev.sb_id) {
+      payload.id = ev.sb_id;
+      const { data, error } = await window._sb.from('eventos_calendario').upsert(payload, { onConflict: 'id' }).select().single();
+      if (!error && data) ev.sb_id = data.id;
+    } else {
+      const { data, error } = await window._sb.from('eventos_calendario').insert(payload).select().single();
+      if (!error && data) ev.sb_id = data.id;
+    }
+  };
+
+  window._deleteEvento = async function(sb_id) {
+    if (!sb_id) return;
+    await window._sb.from('eventos_calendario').delete().eq('id', sb_id);
+  };
+
+  window._loadEventos = async function() {
+    try {
+      const { data, error } = await window._sb.from('eventos_calendario').select('*').order('data');
+      if (error || !data) return;
+      window.eventos = [];
+      window.nextEventoId = 1;
+      data.forEach(row => {
+        const lead = window.leads && window.leads.find(l => l.sb_id === row.lead_id);
+        window.eventos.push({
+          id: window.nextEventoId++,
+          sb_id: row.id,
+          leadId: lead ? lead.id : null,
+          leadNome: row.lead_nome || '',
+          tipo: row.tipo || 'reuniao',
+          data: row.data || '',
+          horaIni: row.hora_ini || '',
+          horaFim: row.hora_fim || '',
+          obs: row.obs || '',
+        });
+      });
+    } catch(e) { console.warn('loadEventos error:', e); }
+  };
+
+  // ── VENDAS (histórico) ─────────────────────────────────────────────────────
+  window._registrarVenda = async function(lead, userId) {
+    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
+    const empresaId = me?.empresaId || null;
+    if (!empresaId) return;
+    const user = window.users && window.users.find(u => u.id === userId);
+    await window._sb.from('vendas').insert({
+      empresa_id: empresaId,
+      user_id: user?.sb_id || null,
+      lead_id: lead?.sb_id || null,
+      cliente_nome: lead?.nome || '',
+      valor_credito: lead?.credito || 0,
+      data_fechamento: new Date().toISOString().split('T')[0],
+    });
+  };
+
+  window._estornarVenda = async function(lead) {
+    if (!lead?.sb_id) return;
+    await window._sb.from('vendas').delete().eq('lead_id', lead.sb_id);
+  };
+
+  // ── EMPRESA (dados gerais) ─────────────────────────────────────────────────
+  window._syncEmpresa = async function() {
+    const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
+    const empresaId = me?.empresaId || null;
+    if (!empresaId || !window.empresa) return;
+    await window._sb.from('empresas').update({
+      nome: window.empresa.nome || '',
+      logo_url: window.empresa.logo || null,
+      whatsapp: window.empresa.whatsapp || '',
+      email: window.empresa.email || '',
+      updated_at: new Date().toISOString()
+    }).eq('id', empresaId);
+  };
+
+  window._loadEmpresa = async function() {
+    try {
+      const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
+      const empresaId = me?.empresaId || null;
+      if (!empresaId) return;
+      const { data, error } = await window._sb.from('empresas').select('*').eq('id', empresaId).single();
+      if (error || !data) return;
+      window.empresa = {
+        nome: data.nome || 'Minha Empresa',
+        logo: data.logo_url || null,
+        whatsapp: data.whatsapp || '',
+        email: data.email || '',
+      };
+    } catch(e) { console.warn('loadEmpresa error:', e); }
+  };
+
+  // ── CARREGAMENTO INICIAL COMPLETO ──────────────────────────────────────────
+  window._loadAllData = async function() {
+    window.leads = [];
+    window.nextLeadId = 1;
+    window.lances = [];
+    window.nextLanceId = 1;
+    window.equipes = [];
+    window.nextEquipeId = 1;
+    window.eventos = [];
+    window.nextEventoId = 1;
+
+    await window._loadEmpresa();
+    await window._loadHierarquias();
+    await window._loadAdministradoras();
+    await window._loadEquipes();
+    await window._loadLeads();
+    await window._loadLances();
+    await window._loadEventos();
+
+    try { window.renderDashboard && window.renderDashboard(); } catch(e) {}
+    try { window.renderKanban && window.renderKanban(); } catch(e) {}
+    try { window.renderTable && window.renderTable(); } catch(e) {}
+    try { window.renderRanking && window.renderRanking(); } catch(e) {}
+    try { window.renderCalendario && window.renderCalendario(); } catch(e) {}
+    try { window.renderLances && window.renderLances(); } catch(e) {}
+    try { window.renderUserList && window.renderUserList(); } catch(e) {}
+    try { window.populateSelects && window.populateSelects(); } catch(e) {}
+  };
+
   // ── 4. Realtime: escuta mudanças na tabela profiles ───────────────────────
   window.addEventListener('load',function(){
     window._sb.channel('profiles-sync')
@@ -2844,11 +3236,13 @@ function saveLeadDetalhe(){
   l.credito=newCredito;l.etapa=newEtapa;l.origem=document.getElementById('ld-origem').value;
   l.responsavelId=newResp;l.atendimento=document.getElementById('ld-atendimento').value;
   l.obs=document.getElementById('ld-obs').value;
+  if(window._syncLead) window._syncLead(l).catch(e=>console.warn(e));
   closeLeadDetalhe();
   renderKanban();renderDashboard();renderTable();renderNotifPanel();
 }
 function removeLeadDetalhe(){
   if(!confirm('Remover este lead?'))return;
+  const _rld=leads.find(l=>l.id===_leadDetalheId); if(_rld?.sb_id&&window._deleteLead) window._deleteLead(_rld.sb_id);
   leads=leads.filter(l=>l.id!==_leadDetalheId);
   closeLeadDetalhe();renderKanban();renderDashboard();renderTable();
 }
@@ -2913,13 +3307,16 @@ function onDrop(e,etapa){
       if(resp){resp.vendas=Math.max(0,(resp.vendas||0)-1);resp.credito=Math.max(0,(resp.credito||0)-l.credito);}
     }
     l.etapa=etapa;
+    if(window._syncLead) window._syncLead(l).catch(e=>console.warn(e));
     activities.push({icon:'ti-arrows-right-left',text:`${l.nome}: ${old} → ${etapa}`,time:'Agora'});
     if(etapa==='Fechado / Convertido'){
       const resp=users.find(x=>x.id===l.responsavelId);
       if(resp){resp.vendas=(resp.vendas||0)+1;resp.credito=(resp.credito||0)+l.credito;}
+      if(window._registrarVenda) window._registrarVenda(l, l.responsavelId).catch(e=>console.warn(e));
       activities.unshift({icon:'ti-circle-check',text:`${l.nome} fechado — ${fmtR(l.credito)}`,time:'Agora'});
       setTimeout(()=>showCelebra(resp?resp.nome:'Vendedor', l.credito), 100);
     }
+    if(old==='Fechado / Convertido'&&window._estornarVenda) window._estornarVenda(l).catch(e=>console.warn(e));
     if(etapa==='Perdido'){
       activities.unshift({icon:'ti-x',text:`${l.nome} marcado como perdido`,time:'Agora'});
     }
@@ -2986,6 +3383,7 @@ function saveLead(){
   const respId=parseInt(document.getElementById('fResp').value)||(getMe()||users[0]||{}).id||1;
   const lead={id:nextLeadId++,nome,tel:document.getElementById('fTel').value,tipo:document.getElementById('fTipo2').value,credito,etapa:document.getElementById('fEtapa2').value,origem:document.getElementById('fOrigem2').value,responsavelId:respId,data:toDate(),obs:document.getElementById('fObs').value};
   leads.push(lead);
+  if(window._syncLead) window._syncLead(lead).catch(e=>console.warn(e));
   const resp=users.find(u=>u.id===respId);
   activities.unshift({icon:'ti-user-plus',text:`Novo lead: ${nome} → ${resp?resp.nome:'—'}`,time:'Agora'});
   // Se cadastrado já como Fechado, atualiza stats do responsável
@@ -2998,7 +3396,7 @@ function saveLead(){
   closeModal();['fNome','fTel','fObs'].forEach(id=>document.getElementById(id).value='');document.getElementById('fCredito').value='';
   renderKanban();renderTable();renderDashboard();renderNotifPanel();
 }
-function removeLead(id){if(!confirm('Remover este lead?'))return;leads=leads.filter(l=>l.id!==id);renderKanban();renderTable();renderDashboard();}
+function removeLead(id){if(!confirm('Remover este lead?'))return;const _rl=leads.find(l=>l.id===id); if(_rl?.sb_id&&window._deleteLead) window._deleteLead(_rl.sb_id);leads=leads.filter(l=>l.id!==id);renderKanban();renderTable();renderDashboard();}
 function simFromLead(id){
   showTab('simulador',document.querySelectorAll('.nb')[3]);
   setTimeout(()=>{
@@ -3589,6 +3987,7 @@ function downloadSimPDF(comDados){
 function convertToLead(nome,tipo,credito){
   if(!nome){alert('Preencha o nome do cliente.');return;}
   leads.push({id:nextLeadId++,nome,tel:'',tipo,credito,etapa:'Novo lead',origem:'Simulador',responsavelId:(getMe()||users[0]||{}).id||1,data:toDate(),obs:'Convertido via simulador.'});
+  const _cl=leads[leads.length-1]; if(window._syncLead) window._syncLead(_cl).catch(e=>console.warn(e));
   activities.push({icon:'ti-calculator',text:`${nome} convertido via simulador — ${fmtR(credito)}`,time:'Agora'});
   showTab('leads',document.querySelectorAll('.nb')[2]);
 }
@@ -3677,12 +4076,13 @@ function saveLance(){
   // Se editando lance existente, atualiza
   if(window._editandoLanceId){
     const l=lances.find(x=>x.id===window._editandoLanceId);
-    if(l){l.leadId=leadId;l.clienteNome=lead.nome;l.valor=valor;l.pct=pct;l.dataOferta=dataOferta;l.assem=assem;l.obs=obs;l._auto=false;}
+    if(l){l.leadId=leadId;l.clienteNome=lead.nome;l.valor=valor;l.pct=pct;l.dataOferta=dataOferta;l.assem=assem;l.obs=obs;l._auto=false;if(window._syncLance) window._syncLance(l).catch(e=>console.warn(e));}
     activities.push({icon:'ti-gavel',text:`Lance atualizado: ${lead.nome} — ${fmtR(valor)} (${pct}%)`,time:'Agora'});
   } else {
     // Remove lance auto do mesmo lead se existir
     lances=lances.filter(la=>!(la._auto&&la.leadId===leadId&&!la._removido));
     lances.push({id:nextLanceId++,leadId,clienteNome:lead.nome,valor,pct,dataOferta,assem,obs,ofertado:false});
+    if(window._syncLance) window._syncLance(lances[lances.length-1]).catch(e=>console.warn(e));
     activities.push({icon:'ti-gavel',text:`Lance cadastrado: ${lead.nome} — ${fmtR(valor)} (${pct}%)`,time:'Agora'});
   }
   closeLanceModal();['lValor','lPct','lAssem','lObs'].forEach(id=>document.getElementById(id).value='');
@@ -4360,10 +4760,11 @@ function saveAdminModal(){
   const tipo=document.getElementById('adm-tipo').value;
   if(adminEditId){
     const ad=administradoras.find(a=>a.id===adminEditId);
-    if(ad){ad.nome=nome;ad.cnpj=cnpj;ad.tipo=tipo;}
+    if(ad){ad.nome=nome;ad.cnpj=cnpj;ad.tipo=tipo;if(window._syncAdministradora) window._syncAdministradora(ad).catch(e=>console.warn(e));}
   } else {
     const grupos=[...admTempGrupos];
     administradoras.push({id:nextAdminId++,nome,cnpj,tipo,grupos,ativa:administradoras.length===0});
+    if(window._syncAdministradora) window._syncAdministradora(administradoras[administradoras.length-1]).catch(e=>console.warn(e));
     admTempGrupos=[];
   }
   closeAdminModal();
@@ -5742,6 +6143,7 @@ function calAgendar(){
   const lead=leads.find(l=>l.id===lid);
   const novoEvt={id:nextEventoId++,leadId:lid,leadNome:lead?lead.nome:'—',tipo,data,horaIni:hi,horaFim:hf,obs};
   eventos.push(novoEvt);
+  if(window._syncEvento) window._syncEvento(novoEvt).catch(e=>console.warn(e));
   activities.unshift({icon:'ti-calendar-check',text:`Reunião agendada com ${lead?lead.nome:'cliente'} — ${data.split('-').reverse().join('/')} ${hi}`,time:'Agora'});
   renderCalendario();
   showToast('Evento agendado! Deseja gerar o protocolo?', 'ti-calendar');
@@ -6131,6 +6533,7 @@ function uploadFoto(e) {
   reader.onload = function(ev) {
     const dataUrl = ev.target.result;
     const _meF=getMe(); if(_meF) _meF.foto = dataUrl; // FIX: nunca acessa users[0]
+    if(window._syncUser&&_meF) window._syncUser(_meF).catch(e=>console.warn(e));
     // Atualizar preview na seção conta
     const prev = document.getElementById('foto-preview-conta');
     if(prev) prev.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover">`;
@@ -6428,6 +6831,8 @@ function salvarConfiguracoesConta(){
   if(empNomeEl) empresa.nome=empNomeEl.value.trim()||empresa.nome;
   if(empWaEl) empresa.whatsapp=empWaEl.value.trim();
   if(empEmailEl) empresa.email=empEmailEl.value.trim();
+  if(window._syncUser&&me) window._syncUser(me).catch(e=>console.warn(e));
+  if(window._syncEmpresa) window._syncEmpresa().catch(e=>console.warn(e));
 
   // Atualiza o dashboard se estiver visível
   const dashTab = document.getElementById('tab-dashboard');
@@ -6689,6 +7094,7 @@ function saveEquipe(){
     obj.id=nextEquipeId++;
     equipes.push(obj);
   }
+  if(window._syncEquipe) window._syncEquipe(obj).catch(e=>console.warn(e));
   closeEqModal();
   toast(obj.nome+' salva!');
   cfgShow('equipes');
@@ -6948,6 +7354,8 @@ async function _initCRM(){
   try{applyNavPermissions();}catch(e){}
   try{renderRanking();}catch(e){}
   try{renderUserList();}catch(e){}
+  // Carrega dados persistidos do Supabase após profiles prontos
+  if(window._loadAllData) window._loadAllData();
 }
 _initCRM();
 
@@ -7081,6 +7489,7 @@ function saveHierModal(){
     const h=getHier(hmEditId);
     if(h){
       h.nome=nome;h.descricao=descricao;h.ordem=ordem;h.status=status;h.superiorId=superiorId;h.perms=perms;
+      if(window._syncHierarquia) window._syncHierarquia(h).catch(e=>console.warn(e));
       // propagate to all users of this hierarchy
       applyHierToAll(hmEditId);
     }
@@ -7088,6 +7497,7 @@ function saveHierModal(){
     // create new
     const slug=nome.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'');
     hierarquias.push({id:nextHierArquiaId++,slug,nome,descricao,ordem,superiorId,status,perms});
+    if(window._syncHierarquia) window._syncHierarquia(hierarquias[hierarquias.length-1]).catch(e=>console.warn(e));
   }
 
   closeHierModal();
