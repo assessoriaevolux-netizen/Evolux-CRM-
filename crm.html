@@ -79,14 +79,16 @@
         local.vendas=row.vendas||0;
         local.credito=row.credito||0;
         local.role=row.role||local.role;
-        local.hierarquiaId=row.hierarquia_id||local.hierarquiaId;
-        local.equipeId=row.equipe_id||local.equipeId;
+        // Banco é a fonte da verdade — sempre usa o valor do banco se definido
+        if(row.hierarquia_id!==undefined) local.hierarquiaId=row.hierarquia_id||local.hierarquiaId;
+        if(row.equipe_id!==undefined) local.equipeId=row.equipe_id||local.equipeId;
         local.sb_id=row.id;
         local.empresaId=row.empresa_id||local.empresaId;
         if(row.whatsapp!==undefined) local.whatsapp=row.whatsapp||local.whatsapp;
         if(row.instagram!==undefined) local.instagram=row.instagram||local.instagram;
         if(row.perms){try{local.perms=JSON.parse(row.perms);}catch(e){}}
-        if(row.hperms){try{local.hperms=JSON.parse(row.hperms);}catch(e){}}
+        // hperms do banco NÃO é aplicado aqui — sempre vem da hierarquia via _ensureMeHperms/_loadAllData
+        // Isso garante que permissões refletem a hierarquia atual, não snapshot antigo do banco
       } else {
         const maxId=Math.max(...arr.map(u=>u.id),99);
         const newU=sbRowToUser(row,idx);
@@ -184,12 +186,10 @@
     if(!window.hierarquias||!window.hierarquias.length) return;
     const h=window.hierarquias.find(x=>x.sb_id===me.hierarquiaId||String(x.id)===String(me.hierarquiaId));
     if(!h||!h.perms) return;
-    // Só aplica se hperms estiver vazio ou não definido
-    const hasHperms=me.hperms&&Object.keys(me.hperms).length>0;
-    if(!hasHperms){
-      me.hperms={...h.perms};
-      console.log('[_ensureMeHperms] aplicou hperms da hierarquia "'+h.nome+'" para '+me.nome);
-    }
+    // SEMPRE reaplicar hperms da hierarquia — sobrescreve qualquer versão desatualizada do banco
+    // As permissões são da hierarquia, não do usuário individual
+    me.hperms={...h.perms};
+    console.log('[_ensureMeHperms] aplicou hperms da hierarquia "'+h.nome+'" para '+me.nome, me.hperms);
     // Sempre garante role correto baseado na hierarquia
     if(typeof window.slugToRole==='function'){
       const roleCorreto=window.slugToRole(h);
@@ -826,14 +826,13 @@
 
     await window._loadEmpresa().catch(e=>console.warn('[_loadAllData] loadEmpresa error:',e));
     await window._loadHierarquias().catch(e=>console.warn('[_loadAllData] loadHierarquias error:',e));
-    // Após carregar hierarquias, reaplicar hperms em usuários que não têm override individual no DB
-    // Bug #8: se hperms do DB está vazio/null → aplica da hierarquia; se tem dados → respeita override do admin
+    // Após carregar hierarquias, sempre reaplicar hperms de todos os usuários da hierarquia
+    // As permissões são SEMPRE da hierarquia — não há override individual
     if(window.users && window.hierarquias){
       window.users.forEach(u=>{
         const h=window.hierarquias.find(x=>x.sb_id===u.hierarquiaId||x.id===u.hierarquiaId);
         if(h&&h.perms){
-          const hasIndividualPerms=u.hperms&&Object.keys(u.hperms).length>0;
-          if(!hasIndividualPerms) u.hperms={...h.perms};
+          u.hperms={...h.perms};
         }
       });
     }
@@ -8034,8 +8033,7 @@ async function _initCRM(){
         local.sb_id=row.id;
         local.empresaId=row.empresa_id||local.empresaId;
         if(row.perms){try{local.perms=JSON.parse(row.perms);}catch(e){}}
-        if(row.hperms){try{local.hperms=JSON.parse(row.hperms);}catch(e){}}
-        // Reaplicar hperms da hierarquia (garante sync com regras atuais do cargo)
+        // hperms sempre vem da hierarquia — não do snapshot do banco
         if(local.hierarquiaId && window.hierarquias){
           const _h=window.hierarquias.find(x=>x.sb_id===local.hierarquiaId||x.id===local.hierarquiaId);
           if(_h&&_h.perms) local.hperms={..._h.perms};
