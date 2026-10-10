@@ -221,8 +221,9 @@
       hierarquia_id:_hierUUID,
       equipe_id:u.equipeId||null,
       meta:u.meta||0,
-      vendas:u.vendas||0,
-      credito:u.credito||0,
+      // NUNCA inclui vendas/credito aqui — esses campos só são alterados por
+      // _registrarVenda/_estornarVenda com incremento atômico, para evitar
+      // race condition onde salvar foto/perfil sobrescreve vendas registradas
       foto_url:u.foto||null,
       empresa_id:u.empresaId||window._empresaIdDireto||null,
       perms:u.perms?JSON.stringify(u.perms):null,
