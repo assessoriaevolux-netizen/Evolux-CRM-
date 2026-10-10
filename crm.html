@@ -946,7 +946,8 @@
       const supervisorPerms = () => {
         const p = allPermsFalse();
         ['leads_view','leads_create','leads_edit','funil_view','funil_move',
-         'simulador_view','lances_view','ranking_view','config_view'].forEach(k=>{if(k in p) p[k]=true;});
+         'simulador_view','lances_view','ranking_view','config_view',
+         'equipe_add','equipe_edit','equipe_view'].forEach(k=>{if(k in p) p[k]=true;});
         return p;
       };
       const vendedorPerms = () => {
@@ -3076,6 +3077,7 @@ function getHierClass(u){return RC_STATIC[u.role]||'rv';}
 const PDEFS={leads:'Leads',funil:'Funil',simulador:'Sim.',modelos:'Modelos',lances:'Lances',ranking:'Ranking',relatorios:'Rel.',config:'Config.'};
 const DPERMS={
   gestor:{leads:true,funil:true,simulador:true,modelos:true,lances:true,ranking:true,relatorios:true,config:true},
+  supervisor:{leads:true,funil:true,simulador:true,modelos:false,lances:true,ranking:true,relatorios:false,config:true},
   representante:{leads:true,funil:true,simulador:true,modelos:true,lances:true,ranking:true,relatorios:true,config:false},
   vendedor:{leads:true,funil:true,simulador:true,modelos:false,lances:true,ranking:true,relatorios:false,config:false}
 };
@@ -5672,7 +5674,7 @@ async function inviteUser(){
   if(!metaRaw){alert('Informe a meta do usuário.');return;}
   const equipeEl=document.getElementById('uEquipe');
   const equipeId=equipeEl?parseInt(equipeEl.value)||null:null;
-  const role=selH&&selH.slug==='gestor'?'gestor':selH&&selH.slug==='representante'?'representante':'vendedor';
+  const role=selH&&selH.slug==='gestor'?'gestor':selH&&selH.slug==='supervisor'?'supervisor':selH&&selH.slug==='representante'?'representante':'vendedor';
   const btn=document.getElementById('btn-invite-user');
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>Cadastrando...';}
   let sbUserId=null;
@@ -5840,6 +5842,12 @@ function changeUserHier(userId,hierIdStr){
   // Salva o UUID do banco em hierarquiaId (padrão do sistema após correção)
   u.hierarquiaId=h?h.sb_id:null;
   if(h&&h.perms) u.hperms={...h.perms};
+  // Atualiza o role de acordo com o slug da hierarquia selecionada
+  if(h&&h.slug){
+    u.role=h.slug==='gestor'?'gestor':h.slug==='supervisor'?'supervisor':h.slug==='representante'?'representante':'vendedor';
+    // Atualiza perms de abas conforme o novo papel
+    u.perms={...DPERMS[u.role]||DPERMS.vendedor};
+  }
   // Persiste no Supabase
   if(window._syncUser) window._syncUser(u).catch(e=>console.warn('[changeUserHier] sync err:',e));
   renderUserList();
@@ -5897,7 +5905,7 @@ function renderConfig(){
   const nav=document.getElementById('cfg-nav');
   if(!nav)return;
   const meC=getMe();
-  const isAdmin=meC&&(meC.role==='master'||meC.role==='gestor'||meC.role==='superadmin');
+  const isAdmin=meC&&(meC.role==='master'||meC.role==='gestor'||meC.role==='superadmin'||meC.role==='supervisor'||(meC.hperms&&meC.hperms.equipe_add));
   const adminOnlySections=['admins','usuarios','equipes','hierarquia'];
   // Se a seção ativa é admin-only e o usuário não é admin, redireciona para conta
   if(!isAdmin&&adminOnlySections.includes(cfgActive)) cfgActive='conta';
@@ -6248,7 +6256,7 @@ function cfgRenderSection(){
   sections.equipes=(()=>{
     // Verificar permissão de criar equipe
     const meEq=getMe();
-    const podeNovaEq=meEq&&(meEq.role==='admin'||meEq.role==='gestor'||meEq.role==='administrador'||(meEq.hperms&&meEq.hperms.equipe_add));
+    const podeNovaEq=meEq&&(meEq.role==='admin'||meEq.role==='gestor'||meEq.role==='supervisor'||meEq.role==='administrador'||(meEq.hperms&&meEq.hperms.equipe_add));
     const eqAv=(eq)=>{
       if(eq.foto) return `<img src="${eq.foto}" style="width:50px;height:50px;border-radius:12px;object-fit:cover;flex-shrink:0">`;
       const ini=eq.nome.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
