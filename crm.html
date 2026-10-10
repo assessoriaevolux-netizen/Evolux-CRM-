@@ -601,19 +601,55 @@
     const empresaId = await window._getEmpresaId();
     if (!empresaId) return;
     const user = users.find(u => u.id === userId);
+    const userSbId = user?.sb_id || null;
+    const valorCredito = lead?.credito || 0;
+
+    // 1) Registra a venda na tabela de histórico
     await window._sb.from('vendas').insert({
       empresa_id: empresaId,
-      user_id: user?.sb_id || null,
+      user_id: userSbId,
       lead_id: lead?.sb_id || null,
       cliente_nome: lead?.nome || '',
-      valor_credito: lead?.credito || 0,
+      valor_credito: valorCredito,
       data_fechamento: new Date().toISOString().split('T')[0],
     });
+
+    // 2) Incrementa atomicamente no banco (evita race condition de ler→somar→salvar)
+    if(userSbId){
+      await window._sb.rpc('increment_user_stats', {
+        p_user_id: userSbId,
+        p_vendas: 1,
+        p_credito: valorCredito
+      }).catch(async()=>{
+        // Fallback: se a RPC não existir, faz update direto com valor atual + incremento
+        const {data:cur}=await window._sb.from('profiles').select('vendas,credito').eq('id',userSbId).single();
+        if(cur){
+          await window._sb.from('profiles').update({
+            vendas:(cur.vendas||0)+1,
+            credito:(cur.credito||0)+valorCredito,
+            updated_at:new Date().toISOString()
+          }).eq('id',userSbId);
+        }
+      });
+    }
   };
 
   window._estornarVenda = async function(lead) {
     if (!lead?.sb_id) return;
+    // Busca a venda antes de deletar para estornar o valor correto
+    const {data:vendaRow}=await window._sb.from('vendas').select('user_id,valor_credito').eq('lead_id',lead.sb_id).single().catch(()=>({data:null}));
     await window._sb.from('vendas').delete().eq('lead_id', lead.sb_id);
+    // Decrementa atomicamente no banco
+    if(vendaRow?.user_id){
+      const {data:cur}=await window._sb.from('profiles').select('vendas,credito').eq('id',vendaRow.user_id).single().catch(()=>({data:null}));
+      if(cur){
+        await window._sb.from('profiles').update({
+          vendas:Math.max(0,(cur.vendas||0)-1),
+          credito:Math.max(0,(cur.credito||0)-(vendaRow.valor_credito||0)),
+          updated_at:new Date().toISOString()
+        }).eq('id',vendaRow.user_id);
+      }
+    }
   };
 
   // ── ATIVIDADES (histórico sincronizado) ────────────────────────────────────
