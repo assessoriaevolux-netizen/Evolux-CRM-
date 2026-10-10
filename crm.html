@@ -5820,8 +5820,9 @@ function renderUserList(){
           <div style="display:flex;align-items:center;gap:6px">
             <select class="fi ulist-hier-sel" data-uid="${u.id}" style="font-size:11.5px;padding:4px 8px;height:auto">
               <option value="">Hierarquia...</option>
-              ${hierarquias.map(h=>`<option value="${h.id}" ${(u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id)?'selected':''}>${h.nome}</option>`).join('')}
+              ${hierarquias.map(h=>`<option value="${h.id}" ${(u.hierarquiaId&&(String(u.hierarquiaId)===String(h.sb_id)||String(u.hierarquiaId)===String(h.id)))?'selected':''}>${h.nome}</option>`).join('')}
             </select>
+            <button class="btn bp bsm ulist-hier-save-btn" data-uid="${u.id}" title="Salvar hierarquia" style="padding:4px 10px;font-size:11.5px"><i class="ti ti-check"></i></button>
             <button class="btn bd bsm ulist-remove-btn" data-uid="${u.id}" title="Remover usuário"><i class="ti ti-trash"></i></button>
           </div>
         `:`<span class="rbadge rg">Administrador</span>`}
@@ -5838,12 +5839,26 @@ function renderUserList(){
   });
   list.querySelectorAll('.ulist-hier-sel').forEach(function(sel){
     sel.addEventListener('change',function(){
-      const uid=parseInt(sel.getAttribute('data-uid'));
-      changeUserHier(uid,sel.value);
+      // Só marca visualmente que mudou; save é pelo botão ✓
+      const btn=sel.parentElement&&sel.parentElement.querySelector('.ulist-hier-save-btn');
+      if(btn) btn.style.background='var(--g)';
+    });
+  });
+  list.querySelectorAll('.ulist-hier-save-btn').forEach(function(btn){
+    btn.addEventListener('click',async function(e){
+      e.stopPropagation();
+      const uid=parseInt(btn.getAttribute('data-uid'));
+      const sel=btn.parentElement&&btn.parentElement.querySelector('.ulist-hier-sel');
+      if(!sel||!sel.value){showToast('Selecione uma hierarquia primeiro','ti-alert-circle');return;}
+      btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>';
+      await changeUserHier(uid,sel.value);
+      btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i>';
+      btn.style.background='';
+      showToast('Hierarquia salva!','ti-check');
     });
   });
 }
-function changeUserHier(userId,hierIdStr){
+async function changeUserHier(userId,hierIdStr){
   const u=users.find(x=>x.id===userId);if(!u||u.role==='admin')return; // FIX bug#6
   // hierIdStr é o h.id numérico local (vem do <option value="${h.id}">)
   const hid=parseInt(hierIdStr)||null;
@@ -5858,7 +5873,7 @@ function changeUserHier(userId,hierIdStr){
     u.perms={...DPERMS[u.role]||DPERMS.vendedor};
   }
   // Persiste no Supabase
-  if(window._syncUser) window._syncUser(u).catch(e=>console.warn('[changeUserHier] sync err:',e));
+  if(window._syncUser) await window._syncUser(u).catch(e=>console.warn('[changeUserHier] sync err:',e));
   renderUserList();
 }
 async function removeUser(id){
