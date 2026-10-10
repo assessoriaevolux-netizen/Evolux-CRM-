@@ -6477,6 +6477,19 @@ function calAgendar(){
   if(window._saveAtividade)window._saveAtividade('ti-calendar-check',`Reunião agendada com ${lead?lead.nome:'cliente'} — ${data.split('-').reverse().join('/')} ${hi}`);
   renderCalendario();
   showToast('Evento agendado! Deseja gerar o protocolo?', 'ti-calendar');
+  // Sincroniza com Google Calendar automaticamente se token disponível
+  if(window._gcalToken){
+    const labels={reuniao:'Reunião',followup:'Follow-up',lance:'Lance'};
+    const titulo=`${labels[tipo]||'Reunião'}${lead?' — '+lead.nome:''}`;
+    const desc=obs||(lead?`Consórcio de ${lead.tipo} · ${fmtR(lead.credito)}`:'');
+    const dataHoraInicio=`${data}T${hi||'09:00'}:00`;
+    const [h1,m1]=(hi||'09:00').split(':').map(Number);
+    const [h2,m2]=(hf||'10:00').split(':').map(Number);
+    const duracaoMin=Math.max(15,(h2*60+m2)-(h1*60+m1));
+    gcalCriarEvento(titulo,desc,dataHoraInicio,duracaoMin).then(ok=>{
+      if(ok) showToast('Evento enviado para o Google Calendar ✅','ti-brand-google');
+    }).catch(()=>{});
+  }
   // Pergunta se quer gerar protocolo
   setTimeout(()=>openProtocolo(lid,data,hi,hf,obs),400);
 }
