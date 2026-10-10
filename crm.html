@@ -6897,45 +6897,68 @@ function alertarCadastroLance(nomeLead, leadId) {
 async function uploadFoto(e) {
   const file = e.target.files[0]; if(!file) return;
   const _meF = getMe(); if(!_meF) return;
+  if(!window._currentUserId){ showToast('Faça login novamente','ti-alert-triangle'); return; }
 
+  // Sempre comprime a imagem primeiro (max 300x300, JPEG 0.75) para não pesar no banco
+  async function _compressImg(src){
+    return new Promise(resolve=>{
+      const img=new Image();
+      img.onload=()=>{
+        const size=Math.min(img.width,img.height);
+        const canvas=document.createElement('canvas');
+        canvas.width=300; canvas.height=300;
+        canvas.getContext('2d').drawImage(img,(img.width-size)/2,(img.height-size)/2,size,size,0,0,300,300);
+        resolve(canvas.toDataURL('image/jpeg',0.75));
+      };
+      img.src=src;
+    });
+  }
+
+  showToast('Enviando foto...','ti-upload');
   try {
-    // Try Supabase Storage first
-    const ext = file.name.split('.').pop() || 'jpg';
-    const path = `${window._currentUserId}/${Date.now()}.${ext}`;
-    const { error: upError } = await window._sb.storage.from('avatars').upload(path, file, { upsert: true });
+    // 1) Tenta Supabase Storage (URL pública pequena, ideal)
+    let fotoUrl = null;
+    const ext = (file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');
+    const path = `${window._currentUserId}/avatar.${ext}`;
 
-    if (!upError) {
-      const { data: urlData } = window._sb.storage.from('avatars').getPublicUrl(path);
-      _meF.foto = urlData.publicUrl;
+    // Garante que o bucket existe (cria se não existir — idempotente)
+    await window._sb.storage.createBucket('avatars',{public:true,allowedMimeTypes:['image/*'],fileSizeLimit:5242880}).catch(()=>{});
+
+    const {error:upError} = await window._sb.storage.from('avatars').upload(path, file, {upsert:true, contentType: file.type||'image/jpeg'});
+
+    if(!upError){
+      const {data:urlData} = window._sb.storage.from('avatars').getPublicUrl(path);
+      // Adiciona cache-buster para forçar reload da foto em todos os clientes
+      fotoUrl = urlData.publicUrl + '?t=' + Date.now();
+      console.log('[uploadFoto] foto salva no Storage:', fotoUrl);
     } else {
-      // Fallback: compress and save as base64
-      console.warn('Storage upload failed, falling back to base64:', upError);
-      const canvas = document.createElement('canvas');
-      const img = new Image();
+      // 2) Fallback: base64 comprimida (≈30KB)
+      console.warn('[uploadFoto] Storage falhou, usando base64:', upError.message);
       const reader = new FileReader();
-      await new Promise(resolve => {
-        reader.onload = ev => { img.src = ev.target.result; img.onload = resolve; };
-        reader.readAsDataURL(file);
-      });
-      canvas.width = 200; canvas.height = 200;
-      const ctx = canvas.getContext('2d');
-      const size = Math.min(img.width, img.height);
-      ctx.drawImage(img, (img.width-size)/2, (img.height-size)/2, size, size, 0, 0, 200, 200);
-      _meF.foto = canvas.toDataURL('image/jpeg', 0.7);
+      const dataUrl = await new Promise(r=>{ reader.onload=ev=>r(ev.target.result); reader.readAsDataURL(file); });
+      fotoUrl = await _compressImg(dataUrl);
+      console.log('[uploadFoto] foto como base64, tamanho:', Math.round(fotoUrl.length/1024)+'KB');
     }
 
-    // Garante sb_id antes de sincronizar
-    if (!_meF.sb_id && window._currentUserId) _meF.sb_id = window._currentUserId;
-    if (window._syncUser) await window._syncUser(_meF);
+    // 3) Atualiza objeto local e salva no banco
+    _meF.foto = fotoUrl;
+    if(!_meF.sb_id) _meF.sb_id = window._currentUserId;
+    if(window._syncUser) await window._syncUser(_meF);
+
+    // 4) Atualiza UI
     updateSbUser();
     const prev = document.getElementById('foto-preview-conta');
-    if (prev) prev.innerHTML = `<img src="${_meF.foto}" style="width:100%;height:100%;object-fit:cover">`;
-    showToast('Foto atualizada!', 'ti-check');
-    // Atualizar ranking
+    if(prev) prev.innerHTML = `<img src="${_meF.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+    // Atualiza avatar no header também
+    document.querySelectorAll('.user-avatar,.avatar-img,[data-user-foto]').forEach(el=>{
+      if(el.tagName==='IMG') el.src=_meF.foto;
+      else el.style.backgroundImage=`url(${_meF.foto})`;
+    });
+    showToast('Foto salva com sucesso! ✅','ti-check');
     if(document.getElementById('ranking-rows')) renderRanking();
   } catch(err) {
-    console.warn('uploadFoto error:', err);
-    showToast('Erro ao salvar foto', 'ti-alert-triangle');
+    console.warn('[uploadFoto] erro:', err);
+    showToast('Erro ao salvar foto. Tente novamente.','ti-alert-triangle');
   }
 }
 function toggleDarkMode(on) {
