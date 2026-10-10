@@ -2721,13 +2721,11 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
     <!-- Sidebar -->
     <div class="cal-side">
       <!-- Google Agenda -->
-      <div class="cal-panel">
+      <div class="cal-panel" id="gcal-status-panel">
         <h3><i class="ti ti-calendar" style="color:#4285f4"></i>Google Agenda</h3>
-        <p>Conecte sua conta para sincronizar reuniões automaticamente. Ou agende sem vincular — um link abrirá o Google Calendar pré-preenchido.</p>
-        <button class="gcal-btn" onclick="gcalIniciarOAuth()">
-          <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-          Conectar Google Agenda
-        </button>
+        <div id="gcal-panel-inner">
+          <!-- preenchido por renderGcalPanel() -->
+        </div>
       </div>
       <!-- Agendar reunião -->
       <div class="cal-panel">
@@ -6042,64 +6040,33 @@ function cfgRenderSection(){
 
     google:(()=>{
       const gcalConnected=!!(window._gcalToken);
-      const CLIENT_ID_PADRAO='646017395786-ihp6roomh1bbceoi68rd4r9qa2vlae0t.apps.googleusercontent.com';
-      const savedClientId=localStorage.getItem('evolux_gcal_client_id')||CLIENT_ID_PADRAO;
-      const redirectUri=window.location.origin+window.location.pathname;
       return `<div class="cfg-card">
       <div class="cfg-card-title"><i class="ti ti-brand-google" style="color:#4285f4"></i>Google Agenda</div>
-      <div class="cfg-card-sub">Sincronize reuniões agendadas no CRM com seu Google Calendar.</div>
+      <div class="cfg-card-sub">Conecte sua conta Google para sincronizar reuniões automaticamente.</div>
 
-      ${gcalConnected?`<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;background:rgba(1,122,69,.08);border:1px solid rgba(1,122,69,.2);margin-bottom:16px">
-        <i class="ti ti-circle-check" style="color:var(--g);font-size:18px;flex-shrink:0"></i>
+      ${gcalConnected?`<div style="display:flex;align-items:center;gap:12px;padding:16px;border-radius:12px;background:rgba(1,122,69,.08);border:1px solid rgba(1,122,69,.2);margin-bottom:16px">
+        <i class="ti ti-circle-check" style="color:var(--g);font-size:24px;flex-shrink:0"></i>
         <div style="flex:1">
-          <div style="font-size:13px;font-weight:700;color:var(--tx)">Google Calendar conectado</div>
-          <div style="font-size:11.5px;color:var(--tm);margin-top:2px">Reuniões criadas no CRM serão sincronizadas automaticamente.</div>
+          <div style="font-size:13px;font-weight:700;color:var(--tx)">Google Calendar conectado ✅</div>
+          <div style="font-size:12px;color:var(--tm);margin-top:3px">Reuniões criadas no CRM são sincronizadas automaticamente com seu calendário.</div>
         </div>
         <button class="btn bd bsm" onclick="gcalDesconectar()"><i class="ti ti-unlink"></i>Desconectar</button>
-      </div>`:`<div style="padding:14px 16px;border-radius:10px;background:rgba(66,133,244,.07);border:1px dashed rgba(66,133,244,.35);margin-bottom:16px">
-        <div style="font-size:12px;font-weight:700;color:#4285f4;margin-bottom:6px"><i class="ti ti-info-circle"></i> Não conectado</div>
-        <div style="font-size:12px;color:var(--tm)">Configure as credenciais abaixo e clique em "Autorizar Google" para vincular sua conta.</div>
+      </div>
+      <div style="font-size:12px;color:var(--tm);text-align:center">Tudo certo! Agende reuniões na aba <strong>Calendário</strong> e elas aparecerão no Google Calendar.</div>`
+      :`<div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:24px 16px;text-align:center">
+        <div style="width:56px;height:56px;border-radius:50%;background:rgba(66,133,244,.1);display:flex;align-items:center;justify-content:center">
+          <svg width="28" height="28" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        </div>
+        <div>
+          <div style="font-size:14px;font-weight:700;color:var(--tx);margin-bottom:6px">Conecte seu Google Calendar</div>
+          <div style="font-size:12.5px;color:var(--tm);line-height:1.6;max-width:280px;margin:0 auto">Clique no botão abaixo, escolha sua conta Google e pronto — suas reuniões serão sincronizadas automaticamente.</div>
+        </div>
+        <button class="gcal-btn" onclick="gcalIniciarOAuth()" style="width:100%;max-width:280px;justify-content:center;padding:12px 20px;font-size:14px">
+          <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Conectar com Google
+        </button>
+        <div style="font-size:11px;color:var(--tm);opacity:.7">Cada usuário conecta uma vez. Fica salvo no navegador.</div>
       </div>`}
-
-      <div style="margin-bottom:18px">
-        <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--tm);margin-bottom:10px">Configuração OAuth</div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <div class="field">
-            <label style="font-size:12px;color:var(--ts)">Client ID <span style="color:var(--r)">*</span></label>
-            <input type="text" id="gcal-client-id" class="fi" placeholder="xxxxxx.apps.googleusercontent.com" value="${savedClientId}" oninput="localStorage.setItem('evolux_gcal_client_id',this.value)">
-          </div>
-          <div class="field">
-            <label style="font-size:12px;color:var(--ts)">Redirect URI (copie para o Console Google)</label>
-            <div style="display:flex;gap:6px;align-items:center">
-              <input type="text" class="fi" value="${redirectUri}" readonly style="flex:1;font-size:11.5px;background:var(--c1);color:var(--tm)">
-              <button class="btn bg bsm" onclick="navigator.clipboard.writeText('${redirectUri}').then(()=>showToast('URI copiada!','ti-clipboard-check'))"><i class="ti ti-copy"></i></button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div style="margin-bottom:18px">
-        <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--tm);margin-bottom:10px">Passo a passo para configurar</div>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          ${[
-            ['1','Acesse o Google Cloud Console','console.cloud.google.com'],
-            ['2','Crie um projeto ou selecione um existente',''],
-            ['3','Vá em APIs & Services → Credentials → Create OAuth 2.0 Client ID',''],
-            ['4','Em "Application type" escolha <strong>Web application</strong>',''],
-            ['5','Cole a Redirect URI acima no campo "Authorized redirect URIs"',''],
-            ['6','Copie o Client ID gerado e cole no campo acima',''],
-            ['7','Ative a API: APIs & Services → Library → Google Calendar API',''],
-          ].map(([n,txt,link])=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:8px;background:var(--c0)">
-            <div style="width:22px;height:22px;border-radius:6px;background:var(--g);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#fff;flex-shrink:0">${n}</div>
-            <div style="font-size:12px;color:var(--ts);line-height:1.5">${txt}${link?` <a href="https://${link}" target="_blank" style="color:#4285f4;text-decoration:none;font-weight:600">${link} ↗</a>`:''}</div>
-          </div>`).join('')}
-        </div>
-      </div>
-
-      <button class="gcal-btn" onclick="gcalIniciarOAuth()" ${!savedClientId?'style="opacity:.5"':''}>
-        <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-        Autorizar Google Calendar
-      </button>
     </div>`;})(),
 
     notificacoes:`<div class="cfg-card">
@@ -6427,6 +6394,8 @@ function renderCalendario(){
   // renderizar células
   renderCalCells();
   renderCalAgenda();
+  // atualizar painel Google
+  renderGcalPanel();
 }
 function renderCalCells(){
   const container=document.getElementById('cal-cells');
@@ -7648,6 +7617,7 @@ const GCAL_CLIENT_ID='646017395786-ihp6roomh1bbceoi68rd4r9qa2vlae0t.apps.googleu
         // Pequeno delay para a init carregar antes de navegar
         setTimeout(()=>{
           showToast('Google Calendar conectado com sucesso! ✅','ti-circle-check');
+          if(typeof renderGcalPanel==='function') renderGcalPanel();
           if(typeof showTab==='function') showTab(returnTab);
           if(typeof cfgRenderSection==='function') cfgRenderSection();
         },800);
@@ -7681,6 +7651,24 @@ function gcalIniciarOAuth(){
   // Redireciona a janela principal (o token volta no hash após autenticação)
   window.location.href=url;
 }
+function renderGcalPanel(){
+  const el=document.getElementById('gcal-panel-inner');
+  if(!el)return;
+  if(window._gcalToken){
+    el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:rgba(1,122,69,.08);border:1px solid rgba(1,122,69,.2);margin-bottom:10px">
+      <i class="ti ti-circle-check" style="color:var(--g);font-size:16px"></i>
+      <div style="flex:1;font-size:12px;font-weight:600;color:var(--tx)">Conectado ao Google Calendar</div>
+      <button class="btn bd bsm" onclick="gcalDesconectar()" style="font-size:11px;padding:3px 8px"><i class="ti ti-unlink"></i></button>
+    </div>
+    <div style="font-size:11.5px;color:var(--tm)">Reuniões agendadas aqui serão criadas automaticamente no seu Google Calendar.</div>`;
+  } else {
+    el.innerHTML=`<p style="font-size:12.5px;color:var(--tm);margin:0 0 10px">Conecte para sincronizar reuniões automaticamente com seu Google Calendar.</p>
+    <button class="gcal-btn" onclick="gcalIniciarOAuth()" style="width:100%;justify-content:center">
+      <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Conectar com Google
+    </button>`;
+  }
+}
 function gcalDesconectar(){
   window._gcalToken=null;
   try{
@@ -7688,6 +7676,7 @@ function gcalDesconectar(){
     localStorage.removeItem('evolux_gcal_token_expiry');
   }catch(e){}
   showToast('Google Calendar desconectado.','ti-unlink');
+  renderGcalPanel();
   cfgRenderSection();
 }
 
