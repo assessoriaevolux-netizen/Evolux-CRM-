@@ -204,10 +204,12 @@
           instagram:u.instagram||null,
           meta:u.meta||0,
           equipe_id:u.equipeId||null,
-          hierarquia_id:_hierUUID2||null,
           perms:u.perms?JSON.stringify(u.perms):null,
           hperms:u.hperms?JSON.stringify(u.hperms):null,
         };
+        // Bug #7: só inclui hierarquia_id no payload se temos um UUID real
+        // — não enviar null evita sobrescrever valor correto no DB
+        if(_hierUUID2) body.hierarquia_id=_hierUUID2;
         const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/update-profile',{
           method:'POST',
           headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
@@ -229,7 +231,8 @@
       email:u.email,
       nome:u.nome,
       role:u.role||'vendedor',
-      hierarquia_id:_hierUUID,
+      // Bug #7: só inclui hierarquia_id se temos UUID real — null sobrescreveria dado correto
+      ...(_hierUUID?{hierarquia_id:_hierUUID}:{}),
       equipe_id:u.equipeId||null,
       meta:u.meta||0,
       // NUNCA inclui vendas/credito aqui — esses campos só são alterados por
@@ -314,10 +317,11 @@
 
   window._loadLeads = async function() {
     try {
-      // Sempre filtra por empresa — isolamento multi-tenant
+      // Sempre filtra por empresa — isolamento multi-tenant CRÍTICO
       const empresaId = await window._getEmpresaId();
+      if (!empresaId) { console.error('[Security] _loadLeads: empresaId null — abortando query para evitar vazamento entre tenants'); return; }
       let query = window._sb.from('leads').select('*').order('created_at', { ascending: false });
-      if (empresaId) query = query.eq('empresa_id', empresaId);
+      query = query.eq('empresa_id', empresaId); // SEMPRE filtra, nunca opcional
       const { data, error } = await query;
       if (error || !data) { console.warn('[_loadLeads] erro:', error); return; }
       data.forEach(row => {
@@ -381,8 +385,9 @@
   window._loadLances = async function() {
     try {
       const _empIdL=await window._getEmpresaId();
+      if(!_empIdL){console.error('[Security] _loadLances: empresaId null — abortando');return;}
       let _lq=window._sb.from('lances').select('*').order('created_at',{ascending:false});
-      if(_empIdL) _lq=_lq.eq('empresa_id',_empIdL);
+      _lq=_lq.eq('empresa_id',_empIdL); // SEMPRE filtra
       const { data, error } = await _lq;
       if (error || !data) return;
       data.forEach(row => {
@@ -436,8 +441,9 @@
   window._loadEquipes = async function() {
     try {
       const _empIdEq=await window._getEmpresaId();
+      if(!_empIdEq){console.error('[Security] _loadEquipes: empresaId null — abortando');return;}
       let _eqQ=window._sb.from('equipes').select('*').order('nome');
-      if(_empIdEq) _eqQ=_eqQ.eq('empresa_id',_empIdEq);
+      _eqQ=_eqQ.eq('empresa_id',_empIdEq); // SEMPRE filtra
       const { data, error } = await _eqQ;
       if (error || !data) return;
       data.forEach(row => {
@@ -488,19 +494,25 @@
   window._loadHierarquias = async function() {
     try {
       const _empIdH=await window._getEmpresaId();
+      if(!_empIdH){console.error('[Security] _loadHierarquias: empresaId null — abortando');return;}
       let _hQ=window._sb.from('hierarquias').select('*').order('ordem');
-      if(_empIdH) _hQ=_hQ.eq('empresa_id',_empIdH);
+      _hQ=_hQ.eq('empresa_id',_empIdH); // SEMPRE filtra
       const { data, error } = await _hQ;
       if (error || !data || !data.length) return;
-      hierarquias.splice(0); // limpa sem quebrar referência
-      data.forEach((row, idx) => {
+      // Bug #4: preserva IDs locais existentes para não invalidar referências por hierarquiaId numérico
+      const oldHiers=hierarquias.slice();
+      hierarquias.splice(0);
+      data.forEach((row) => {
+        // Tenta reusar ID local existente pelo sb_id
+        const existing=oldHiers.find(h=>h.sb_id===row.id);
+        const localId=existing?existing.id:(nextHierArquiaId++);
         hierarquias.push({
-          id: idx + 1,
+          id: localId,
           sb_id: row.id,
           slug: row.slug || '',
           nome: row.nome || '',
           descricao: row.descricao || '',
-          ordem: row.ordem || idx + 1,
+          ordem: row.ordem || localId,
           superiorId: row.superior_id || null,
           status: row.status || 'ativa',
           perms: row.perms ? JSON.parse(row.perms) : {},
@@ -535,8 +547,9 @@
   window._loadAdministradoras = async function() {
     try {
       const _empIdA=await window._getEmpresaId();
+      if(!_empIdA){console.error('[Security] _loadAdministradoras: empresaId null — abortando');return;}
       let _aQ=window._sb.from('administradoras').select('*').order('nome');
-      if(_empIdA) _aQ=_aQ.eq('empresa_id',_empIdA);
+      _aQ=_aQ.eq('empresa_id',_empIdA); // SEMPRE filtra
       const { data, error } = await _aQ;
       if (error || !data || !data.length) return;
       administradoras.splice(0); // limpa sem quebrar referência
@@ -591,8 +604,9 @@
   window._loadEventos = async function() {
     try {
       const _empIdEv=await window._getEmpresaId();
+      if(!_empIdEv){console.error('[Security] _loadEventos: empresaId null — abortando');return;}
       let _evQ=window._sb.from('eventos_calendario').select('*').order('data');
-      if(_empIdEv) _evQ=_evQ.eq('empresa_id',_empIdEv);
+      _evQ=_evQ.eq('empresa_id',_empIdEv); // SEMPRE filtra
       const { data, error } = await _evQ;
       if (error || !data) return;
       eventos.splice(0); nextEventoId = 1;
@@ -785,20 +799,25 @@
 
     await window._loadEmpresa().catch(e=>console.warn('[_loadAllData] loadEmpresa error:',e));
     await window._loadHierarquias().catch(e=>console.warn('[_loadAllData] loadHierarquias error:',e));
-    // Após carregar hierarquias, reaplicar hperms em todos os usuários
+    // Após carregar hierarquias, reaplicar hperms em usuários que não têm override individual no DB
+    // Bug #8: se hperms do DB está vazio/null → aplica da hierarquia; se tem dados → respeita override do admin
     if(window.users && window.hierarquias){
       window.users.forEach(u=>{
         const h=window.hierarquias.find(x=>x.sb_id===u.hierarquiaId||x.id===u.hierarquiaId);
-        if(h&&h.perms) u.hperms={...h.perms};
+        if(h&&h.perms){
+          const hasIndividualPerms=u.hperms&&Object.keys(u.hperms).length>0;
+          if(!hasIndividualPerms) u.hperms={...h.perms};
+        }
       });
     }
-    try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
     await window._loadAdministradoras().catch(e=>console.warn('[_loadAllData] loadAdministradoras error:',e));
     await window._loadEquipes().catch(e=>console.warn('[_loadAllData] loadEquipes error:',e));
     await window._loadLeads().catch(e=>console.warn('[_loadAllData] loadLeads error:',e));
     await window._loadLances().catch(e=>console.warn('[_loadAllData] loadLances error:',e));
     await window._loadEventos().catch(e=>console.warn('[_loadAllData] loadEventos error:',e));
     await window._loadAtividades().catch(e=>console.warn('[_loadAllData] loadAtividades error:',e));
+    // Bug #9: applyNavPermissions APÓS carregar hierarquias E equipes (supervisor precisa das equipes)
+    try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
 
     try { window.renderDashboard && window.renderDashboard(); } catch(e) {}
     try { window.renderKanban && window.renderKanban(); } catch(e) {}
@@ -860,9 +879,11 @@
             const h=window.hierarquias.find(x=>x.sb_id===u.hierarquiaId||String(x.id)===String(u.hierarquiaId));
             if(h&&h.perms){
               u.hperms={...h.perms};
-              // Re-persiste hperms no banco só para usuários da mesma empresa
-              // (o gestor/master que disparou a edição já salva via _syncHierarquia)
-              if(window._syncUser && me && (me.role==='master'||me.role==='gestor'||me.role==='supervisor')){
+              // Re-persiste hperms no banco para todos os admins/gestores/supervisores logados
+              // OU quando o usuário afetado é o próprio usuário logado
+              const isMe=me&&u.sb_id===me.sb_id;
+              const podeResyncar=me&&(me.role==='master'||me.role==='gestor'||me.role==='supervisor'||me.role==='administrador');
+              if(window._syncUser && (isMe||podeResyncar)){
                 window._syncUser(u).catch(e=>console.warn('[hierarquias-sync] re-sync user error:',e));
               }
             }
@@ -3180,6 +3201,20 @@ let nextHierArquiaId=5;
 
 function getHier(id){return hierarquias.find(h=>h.id===id||h.sb_id===id);}
 function getHierBySlug(slug){return hierarquias.find(h=>h.slug===slug);}
+// Mapeia slug/ordem de hierarquia para role do sistema, suportando slugs customizados
+function slugToRole(h){
+  if(!h) return 'vendedor';
+  const s=(h.slug||'').toLowerCase();
+  if(s==='gestor'||s.includes('gestor')||s.includes('diretor')||s.includes('master')) return 'gestor';
+  if(s==='supervisor'||s.includes('supervisor')||s.includes('coordenador')) return 'supervisor';
+  if(s==='representante'||s.includes('representante')||s.includes('consultor')) return 'representante';
+  // Fallback por ordem: menor ordem = maior cargo
+  const ord=h.ordem||99;
+  if(ord===1) return 'gestor';
+  if(ord===2) return 'supervisor';
+  if(ord===3) return 'representante';
+  return 'vendedor';
+}
 function hierUsersCount(hId){const h=getHier(hId);if(!h)return 0;return users.filter(u=>u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id).length;}
 function hierPermCount(h){return h.perms?Object.values(h.perms).filter(Boolean).length:0;}
 function hierAtivas(){return hierarquias.filter(h=>h.status==='ativa').sort((a,b)=>a.ordem-b.ordem);}
@@ -5683,7 +5718,7 @@ async function inviteUser(){
   if(!metaRaw){alert('Informe a meta do usuário.');return;}
   const equipeEl=document.getElementById('uEquipe');
   const equipeId=equipeEl?parseInt(equipeEl.value)||null:null;
-  const role=selH&&selH.slug==='gestor'?'gestor':selH&&selH.slug==='supervisor'?'supervisor':selH&&selH.slug==='representante'?'representante':'vendedor';
+  const role=slugToRole(selH);
   const btn=document.getElementById('btn-invite-user');
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>Cadastrando...';}
   let sbUserId=null;
@@ -5876,7 +5911,7 @@ async function changeUserHier(userId,hierIdStr){
   console.log('[changeUserHier] user='+u.nome+' sb_id='+u.sb_id+' hier='+h.nome+' hier_sb_id='+h.sb_id);
   u.hierarquiaId=h.sb_id||null;
   if(h.perms) u.hperms={...h.perms};
-  u.role=h.slug==='gestor'?'gestor':h.slug==='supervisor'?'supervisor':h.slug==='representante'?'representante':'vendedor';
+  u.role=slugToRole(h);
   u.perms={...DPERMS[u.role]||DPERMS.vendedor};
   if(!window._syncUser) throw new Error('_syncUser não disponível');
   await window._syncUser(u);
@@ -5937,13 +5972,19 @@ function renderConfig(){
   if(!nav)return;
   const meC=getMe();
   const isAdmin=meC&&(meC.role==='master'||meC.role==='gestor'||meC.role==='superadmin'||meC.role==='supervisor'||(meC.hperms&&meC.hperms.equipe_add));
-  const adminOnlySections=['admins','usuarios','equipes','hierarquia'];
-  // Se a seção ativa é admin-only e o usuário não é admin, redireciona para conta
+  // Somente master/gestor/superadmin pode editar a estrutura de hierarquias da empresa
+  const isGestorPlus=meC&&(meC.role==='master'||meC.role==='gestor'||meC.role==='superadmin');
+  const adminOnlySections=['admins','usuarios','equipes'];
+  const gestorOnlySections=['hierarquia'];
+  // Se a seção ativa é restrita e o usuário não tem acesso, redireciona para conta
   if(!isAdmin&&adminOnlySections.includes(cfgActive)) cfgActive='conta';
+  if(!isGestorPlus&&gestorOnlySections.includes(cfgActive)) cfgActive='conta';
   let nh='';
   CFG_SECTIONS.forEach(s=>{
     // Esconde seções administrativas para não-admins
     if(!isAdmin&&adminOnlySections.includes(s.id)) return;
+    // Esconde hierarquia para supervisores e abaixo
+    if(!isGestorPlus&&gestorOnlySections.includes(s.id)) return;
     if(s.group) nh+=`<div class="cfg-nav-group">${s.group}</div>`;
     nh+=`<div class="cfg-nav-item${cfgActive===s.id?' active':''}" onclick="cfgShow('${s.id}')"><i class="ti ${s.icon}"></i>${s.label}</div>`;
   });
@@ -7502,14 +7543,16 @@ function addPessoaRanking(){
   const metaRaw=unM(metaEl?.value)||500000;
   if(!nome){showToast('Informe o nome da pessoa.','ti-alert-triangle');return;}
   if(!hierIdStr){showToast('Selecione a hierarquia.','ti-alert-triangle');return;}
-  const hierarquiaId=parseInt(hierIdStr);
-  const h=getHier(hierarquiaId);
-  const role=h?h.slug:'vendedor';
+  const hierarquiaLocalId=parseInt(hierIdStr);
+  const h=getHier(hierarquiaLocalId);
+  const role=slugToRole(h);
   const hperms=h?{...h.perms}:{};
+  // Armazena UUID do Supabase (sb_id), nunca o ID local numérico
+  const hierarquiaUUID=h?.sb_id||null;
   // Bug #19: usuário sem email nunca persistia no DB (_syncUser abortava).
   // Gera email fictício único para poder salvar — admin pode corrigir depois.
   const _fakeEmail='usuario_'+Date.now()+'@evolux.local';
-  const _newU={id:nextUserId++,nome,email:_fakeEmail,role,managerId:null,hierarquiaId,
+  const _newU={id:nextUserId++,nome,email:_fakeEmail,role,managerId:null,hierarquiaId:hierarquiaUUID,
     vendas:0,credito:0,foto,meta:metaRaw,hperms,perms:{...DPERMS[role]||DPERMS.vendedor},
     empresaId:window._empresaIdDireto||null};
   users.push(_newU);
@@ -8164,7 +8207,7 @@ function hierRestoreDefaults(){
   renderHierPerms(def);
 }
 
-function saveHierModal(){
+async function saveHierModal(){
   const nome=document.getElementById('hm-nome').value.trim();
   if(!nome){alert('Informe o nome da hierarquia.');return;}
   const descricao=document.getElementById('hm-descricao').value.trim();
@@ -8178,15 +8221,18 @@ function saveHierModal(){
     const h=getHier(hmEditId);
     if(h){
       h.nome=nome;h.descricao=descricao;h.ordem=ordem;h.status=status;h.superiorId=superiorId;h.perms=perms;
-      if(window._syncHierarquia) window._syncHierarquia(h).catch(e=>console.warn(e));
+      // Await sync so sb_id is populated before any user assignment uses it
+      if(window._syncHierarquia) await window._syncHierarquia(h).catch(e=>console.warn(e));
       // propagate to all users of this hierarchy
       applyHierToAll(hmEditId);
     }
   } else {
     // create new
     const slug=nome.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'');
-    hierarquias.push({id:nextHierArquiaId++,slug,nome,descricao,ordem,superiorId,status,perms});
-    if(window._syncHierarquia) window._syncHierarquia(hierarquias[hierarquias.length-1]).catch(e=>console.warn(e));
+    const newH={id:nextHierArquiaId++,slug,nome,descricao,ordem,superiorId,status,perms};
+    hierarquias.push(newH);
+    // Await sync so sb_id is populated before user assignment
+    if(window._syncHierarquia) await window._syncHierarquia(newH).catch(e=>console.warn(e));
   }
 
   closeHierModal();
