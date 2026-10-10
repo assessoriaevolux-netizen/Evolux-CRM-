@@ -157,6 +157,8 @@
       const {data,error}=await window._sb.from('profiles').select('*').eq('empresa_id',_empIdP).order('credito',{ascending:false});
       if(error||!data||!data.length)return;
       mergeProfilesIntoUsers(data);
+      // Garante hperms do usuário logado sempre sincronizado com hierarquia
+      window._ensureMeHperms&&window._ensureMeHperms();
       // Re-renderiza tudo com o usuário correto
       try{window.updateSbUser&&window.updateSbUser();}catch(e){}
       try{window.renderDashboard&&window.renderDashboard();}catch(e){}
@@ -173,6 +175,31 @@
       }catch(e){}
     }catch(e){console.warn('loadProfiles error:',e);}
   };
+
+  // Garante que o usuário logado tem hperms aplicados da sua hierarquia
+  // Chamado após merge de profiles e após carregar hierarquias
+  window._ensureMeHperms=function(){
+    const me=window.getMe&&window.getMe();
+    if(!me||me.role==='master'||me.role==='gestor'||me.role==='superadmin') return;
+    if(!window.hierarquias||!window.hierarquias.length) return;
+    const h=window.hierarquias.find(x=>x.sb_id===me.hierarquiaId||String(x.id)===String(me.hierarquiaId));
+    if(!h||!h.perms) return;
+    // Só aplica se hperms estiver vazio ou não definido
+    const hasHperms=me.hperms&&Object.keys(me.hperms).length>0;
+    if(!hasHperms){
+      me.hperms={...h.perms};
+      console.log('[_ensureMeHperms] aplicou hperms da hierarquia "'+h.nome+'" para '+me.nome);
+    }
+    // Sempre garante role correto baseado na hierarquia
+    if(typeof window.slugToRole==='function'){
+      const roleCorreto=window.slugToRole(h);
+      if(me.role!==roleCorreto&&me.role!=='master'&&me.role!=='gestor'){
+        me.role=roleCorreto;
+        console.log('[_ensureMeHperms] corrigiu role para '+roleCorreto);
+      }
+    }
+  };
+
 
   // ── 3. Salva/atualiza um user no Supabase ─────────────────────────────────
   window._syncUser=async function(u){
@@ -816,6 +843,8 @@
     await window._loadLances().catch(e=>console.warn('[_loadAllData] loadLances error:',e));
     await window._loadEventos().catch(e=>console.warn('[_loadAllData] loadEventos error:',e));
     await window._loadAtividades().catch(e=>console.warn('[_loadAllData] loadAtividades error:',e));
+    // Garante hperms do usuário logado sempre aplicados após todos os dados carregados
+    try{window._ensureMeHperms&&window._ensureMeHperms();}catch(e){}
     // Bug #9: applyNavPermissions APÓS carregar hierarquias E equipes (supervisor precisa das equipes)
     try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
 
@@ -3215,6 +3244,7 @@ function slugToRole(h){
   if(ord===3) return 'representante';
   return 'vendedor';
 }
+window.slugToRole=slugToRole; // expõe para _ensureMeHperms (definida antes)
 function hierUsersCount(hId){const h=getHier(hId);if(!h)return 0;return users.filter(u=>u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id).length;}
 function hierPermCount(h){return h.perms?Object.values(h.perms).filter(Boolean).length:0;}
 function hierAtivas(){return hierarquias.filter(h=>h.status==='ativa').sort((a,b)=>a.ordem-b.ordem);}
@@ -3408,15 +3438,21 @@ const TAB_TO_HPERM={
 function _hasTabPerm(me,permKey){
   if(!permKey) return true;
   if(!me) return false;
+  // master/gestor/superadmin sempre têm acesso total
+  if(me.role==='master'||me.role==='gestor'||me.role==='superadmin') return true;
   // Configurações: todo usuário autenticado pode acessar (para editar próprio perfil/foto/senha)
   if(permKey==='config') return true;
   // Traduz a chave de aba para a chave granular de hperms
   const hpermKey=TAB_TO_HPERM[permKey]||permKey;
-  // Permissão individual explicitamente negada → bloqueia
-  if(me.perms&&me.perms[hpermKey]===false) return false;
-  // Permissão da hierarquia explicitamente negada → bloqueia (a menos que individual seja true)
-  if(me.perms&&me.perms[hpermKey]!==true&&me.hperms&&me.hperms[hpermKey]===false) return false;
-  return true;
+  // Chave simples do DPERMS (ex: 'leads', 'funil') — para compatibilidade
+  const dpermsKey=permKey;
+  // 1. Se hperms (da hierarquia) tem a chave explícita → usa ela como verdade
+  if(me.hperms&&typeof me.hperms[hpermKey]==='boolean') return me.hperms[hpermKey];
+  // 2. Fallback para perms (DPERMS por role)
+  if(me.perms&&typeof me.perms[dpermsKey]==='boolean') return me.perms[dpermsKey];
+  // 3. Sem permissão definida → supervisor pode, vendedor não pode
+  if(me.role==='supervisor'||me.role==='representante') return true;
+  return false;
 }
 function showTab(id,btn){
   const me=_getMeRole();
@@ -5916,6 +5952,12 @@ async function changeUserHier(userId,hierIdStr){
   if(!window._syncUser) throw new Error('_syncUser não disponível');
   await window._syncUser(u);
   console.log('[changeUserHier] salvo! hierarquiaId='+u.hierarquiaId+' role='+u.role);
+  // Se for o próprio usuário logado, aplica permissões imediatamente sem precisar recarregar
+  if(u.sb_id===window._currentUserId){
+    try{window._ensureMeHperms&&window._ensureMeHperms();}catch(e){}
+    try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
+    try{window.renderConfig&&window.renderConfig();}catch(e){}
+  }
   renderUserList();
 }
 async function removeUser(id){
