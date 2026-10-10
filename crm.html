@@ -3491,8 +3491,12 @@ function applyNavPermissions(){
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 function renderDashboard(){
-  // _loadLeads já filtra por empresa no DB — usa array direto
-  const _leadsD=leads;
+  // Filtra leads visíveis para o usuário logado (respeita hierarquia)
+  const _visD=getVisiveisParaMim();
+  const meD=getMe();
+  const _leadsD=(meD&&(meD.role==='master'||meD.role==='gestor'||meD.role==='superadmin'))
+    ? leads
+    : leads.filter(l=>_visD.has(l.responsavelId));
   const t=_leadsD.length,f=_leadsD.filter(l=>l.etapa==='Fechado / Convertido').length;
   const p=_leadsD.filter(l=>l.etapa==='Perdido').length,a=t-f-p;
   const tx=t?Math.round(f/t*100):0;
@@ -3511,7 +3515,9 @@ function renderDashboard(){
   const credTotal=_leadsD.filter(l=>l.etapa==='Fechado / Convertido').reduce((s,l)=>s+l.credito,0);
   document.getElementById('hero-pipeline').textContent=pipVal>=1000000?'R$'+Math.round(pipVal/100000)/10+'M':pipVal>=1000?'R$'+Math.round(pipVal/1000)+'k':a;
   document.getElementById('hero-conversao').textContent=tx+'%';
-  const rankTotal=credTotal;
+  // Total vendido = soma do credito dos users visíveis (vem do banco, sempre atualizado)
+  const _usersVisiveis=users.filter(u=>_visD.has(u.id));
+  const rankTotal=_usersVisiveis.reduce((s,u)=>s+(u.credito||0),0);
   document.getElementById('hero-credito').textContent=rankTotal>=1000000?'R$'+Math.round(rankTotal/100000)/10+'M':rankTotal>=1000?'R$'+Math.round(rankTotal/1000)+'k':'R$'+rankTotal;
   const spark=(color,pts)=>{const w=80,h=32;const path=pts.map((y,i)=>`${i===0?'M':'L'}${Math.round(i*(w/(pts.length-1)))},${Math.round(h-y*(h/Math.max(...pts,1)))}`).join(' ');return `<svg class="mc2-spark" viewBox="0 0 ${w} ${h}" width="80" height="32" fill="none"><path d="${path}" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;};
   document.getElementById('metrics-row').innerHTML=`
@@ -4629,10 +4635,11 @@ function rankAtualizarSidebar(){
 }
 
 function renderRanking(){
-  // Filtro defensivo: só mostra usuários da mesma empresa
+  // Filtro por visibilidade: admin/master vê todos, supervisor vê sua equipe, vendedor só si mesmo
   const _meRk=getMe();
   const _empRk=_meRk?.empresaId;
-  const _usersRk=_empRk?users.filter(u=>u.empresaId===_empRk):users;
+  const _visRk=getVisiveisParaMim();
+  const _usersRk=(_empRk?users.filter(u=>u.empresaId===_empRk):users).filter(u=>_visRk.has(u.id));
 
   const periodoLabel={hoje:'Hoje',dia:'Hoje',semana:'Esta semana',mes:mesAtual(),custom:rankDataSelecionada?new Date(rankDataSelecionada+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'}):'Data personalizada',semana_passada:'Semana passada',mes_passado:'Mês passado',ultimos_7:'Últimos 7 dias',ultimos_30:'Últimos 30 dias'};
   document.getElementById('rank-month').textContent=periodoLabel[rankPeriodo]||mesAtual();
@@ -6554,15 +6561,19 @@ function cfgRenderSection(){
 
 // ─── RELATÓRIOS ───────────────────────────────────────────────────────────────
 function renderRelatorios(){
-  const maxE=Math.max(...ETAPAS.map(e=>leads.filter(l=>l.etapa===e).length),1);
-  document.getElementById('rel-etapas').innerHTML=ETAPAS.map((e,i)=>{const c=leads.filter(l=>l.etapa===e).length;return `<div class="br"><span class="brl">${e}</span><div class="brt"><div class="brf" style="width:${Math.round(c/maxE*100)}%;background:${EC[i]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
-  document.getElementById('rel-tipos').innerHTML=['Imóvel','Automóvel','Moto','Serviço'].map(t=>{const c=leads.filter(l=>l.tipo===t).length;return `<div class="lr"><span class="ld" style="background:${TC[t]}"></span><span style="flex:1">${t}</span><span style="font-weight:700;color:var(--tx)">${c}</span></div>`;}).join('');
-  const or=['Meta Ads','Indicação','Orgânico'],maxO=Math.max(...or.map(o=>leads.filter(l=>l.origem===o).length),1);
-  document.getElementById('rel-origem').innerHTML=or.map(o=>{const c=leads.filter(l=>l.origem===o).length;return `<div class="br"><span class="brl">${o}</span><div class="brt"><div class="brf" style="width:${Math.round(c/maxO*100)}%;background:${OC[o]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
-  const t=leads.length,f=leads.filter(l=>l.etapa==='Fechado / Convertido').length,p=leads.filter(l=>l.etapa==='Perdido').length;
-  const pip=leads.filter(l=>!['Fechado / Convertido','Perdido'].includes(l.etapa)).reduce((a,l)=>a+l.credito,0);
-  const rankTotalRel=users.reduce((s,u)=>s+(u.credito||0),0);
-  const rankVendasRel=users.reduce((s,u)=>s+(u.vendas||0),0);
+  // Filtra por visibilidade do usuário logado
+  const _visRel=getVisiveisParaMim();
+  const _leadsRel=leads.filter(l=>_visRel.has(l.responsavelId));
+  const _usersRel=users.filter(u=>_visRel.has(u.id));
+  const maxE=Math.max(...ETAPAS.map(e=>_leadsRel.filter(l=>l.etapa===e).length),1);
+  document.getElementById('rel-etapas').innerHTML=ETAPAS.map((e,i)=>{const c=_leadsRel.filter(l=>l.etapa===e).length;return `<div class="br"><span class="brl">${e}</span><div class="brt"><div class="brf" style="width:${Math.round(c/maxE*100)}%;background:${EC[i]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
+  document.getElementById('rel-tipos').innerHTML=['Imóvel','Automóvel','Moto','Serviço'].map(t=>{const c=_leadsRel.filter(l=>l.tipo===t).length;return `<div class="lr"><span class="ld" style="background:${TC[t]}"></span><span style="flex:1">${t}</span><span style="font-weight:700;color:var(--tx)">${c}</span></div>`;}).join('');
+  const or=['Meta Ads','Indicação','Orgânico'],maxO=Math.max(...or.map(o=>_leadsRel.filter(l=>l.origem===o).length),1);
+  document.getElementById('rel-origem').innerHTML=or.map(o=>{const c=_leadsRel.filter(l=>l.origem===o).length;return `<div class="br"><span class="brl">${o}</span><div class="brt"><div class="brf" style="width:${Math.round(c/maxO*100)}%;background:${OC[o]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
+  const t=_leadsRel.length,f=_leadsRel.filter(l=>l.etapa==='Fechado / Convertido').length,p=_leadsRel.filter(l=>l.etapa==='Perdido').length;
+  const pip=_leadsRel.filter(l=>!['Fechado / Convertido','Perdido'].includes(l.etapa)).reduce((a,l)=>a+l.credito,0);
+  const rankTotalRel=_usersRel.reduce((s,u)=>s+(u.credito||0),0);
+  const rankVendasRel=_usersRel.reduce((s,u)=>s+(u.vendas||0),0);
   document.getElementById('rel-financeiro').innerHTML=`
     <div class="sr"><span class="sl">Total de leads</span><span class="sv">${t}</span></div>
     <div class="sr"><span class="sl">Convertidos</span><span class="sv" style="color:var(--g)">${f}</span></div>
@@ -6574,7 +6585,7 @@ function renderRelatorios(){
   // ── Desempenho por membro ──────────────────────────────────────────────────
   const eqEl=document.getElementById('rel-equipe-table');
   if(eqEl){
-    const sorted=[...users].sort((a,b)=>(b.credito||0)-(a.credito||0));
+    const sorted=[..._usersRel].sort((a,b)=>(b.credito||0)-(a.credito||0));
     const maxCred=Math.max(...sorted.map(u=>u.credito||0),1);
     eqEl.innerHTML=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">
       <thead><tr style="border-bottom:2px solid var(--c2);text-align:left">
@@ -6588,8 +6599,8 @@ function renderRelatorios(){
       </tr></thead>
       <tbody>${sorted.map((u,i)=>{
         const h=u.hierarquiaId?getHier(u.hierarquiaId):null;
-        const leadsAtivos=leads.filter(l=>l.responsavelId===u.id&&!['Fechado / Convertido','Perdido'].includes(l.etapa)).length;
-        const leadsConv=leads.filter(l=>l.responsavelId===u.id&&l.etapa==='Fechado / Convertido').length;
+        const leadsAtivos=_leadsRel.filter(l=>l.responsavelId===u.id&&!['Fechado / Convertido','Perdido'].includes(l.etapa)).length;
+        const leadsConv=_leadsRel.filter(l=>l.responsavelId===u.id&&l.etapa==='Fechado / Convertido').length;
         const pct=u.meta?Math.min(Math.round((u.credito||0)/u.meta*100),100):0;
         const bg=i%2===0?'':'var(--c0)';
         return `<tr style="border-bottom:1px solid var(--c1);background:${bg}">
