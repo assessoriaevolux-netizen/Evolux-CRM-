@@ -179,9 +179,33 @@
       console.warn('[_syncUser] sb_id inválido para', u.email, '— abortando');
       return;
     }
-    // RLS: só pode upsert no próprio profile — bloqueia edição de outros usuários via client
+    // Se for outro usuário, usa Edge Function update-profile (roda com service role, ignora RLS)
     if(u.sb_id !== window._currentUserId){
-      console.warn('[_syncUser] bloqueado — não pode editar profile de outro usuário via client:', u.email);
+      try{
+        const token=window._session?.access_token;
+        if(!token){console.warn('[_syncUser] sem token para chamar edge function');return;}
+        const _hierLocal2=window.hierarquias&&window.hierarquias.find(h=>h.id===u.hierarquiaId);
+        const body={
+          target_id:u.sb_id,
+          nome:u.nome,
+          role:u.role||'vendedor',
+          foto_url:u.foto||null,
+          whatsapp:u.whatsapp||null,
+          meta:u.meta||0,
+          equipe_id:u.equipeId||null,
+          hierarquia_id:_hierLocal2?.sb_id||null,
+          perms:u.perms?JSON.stringify(u.perms):null,
+          hperms:u.hperms?JSON.stringify(u.hperms):null,
+        };
+        const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/update-profile',{
+          method:'POST',
+          headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+          body:JSON.stringify(body)
+        });
+        const json=await res.json();
+        if(!res.ok){console.warn('[_syncUser] edge fn error:',json);}
+        else{console.log('[_syncUser] profile atualizado via edge fn:',u.email);}
+      }catch(e){console.warn('[_syncUser] edge fn exception:',e);}
       return;
     }
     // Garante empresa_id
