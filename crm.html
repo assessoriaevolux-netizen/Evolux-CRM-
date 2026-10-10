@@ -5943,14 +5943,39 @@ async function changeUserHier(userId,hierIdStr){
   const hid=parseInt(hierIdStr)||null;
   const h=hid?getHier(hid):null;
   if(!h) throw new Error('Hierarquia não encontrada (id='+hierIdStr+')');
+  if(!h.sb_id) throw new Error('Hierarquia ainda não tem ID do banco (sb_id ausente). Recarregue a página e tente novamente.');
   console.log('[changeUserHier] user='+u.nome+' sb_id='+u.sb_id+' hier='+h.nome+' hier_sb_id='+h.sb_id);
-  u.hierarquiaId=h.sb_id||null;
+  // Sempre usa o UUID do banco (sb_id) como hierarquiaId — nunca ID local numérico
+  u.hierarquiaId=h.sb_id;
   if(h.perms) u.hperms={...h.perms};
   u.role=slugToRole(h);
   u.perms={...DPERMS[u.role]||DPERMS.vendedor};
   if(!window._syncUser) throw new Error('_syncUser não disponível');
-  await window._syncUser(u);
-  console.log('[changeUserHier] salvo! hierarquiaId='+u.hierarquiaId+' role='+u.role);
+  // Para outros usuários: chama Edge Function diretamente com UUID já resolvido
+  if(u.sb_id && u.sb_id !== window._currentUserId){
+    const token=window._session?.access_token;
+    if(!token) throw new Error('Sem token de autenticação');
+    const body={
+      target_id: u.sb_id,
+      nome: u.nome,
+      role: u.role||'vendedor',
+      hierarquia_id: h.sb_id, // UUID direto — sem risco de resolução falhar
+      perms: u.perms?JSON.stringify(u.perms):null,
+      hperms: u.hperms?JSON.stringify(u.hperms):null,
+    };
+    console.log('[changeUserHier] enviando para Edge Function:', body);
+    const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/update-profile',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    const json=await res.json();
+    if(!res.ok){console.error('[changeUserHier] Edge Function error:',json);throw new Error(json.error||'Erro ao salvar no servidor');}
+    console.log('[changeUserHier] salvo via Edge Function! hierarquia_id='+h.sb_id+' role='+u.role);
+  } else {
+    await window._syncUser(u);
+    console.log('[changeUserHier] salvo! hierarquiaId='+u.hierarquiaId+' role='+u.role);
+  }
   // Se for o próprio usuário logado, aplica permissões imediatamente sem precisar recarregar
   if(u.sb_id===window._currentUserId){
     try{window._ensureMeHperms&&window._ensureMeHperms();}catch(e){}
