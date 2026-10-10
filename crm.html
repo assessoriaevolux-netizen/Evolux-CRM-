@@ -55,6 +55,8 @@
       credito: row.credito||0,
       meta: row.meta||500000,
       foto: row.foto_url||null,
+      whatsapp: row.whatsapp||null,
+      instagram: row.instagram||null,
       empresaId: row.empresa_id||null,
       perms: row.perms?JSON.parse(row.perms):{},
       hperms: row.hperms?JSON.parse(row.hperms):{}
@@ -81,6 +83,8 @@
         local.equipeId=row.equipe_id||local.equipeId;
         local.sb_id=row.id;
         local.empresaId=row.empresa_id||local.empresaId;
+        if(row.whatsapp!==undefined) local.whatsapp=row.whatsapp||local.whatsapp;
+        if(row.instagram!==undefined) local.instagram=row.instagram||local.instagram;
         if(row.perms){try{local.perms=JSON.parse(row.perms);}catch(e){}}
         if(row.hperms){try{local.hperms=JSON.parse(row.hperms);}catch(e){}}
       } else {
@@ -129,13 +133,18 @@
     }catch(e){console.warn('Profile upsert:',e);}
 
     // Carrega profiles da empresa do usuário logado (antes do init renderizar)
+    // NUNCA carrega sem empresa_id — isolamento multi-tenant obrigatório
     try{
       const _empId=window._empresaIdDireto;
-      let _pq=window._sb.from('profiles').select('*').order('credito',{ascending:false});
-      if(_empId) _pq=_pq.eq('empresa_id',_empId);
-      const {data,error}=await _pq;
-      if(!error&&data&&data.length){
-        window._pendingProfiles=data; // _initCRM vai aplicar após users estar pronto
+      if(_empId){
+        const {data,error}=await window._sb.from('profiles').select('*').eq('empresa_id',_empId).order('credito',{ascending:false});
+        if(!error&&data&&data.length){
+          window._pendingProfiles=data; // _initCRM vai aplicar após users estar pronto
+        }
+      } else {
+        // Sem empresa_id: carrega apenas o próprio profile para não misturar dados
+        const {data,error}=await window._sb.from('profiles').select('*').eq('id',session.user.id);
+        if(!error&&data&&data.length) window._pendingProfiles=data;
       }
     }catch(e){console.warn('Load profiles:',e);}
   });
@@ -144,9 +153,8 @@
   window._loadProfiles=async function(){
     try{
       const _empIdP=window._empresaIdDireto;
-      let _profileQ=window._sb.from('profiles').select('*').order('credito',{ascending:false});
-      if(_empIdP) _profileQ=_profileQ.eq('empresa_id',_empIdP);
-      const {data,error}=await _profileQ;
+      if(!_empIdP){console.warn('[_loadProfiles] sem empresa_id — abortando para não vazar dados');return;}
+      const {data,error}=await window._sb.from('profiles').select('*').eq('empresa_id',_empIdP).order('credito',{ascending:false});
       if(error||!data||!data.length)return;
       mergeProfilesIntoUsers(data);
       // Re-renderiza tudo com o usuário correto
@@ -184,13 +192,14 @@
       try{
         const token=window._session?.access_token;
         if(!token){console.warn('[_syncUser] sem token para chamar edge function');return;}
-        const _hierLocal2=window.hierarquias&&window.hierarquias.find(h=>h.id===u.hierarquiaId);
+        const _hierLocal2=window.hierarquias&&window.hierarquias.find(h=>h.id===u.hierarquiaId||h.sb_id===u.hierarquiaId);
         const body={
           target_id:u.sb_id,
           nome:u.nome,
           role:u.role||'vendedor',
           foto_url:u.foto||null,
           whatsapp:u.whatsapp||null,
+          instagram:u.instagram||null,
           meta:u.meta||0,
           equipe_id:u.equipeId||null,
           hierarquia_id:_hierLocal2?.sb_id||null,
@@ -210,9 +219,9 @@
     }
     // Garante empresa_id
     if(!u.empresaId && window._empresaIdDireto) u.empresaId = window._empresaIdDireto;
-    // Resolve UUID real da hierarquia (hierarquiaId é ID local numérico)
-    const _hierLocal=window.hierarquias&&window.hierarquias.find(h=>h.id===u.hierarquiaId);
-    const _hierUUID=_hierLocal?.sb_id||null;
+    // Resolve UUID real da hierarquia (hierarquiaId pode ser ID local numérico OU UUID do banco)
+    const _hierLocal=window.hierarquias&&window.hierarquias.find(h=>h.id===u.hierarquiaId||h.sb_id===u.hierarquiaId);
+    const _hierUUID=_hierLocal?.sb_id||(typeof u.hierarquiaId==='string'&&u.hierarquiaId.length>10?u.hierarquiaId:null);
     const payload={
       id: u.sb_id, // SEMPRE inclui o UUID correto
       email:u.email,
@@ -231,6 +240,8 @@
       updated_at:new Date().toISOString()
     };
     if(u.whatsapp!==undefined) payload.whatsapp=u.whatsapp||null;
+    // Bug #9: instagram nunca era incluído no payload — agora salva junto ao perfil
+    if(u.instagram!==undefined) payload.instagram=u.instagram||null;
     console.log('[_syncUser] upserting id='+payload.id, 'email='+payload.email, 'empresa_id='+payload.empresa_id);
     const {data,error}=await window._sb.from('profiles').upsert(payload,{onConflict:'id'}).select().single();
     if(error){console.warn('Erro ao salvar profile:',error);return;}
@@ -279,6 +290,8 @@
       origem: lead.origem || '',
       atendimento: lead.atendimento || '',
       obs: lead.obs || '',
+      // Bug #11: administradora vinculada ao lead agora persistida no banco
+      administradora: lead.admin || null,
       data_criacao: lead.data ? lead.data.split('/').reverse().join('-') : new Date().toISOString().split('T')[0],
       updated_at: new Date().toISOString()
     };
@@ -321,6 +334,8 @@
           origem: row.origem || '',
           atendimento: row.atendimento || '',
           obs: row.obs || '',
+          // Bug #11: restaura administradora salva no banco
+          admin: row.administradora || null,
           data: row.data_criacao ? row.data_criacao.split('-').reverse().join('/') : '',
           responsavelId: resp ? resp.id : null,
         };
@@ -857,8 +872,14 @@
       const _leadsChanOpts={event:'*',schema:'public',table:'leads'};
       if(_profFilter) _leadsChanOpts.filter=_profFilter;
       window._sb.channel('leads-sync')
-        .on('postgres_changes',_leadsChanOpts,async function(){
-          await window._loadLeads();
+        .on('postgres_changes',_leadsChanOpts,async function(payload){
+          // Bug #20: DELETE via realtime — remover do array local sem recarregar tudo
+          if(payload.eventType==='DELETE'&&payload.old?.id){
+            const _delIdx=leads.findIndex(l=>l.sb_id===payload.old.id);
+            if(_delIdx!==-1) leads.splice(_delIdx,1);
+          } else {
+            await window._loadLeads();
+          }
           try{window.renderDashboard&&window.renderDashboard();}catch(e){}
           try{window.renderKanban&&window.renderKanban();}catch(e){}
           try{window.renderTable&&window.renderTable();}catch(e){}
@@ -896,7 +917,18 @@
       const _rtWait=setInterval(function(){
         if(window._empresaIdDireto){clearInterval(_rtWait);_subscribeRealtime();}
       },300);
-      setTimeout(function(){clearInterval(_rtWait);if(!window._empresaIdDireto)_subscribeRealtime();},3000);
+      // Se após 3s ainda não tem empresa_id, NÃO assina realtime sem filtro
+      // (evita vazar dados de outras empresas). Vai assinar quando empresa_id aparecer.
+      setTimeout(function(){
+        clearInterval(_rtWait);
+        if(!window._empresaIdDireto){
+          console.warn('[Realtime] empresa_id não disponível após 3s — realtime não assinado. Aguardando...');
+          // Continua tentando a cada 2s indefinidamente
+          const _rtRetry=setInterval(function(){
+            if(window._empresaIdDireto){clearInterval(_rtRetry);_subscribeRealtime();}
+          },2000);
+        }
+      },3000);
     }
   });
 
@@ -3164,7 +3196,8 @@ window.nextAdminId = nextAdminId;
 function getAdmin(){return administradoras.find(a=>a.ativa)||administradoras[0]||null;}
 
 let users=[
-  {id:1,nome:'Erick',email:'assessoriaevolux@gmail.com',role:'master',managerId:null,vendas:0,credito:0,foto:null,meta:500000,hierarquiaId:1,empresaId:null,perms:{...DPERMS.gestor},hperms:{...HPERM_DEFAULTS.gestor}},
+  // Array começa vazio — todos os usuários vêm do Supabase via _initCRM
+  // O usuário logado é identificado por window._currentUserId após auth
 ];
 window.users = users; // mesma referência — window.users === users
 let nextUserId=2;
@@ -3637,7 +3670,8 @@ function saveLeadDetalhe(){
 function removeLeadDetalhe(){
   if(!confirm('Remover este lead?'))return;
   const _rld=leads.find(l=>l.id===_leadDetalheId); if(_rld?.sb_id&&window._deleteLead) window._deleteLead(_rld.sb_id);
-  leads=leads.filter(l=>l.id!==_leadDetalheId);
+  // Bug #3: usar splice em vez de reassignar — mantém a referência window.leads intacta
+  const _rldIdx=leads.findIndex(l=>l.id===_leadDetalheId); if(_rldIdx!==-1) leads.splice(_rldIdx,1);
   closeLeadDetalhe();renderKanban();renderDashboard();renderTable();
 }
 
@@ -3793,7 +3827,7 @@ function saveLead(){
   closeModal();['fNome','fTel','fObs'].forEach(id=>document.getElementById(id).value='');document.getElementById('fCredito').value='';
   renderKanban();renderTable();renderDashboard();renderNotifPanel();
 }
-function removeLead(id){if(!confirm('Remover este lead?'))return;const _rl=leads.find(l=>l.id===id); if(_rl?.sb_id&&window._deleteLead) window._deleteLead(_rl.sb_id);leads=leads.filter(l=>l.id!==id);renderKanban();renderTable();renderDashboard();}
+function removeLead(id){if(!confirm('Remover este lead?'))return;const _rl=leads.find(l=>l.id===id); if(_rl?.sb_id&&window._deleteLead) window._deleteLead(_rl.sb_id);const _rlIdx=leads.findIndex(l=>l.id===id);if(_rlIdx!==-1)leads.splice(_rlIdx,1);renderKanban();renderTable();renderDashboard();}
 function simFromLead(id){
   showTab('simulador',document.querySelectorAll('.nb')[3]);
   setTimeout(()=>{
@@ -4701,13 +4735,14 @@ function renderRanking(){
 function addMinhaVenda(){
   const val=unM(document.getElementById('vval-me').value);
   if(!val){alert('Informe o valor da venda.');return;}
-  // Encontrar user logado
   const me=getMe();
   if(!me){alert('Usuário não identificado.');return;}
+  // Incrementa localmente para UI imediata
   me.vendas++;
   me.credito+=val;
   if(window._saveAtividade)window._saveAtividade('ti-trophy',`${me.nome} registrou venda de ${fmtR(val)}`,me.sb_id);
-  if(window._syncUser) window._syncUser(me);
+  // Persiste no banco via incremento atômico (não usa _syncUser para não sobrescrever outros campos)
+  if(window._registrarVenda) window._registrarVenda({sb_id:null,nome:'Venda manual',credito:val},me.id).catch(e=>console.warn(e));
   document.getElementById('vval-me').value='';
   try{renderRanking();}catch(e){}
   try{renderDashboard();}catch(e){}
@@ -4722,11 +4757,12 @@ function addVenda(){
   if(!val){alert('Informe o valor da venda.');return;}
   const u=users.find(x=>x.id===id);
   if(u){
+    // Incrementa localmente para UI imediata
     u.vendas++;
     u.credito+=val;
     if(window._saveAtividade)window._saveAtividade('ti-trophy',`${u.nome} registrou venda de ${fmtR(val)}`,u.sb_id);
-    // Sincroniza venda com Supabase (ranking atualiza para todos em tempo real)
-    if(window._syncUser) window._syncUser(u);
+    // Persiste no banco via incremento atômico (não usa _syncUser para não sobrescrever)
+    if(window._registrarVenda) window._registrarVenda({sb_id:null,nome:'Venda manual',credito:val},id).catch(e=>console.warn(e));
   }
   // Se um lead foi selecionado, mover para Fechado / Convertido
   const sls=document.getElementById('sLeadSel');
@@ -4737,6 +4773,7 @@ function addVenda(){
       lead.etapa='Fechado / Convertido';
       lead.credito=val||lead.credito;
       if(u) lead.responsavelId=u.id;
+      if(window._syncLead) window._syncLead(lead).catch(e=>console.warn(e));
       if(window._saveAtividade)window._saveAtividade('ti-circle-check',`${lead.nome} fechado — ${fmtR(lead.credito)}`);
     }
     sls.value='';
@@ -4747,12 +4784,13 @@ function addVenda(){
   try{if(document.getElementById('tab-funil')&&document.getElementById('tab-funil').classList.contains('active')) renderKanban();}catch(e){}
   try{if(document.getElementById('tab-leads')&&document.getElementById('tab-leads').classList.contains('active')) renderTable();}catch(e){}
   try{renderNotifPanel();}catch(e){}
-  // Sempre chama celebração por último, isolada de erros anteriores
   setTimeout(()=>{ showCelebra(u?u.nome:'Vendedor', val); }, 100);
 }
 function resetRanking(){
   if(!confirm(`Resetar o ranking de ${mesAtual()}?`))return;
-  users.forEach(u=>{u.vendas=0;u.credito=0;if(window._syncUser)window._syncUser(u);});
+  // Bug #13: _syncUser sem await/catch — reseta localmente mas não zeramos vendas no DB aqui
+  // (vendas do DB só são zeradas via _registrarVenda/_estornarVenda — reset visual apenas)
+  users.forEach(u=>{u.vendas=0;u.credito=0;if(window._syncUser)window._syncUser(u).catch(e=>console.warn('[resetRanking]',e));});
   if(window._saveAtividade)window._saveAtividade('ti-refresh',`Ranking resetado para novo mês`);renderRanking();
 }
 let tvFilter=3;
@@ -5713,7 +5751,9 @@ async function inviteUser(){
   // Envia email de boas-vindas com credenciais via Edge Function
   try{
     const _meEmail=getMe();
-    const empresaEmail=empresas.find(e=>e.id===(_meEmail?.empresaId));
+    // _empresasCache é o array correto (window.empresas não existe)
+    const _empCache=window._empresasCache||[];
+    const empresaEmail=_empCache.find(e=>e.id===(_meEmail?.empresaId));
     fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/send-welcome-email',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${window._session?.access_token||''}`},
@@ -6308,6 +6348,9 @@ function cfgRenderSection(){
       if(sEl) sEl.value=parts.slice(1).join(' ')||'';
       const waEl=document.getElementById('accWhatsapp');
       if(waEl && me.whatsapp) waEl.value=me.whatsapp;
+      // Bug #9: pré-preenche instagram salvo no perfil
+      const instaEl2=document.getElementById('accInstagram');
+      if(instaEl2 && me.instagram) instaEl2.value=me.instagram;
       if(me.foto){
         const prev=document.getElementById('foto-preview-conta');
         if(prev) prev.innerHTML=`<img src="${me.foto}" style="width:80px;height:80px;object-fit:cover;border-radius:50%;border:3px solid var(--g)">`;
@@ -7081,7 +7124,7 @@ function editMeta(id) {
   const val = prompt(`Meta de ${u.nome} (R$):`, u.meta||500000);
   if(val===null) return;
   const n = parseFloat(val.replace(/\./g,'').replace(',','.'));
-  if(!isNaN(n)&&n>0) { u.meta=n; if(window._syncUser)window._syncUser(u); renderUserList(); renderRanking(); }
+  if(!isNaN(n)&&n>0) { u.meta=n; if(window._syncUser)window._syncUser(u).catch(e=>console.warn('[editMeta]',e)); renderUserList(); renderRanking(); }
 }
 
 
@@ -7118,6 +7161,13 @@ async function fazerLogout(){
   if(!confirm('Deseja sair do CRM?'))return;
   try{ await window._sb.auth.signOut(); }catch(e){}
   localStorage.removeItem('evolux_last_active');
+  // Bug #16: limpar token do Google Calendar para não vazar entre usuários no mesmo dispositivo
+  try{
+    localStorage.removeItem('evolux_gcal_token');
+    localStorage.removeItem('evolux_gcal_token_expiry');
+    localStorage.removeItem('evolux_gcal_return_tab');
+  }catch(e){}
+  window._gcalToken=null;
   window.location.href='index.html';
 }
 window.fazerLogout=fazerLogout;
@@ -7265,6 +7315,8 @@ function salvarConfiguracoesConta(){
     if(nomeCompleto) me.nome = nomeCompleto;
     if(fotoSrc) me.foto = fotoSrc;
     if(waEl) me.whatsapp = waEl.value.trim();
+    // Bug #9: salvar instagram no objeto usuário para persistir no DB
+    if(instaEl) me.instagram = instaEl.value.trim();
   }
 
   // Atualiza sidebar e topbar imediatamente
@@ -7356,7 +7408,7 @@ function saveEditUser() {
   // Atualizar avatares
   if(id===1) updateSbUser();
   // Sincroniza com Supabase (todos verão a foto atualizada em tempo real)
-  if(window._syncUser) window._syncUser(u);
+  if(window._syncUser) window._syncUser(u).catch(e=>console.warn('[editUser]',e));
   closeEditUser();
   renderUserList();
   renderRanking();
@@ -7415,10 +7467,14 @@ function addPessoaRanking(){
   const h=getHier(hierarquiaId);
   const role=h?h.slug:'vendedor';
   const hperms=h?{...h.perms}:{};
-  const _newU={id:nextUserId++,nome,email:'',role,managerId:1,hierarquiaId,
-    vendas:0,credito:0,foto,meta:metaRaw,hperms,perms:{...DPERMS[role]||DPERMS.vendedor}};
+  // Bug #19: usuário sem email nunca persistia no DB (_syncUser abortava).
+  // Gera email fictício único para poder salvar — admin pode corrigir depois.
+  const _fakeEmail='usuario_'+Date.now()+'@evolux.local';
+  const _newU={id:nextUserId++,nome,email:_fakeEmail,role,managerId:null,hierarquiaId,
+    vendas:0,credito:0,foto,meta:metaRaw,hperms,perms:{...DPERMS[role]||DPERMS.vendedor},
+    empresaId:window._empresaIdDireto||null};
   users.push(_newU);
-  if(window._syncUser) window._syncUser(_newU).catch(e=>console.warn(e));
+  if(window._syncUser) window._syncUser(_newU).catch(e=>console.warn('[addPessoaRanking] sync error:',e));
   // limpar form
   if(nomeEl) nomeEl.value='';
   if(metaEl) metaEl.value='';
@@ -7808,18 +7864,30 @@ async function _initCRM(){
   // Aguarda o carregamento de profiles (getSession + fetch profiles)
   try{ await window._profilesLoadPromise; }catch(e){ console.warn('profilesLoad err:',e); }
 
-  // PASSO 1: Associa o usuário logado ao array users IMEDIATAMENTE
-  // window.users aponta para o mesmo array que `users` (atribuído logo após let users=[...])
+  // PASSO 1: Associa o usuário logado ao array users
+  // O array começa vazio — usuários vêm todos do Supabase
   const _uid = window._currentUserId;
   const _email = window._session?.user?.email;
   if(_uid && _email) {
-    // Procura por email ou sb_id
+    // Procura por email ou sb_id nos dados já carregados
     let meLocal = users.find(u => u.sb_id === _uid || u.email === _email);
-    if(!meLocal && users.length > 0) {
-      // Se não achou, usa o primeiro user (admin hardcoded) e associa
-      meLocal = users[0];
-    }
-    if(meLocal) {
+    // Se não encontrou (usuário novo sem profile ainda), cria entrada mínima
+    if(!meLocal) {
+      const _nome = window._session?.user?.user_metadata?.nome || _email?.split('@')[0] || 'Usuário';
+      const _role = window._session?.user?.user_metadata?.role || 'vendedor';
+      meLocal = {
+        id: nextUserId++,
+        sb_id: _uid,
+        email: _email,
+        nome: _nome,
+        role: _role,
+        managerId: null, vendas: 0, credito: 0, foto: null, meta: 500000,
+        hierarquiaId: null, equipeId: null, empresaId: window._empresaIdDireto || null,
+        perms: {}, hperms: {}
+      };
+      users.push(meLocal);
+      console.log('[_initCRM] Criou entrada local para usuário logado:', _email);
+    } else {
       meLocal.sb_id = _uid;
       if(!meLocal.email) meLocal.email = _email;
     }
