@@ -658,13 +658,15 @@
   // ── VENDAS (histórico) ─────────────────────────────────────────────────────
   window._registrarVenda = async function(lead, userId) {
     const empresaId = await window._getEmpresaId();
-    if (!empresaId) return;
+    console.log('[_registrarVenda] empresaId=', empresaId, 'userId=', userId, 'lead=', lead);
+    if (!empresaId) { console.error('[_registrarVenda] ABORTOU: sem empresaId'); return; }
     const user = users.find(u => u.id === userId);
     const userSbId = user?.sb_id || null;
     const valorCredito = lead?.credito || 0;
+    console.log('[_registrarVenda] userSbId=', userSbId, 'valorCredito=', valorCredito, 'lead.sb_id=', lead?.sb_id);
 
     // 1) Registra a venda na tabela de histórico
-    await window._sb.from('vendas').insert({
+    const {data:vendaData, error:vendaError} = await window._sb.from('vendas').insert({
       empresa_id: empresaId,
       user_id: userSbId,
       lead_id: lead?.sb_id || null,
@@ -672,24 +674,29 @@
       valor_credito: valorCredito,
       data_fechamento: new Date().toISOString().split('T')[0],
     });
+    console.log('[_registrarVenda] insert vendas:', vendaData, 'erro:', vendaError);
 
-    // 2) Incrementa atomicamente no banco (evita race condition de ler→somar→salvar)
+    // 2) Incrementa atomicamente no banco
     if(userSbId){
-      await window._sb.rpc('increment_user_stats', {
+      const {data:rpcData, error:rpcError} = await window._sb.rpc('increment_user_stats', {
         p_user_id: userSbId,
         p_vendas: 1,
         p_credito: valorCredito
-      }).catch(async()=>{
-        // Fallback: se a RPC não existir, faz update direto com valor atual + incremento
-        const {data:cur}=await window._sb.from('profiles').select('vendas,credito').eq('id',userSbId).single();
+      });
+      console.log('[_registrarVenda] rpc result:', rpcData, 'erro:', rpcError);
+      if(rpcError){
+        console.warn('[_registrarVenda] RPC falhou, tentando fallback direto...', rpcError);
+        const {data:cur, error:selErr}=await window._sb.from('profiles').select('vendas,credito').eq('id',userSbId).single();
+        console.log('[_registrarVenda] fallback select:', cur, 'erro:', selErr);
         if(cur){
-          await window._sb.from('profiles').update({
+          const {data:updData, error:updErr}=await window._sb.from('profiles').update({
             vendas:(cur.vendas||0)+1,
             credito:(cur.credito||0)+valorCredito,
             updated_at:new Date().toISOString()
           }).eq('id',userSbId);
+          console.log('[_registrarVenda] fallback update:', updData, 'erro:', updErr);
         }
-      });
+      }
     }
   };
 
