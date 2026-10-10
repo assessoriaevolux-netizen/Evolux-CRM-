@@ -5822,7 +5822,7 @@ function renderUserList(){
               <option value="">Hierarquia...</option>
               ${hierarquias.map(h=>`<option value="${h.id}" ${(u.hierarquiaId&&(String(u.hierarquiaId)===String(h.sb_id)||String(u.hierarquiaId)===String(h.id)))?'selected':''}>${h.nome}</option>`).join('')}
             </select>
-            <button class="btn bp bsm ulist-hier-save-btn" data-uid="${u.id}" title="Salvar hierarquia" style="padding:4px 10px;font-size:11.5px"><i class="ti ti-check"></i></button>
+            <button class="ulist-hier-save-btn" data-uid="${u.id}" title="Salvar hierarquia" style="padding:4px 10px;font-size:12px;border-radius:6px;border:none;background:#016b3c;color:#fff;cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:600"><i class="ti ti-check"></i> Salvar</button>
             <button class="btn bd bsm ulist-remove-btn" data-uid="${u.id}" title="Remover usuário"><i class="ti ti-trash"></i></button>
           </div>
         `:`<span class="rbadge rg">Administrador</span>`}
@@ -5850,30 +5850,37 @@ function renderUserList(){
       const uid=parseInt(btn.getAttribute('data-uid'));
       const sel=btn.parentElement&&btn.parentElement.querySelector('.ulist-hier-sel');
       if(!sel||!sel.value){showToast('Selecione uma hierarquia primeiro','ti-alert-circle');return;}
-      btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>';
-      await changeUserHier(uid,sel.value);
-      btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i>';
-      btn.style.background='';
-      showToast('Hierarquia salva!','ti-check');
+      btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i> Salvando...';
+      try{
+        await changeUserHier(uid,sel.value);
+        btn.innerHTML='<i class="ti ti-check"></i> Salvo!';
+        btn.style.background='#15803d';
+        showToast('Hierarquia salva com sucesso!','ti-check');
+        setTimeout(()=>{btn.innerHTML='<i class="ti ti-check"></i> Salvar';btn.style.background='#016b3c';btn.disabled=false;},2000);
+      }catch(err){
+        console.error('[save-hier] erro:',err);
+        btn.innerHTML='<i class="ti ti-x"></i> Erro';
+        btn.style.background='#dc2626';
+        showToast('Erro ao salvar: '+err.message,'ti-alert-circle');
+        setTimeout(()=>{btn.innerHTML='<i class="ti ti-check"></i> Salvar';btn.style.background='#016b3c';btn.disabled=false;},3000);
+      }
     });
   });
 }
 async function changeUserHier(userId,hierIdStr){
-  const u=users.find(x=>x.id===userId);if(!u||u.role==='admin')return; // FIX bug#6
-  // hierIdStr é o h.id numérico local (vem do <option value="${h.id}">)
+  const u=users.find(x=>x.id===userId);
+  if(!u||u.role==='admin') throw new Error('Usuário não encontrado ou é admin');
   const hid=parseInt(hierIdStr)||null;
   const h=hid?getHier(hid):null;
-  // Salva o UUID do banco em hierarquiaId (padrão do sistema após correção)
-  u.hierarquiaId=h?h.sb_id:null;
-  if(h&&h.perms) u.hperms={...h.perms};
-  // Atualiza o role de acordo com o slug da hierarquia selecionada
-  if(h&&h.slug){
-    u.role=h.slug==='gestor'?'gestor':h.slug==='supervisor'?'supervisor':h.slug==='representante'?'representante':'vendedor';
-    // Atualiza perms de abas conforme o novo papel
-    u.perms={...DPERMS[u.role]||DPERMS.vendedor};
-  }
-  // Persiste no Supabase
-  if(window._syncUser) await window._syncUser(u).catch(e=>console.warn('[changeUserHier] sync err:',e));
+  if(!h) throw new Error('Hierarquia não encontrada (id='+hierIdStr+')');
+  console.log('[changeUserHier] user='+u.nome+' sb_id='+u.sb_id+' hier='+h.nome+' hier_sb_id='+h.sb_id);
+  u.hierarquiaId=h.sb_id||null;
+  if(h.perms) u.hperms={...h.perms};
+  u.role=h.slug==='gestor'?'gestor':h.slug==='supervisor'?'supervisor':h.slug==='representante'?'representante':'vendedor';
+  u.perms={...DPERMS[u.role]||DPERMS.vendedor};
+  if(!window._syncUser) throw new Error('_syncUser não disponível');
+  await window._syncUser(u);
+  console.log('[changeUserHier] salvo! hierarquiaId='+u.hierarquiaId+' role='+u.role);
   renderUserList();
 }
 async function removeUser(id){
