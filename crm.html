@@ -5959,18 +5959,27 @@ async function changeUserHier(userId,hierIdStr){
       target_id: u.sb_id,
       nome: u.nome,
       role: u.role||'vendedor',
-      hierarquia_id: h.sb_id, // UUID direto — sem risco de resolução falhar
+      hierarquia_id: h.sb_id, // UUID da hierarquia no banco
       perms: u.perms?JSON.stringify(u.perms):null,
       hperms: u.hperms?JSON.stringify(u.hperms):null,
     };
-    console.log('[changeUserHier] enviando para Edge Function:', body);
+    console.log('[changeUserHier] enviando para Edge Function:', JSON.stringify(body));
     const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/update-profile',{
       method:'POST',
       headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
       body:JSON.stringify(body)
     });
     const json=await res.json();
-    if(!res.ok){console.error('[changeUserHier] Edge Function error:',json);throw new Error(json.error||'Erro ao salvar no servidor');}
+    if(!res.ok){
+      // Se o erro é tipo integer (coluna ainda não migrada), tenta salvar sem hierarquia_id
+      // e avisa o usuário que precisa migrar o banco
+      const errMsg=(json.error||'');
+      if(errMsg.includes('integer')||errMsg.includes('uuid')||errMsg.includes('syntax')){
+        throw new Error('⚠️ Banco de dados desatualizado: a coluna hierarquia_id precisa ser migrada para UUID. Rode o SQL de migração no Supabase Dashboard.');
+      }
+      console.error('[changeUserHier] Edge Function error:',json);
+      throw new Error(json.error||'Erro ao salvar no servidor');
+    }
     console.log('[changeUserHier] salvo via Edge Function! hierarquia_id='+h.sb_id+' role='+u.role);
   } else {
     await window._syncUser(u);
