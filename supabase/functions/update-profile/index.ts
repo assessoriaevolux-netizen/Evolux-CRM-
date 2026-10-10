@@ -45,8 +45,9 @@ Deno.serve(async (req) => {
       .eq('id', user.id)
       .single()
 
-    if (!callerProfile || callerProfile.role !== 'master') {
-      return new Response(JSON.stringify({ error: 'Apenas master pode atualizar outros usuários' }), {
+    const rolesPermitidos = ['master', 'gestor', 'supervisor', 'administrador']
+    if (!callerProfile || !rolesPermitidos.includes(callerProfile.role)) {
+      return new Response(JSON.stringify({ error: 'Sem permissão para atualizar outros usuários' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }

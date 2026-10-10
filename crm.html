@@ -192,7 +192,9 @@
       try{
         const token=window._session?.access_token;
         if(!token){console.warn('[_syncUser] sem token para chamar edge function');return;}
-        const _hierLocal2=window.hierarquias&&window.hierarquias.find(h=>h.id===u.hierarquiaId||h.sb_id===u.hierarquiaId);
+        // Resolve UUID da hierarquia — hierarquiaId pode ser ID local numérico ou UUID direto
+        const _hierLocal2=window.hierarquias&&window.hierarquias.find(h=>h.sb_id===u.hierarquiaId||String(h.id)===String(u.hierarquiaId));
+        const _hierUUID2=_hierLocal2?.sb_id||(typeof u.hierarquiaId==='string'&&u.hierarquiaId.length>10?u.hierarquiaId:null);
         const body={
           target_id:u.sb_id,
           nome:u.nome,
@@ -202,7 +204,7 @@
           instagram:u.instagram||null,
           meta:u.meta||0,
           equipe_id:u.equipeId||null,
-          hierarquia_id:_hierLocal2?.sb_id||null,
+          hierarquia_id:_hierUUID2||null,
           perms:u.perms?JSON.stringify(u.perms):null,
           hperms:u.hperms?JSON.stringify(u.hperms):null,
         };
@@ -851,12 +853,19 @@
         .on('postgres_changes',_hierChanOpts,async function(payload){
         await window._loadHierarquias();
         // Reaplicar hperms de todos os usuários locais com base nas hierarquias atualizadas
+        // e re-persistir no banco para que reload futuro leia correto
         if(window.users && window.hierarquias){
+          const me=window.getMe&&window.getMe();
           window.users.forEach(u=>{
-            // u.hierarquiaId guarda o UUID do banco (row.hierarquia_id)
-            // hierarquias locais têm sb_id = UUID do banco
-            const h=window.hierarquias.find(x=>x.sb_id===u.hierarquiaId||x.id===u.hierarquiaId);
-            if(h&&h.perms) u.hperms={...h.perms};
+            const h=window.hierarquias.find(x=>x.sb_id===u.hierarquiaId||String(x.id)===String(u.hierarquiaId));
+            if(h&&h.perms){
+              u.hperms={...h.perms};
+              // Re-persiste hperms no banco só para usuários da mesma empresa
+              // (o gestor/master que disparou a edição já salva via _syncHierarquia)
+              if(window._syncUser && me && (me.role==='master'||me.role==='gestor'||me.role==='supervisor')){
+                window._syncUser(u).catch(e=>console.warn('[hierarquias-sync] re-sync user error:',e));
+              }
+            }
           });
         }
         // Reaplicar nav, config e ranking em tempo real
