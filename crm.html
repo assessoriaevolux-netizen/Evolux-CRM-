@@ -137,13 +137,19 @@
         },{onConflict:'id'});
       }
 
-      // Guarda empresa_id se já tiver (nunca cria empresa automaticamente aqui)
-      const empresaIdExistente = existing?.empresa_id || null;
+      // Guarda empresa_id — prioriza banco, fallback nos metadados do Auth
+      const empresaIdExistente = existing?.empresa_id
+        || session.user.user_metadata?.empresa_id
+        || null;
       if(empresaIdExistente){
         window._empresaIdDireto = empresaIdExistente;
-        console.log('[profilesLoad] empresa_id encontrado:', empresaIdExistente);
-      } else {
-        console.log('[profilesLoad] profile sem empresa_id — master pode criar empresa em Empresas');
+        // Se o banco ainda não tem, salva agora
+        if(!existing?.empresa_id){
+          await window._sb.from('profiles').update({
+            empresa_id: empresaIdExistente,
+            role: session.user.user_metadata?.role || existing?.role || 'vendedor'
+          }).eq('id', session.user.id);
+        }
       }
 
     }catch(e){console.warn('Profile upsert:',e);}

@@ -428,11 +428,20 @@ async function fazerCadastroConvite(){
   if(!senha||senha.length<6){ showErr('convite-err','A senha deve ter pelo menos 6 caracteres.'); return; }
   setLoading(btn, true);
 
+  // Verifica se já existe alguém nessa empresa — primeiro usuário vira gestor
+  let roleNovo = 'vendedor';
+  if(_conviteEmpresaId){
+    const {data: existentes} = await sb.from('profiles').select('id').eq('empresa_id', _conviteEmpresaId).limit(1);
+    if(!existentes || existentes.length === 0){
+      roleNovo = 'gestor'; // primeiro da empresa = gestor
+    }
+  }
+
   // Cria usuário no Supabase Auth
   const {data, error} = await sb.auth.signUp({
     email,
     password: senha,
-    options: { data: { nome, empresa_id: _conviteEmpresaId, role: 'vendedor' } }
+    options: { data: { nome, empresa_id: _conviteEmpresaId, role: roleNovo } }
   });
 
   if(error){
@@ -441,14 +450,12 @@ async function fazerCadastroConvite(){
     return;
   }
 
-  // Cria perfil vinculado à empresa
-  await sb.from('profiles').upsert({
-    id: data.user.id,
-    email,
+  // Atualiza perfil com role e empresa corretos (sobrescreve o que a trigger criou)
+  await sb.from('profiles').update({
     nome,
-    role: 'vendedor',
+    role: roleNovo,
     empresa_id: _conviteEmpresaId
-  });
+  }).eq('id', data.user.id);
 
   btn.querySelector('.btn-text').textContent = '✓  Conta criada!';
   btn.style.background = 'linear-gradient(135deg,#14532d,#16a34a)';
