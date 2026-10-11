@@ -7441,10 +7441,8 @@ async function criarEmpresaConfirm(){
   if(!nome){showToast('Informe o nome da empresa.','ti-alert-triangle','#d97706');return;}
   const {data,error}=await window._sb.from('empresas').insert({nome,plano,ativo:true}).select().single();
   if(error){showToast('Erro: '+error.message,'ti-alert-circle','#dc3545');return;}
-  // Link admin to this new empresa
-  await window._sb.from('profiles').update({empresa_id: data.id}).eq('id', window._currentUserId);
-  const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
-  if(me) me.empresaId = data.id;
+  // NÃO altera empresa_id do master — ele permanece na própria empresa
+  // O gestor convidado ficará vinculado a esta nova empresa ao aceitar o convite
   document.getElementById('modal-nova-empresa')?.remove();
   // Gera link de convite com empresa_id
   const base=window.location.origin+window.location.pathname.replace('crm.html','index.html');
