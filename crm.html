@@ -130,26 +130,41 @@
     try{
       const {data:existing}=await window._sb.from('profiles').select('*').eq('id',session.user.id).single();
 
-      if(!existing){
-        // Cria profile novo — sem empresa_id por enquanto (será associado depois)
-        await window._sb.from('profiles').upsert({
-          id:session.user.id,email,nome,role,meta,vendas:0,credito:0
-        },{onConflict:'id'});
-      }
-
-      // Guarda empresa_id — prioriza banco, fallback nos metadados do Auth
+      // Empresa e role: prioriza banco, fallback nos metadados do Auth
       const empresaIdExistente = existing?.empresa_id
         || session.user.user_metadata?.empresa_id
         || null;
+      const roleCorreto = existing?.role
+        || session.user.user_metadata?.role
+        || 'vendedor';
+
+      if(!existing){
+        // Cria profile completo com empresa_id e role corretos
+        await window._sb.from('profiles').upsert({
+          id:session.user.id,
+          email,
+          nome,
+          role: roleCorreto,
+          meta,
+          vendas:0,
+          credito:0,
+          empresa_id: empresaIdExistente || null
+        },{onConflict:'id'});
+      } else if(!existing.empresa_id && empresaIdExistente) {
+        // Profile existe mas sem empresa_id — corrige agora
+        await window._sb.from('profiles').update({
+          empresa_id: empresaIdExistente,
+          role: roleCorreto
+        }).eq('id', session.user.id);
+      } else if(existing.role === 'vendedor' && session.user.user_metadata?.role && session.user.user_metadata.role !== 'vendedor') {
+        // Role no banco está como vendedor mas metadados dizem diferente — corrige
+        await window._sb.from('profiles').update({
+          role: session.user.user_metadata.role
+        }).eq('id', session.user.id);
+      }
+
       if(empresaIdExistente){
         window._empresaIdDireto = empresaIdExistente;
-        // Se o banco ainda não tem, salva agora
-        if(!existing?.empresa_id){
-          await window._sb.from('profiles').update({
-            empresa_id: empresaIdExistente,
-            role: session.user.user_metadata?.role || existing?.role || 'vendedor'
-          }).eq('id', session.user.id);
-        }
       }
 
     }catch(e){console.warn('Profile upsert:',e);}
@@ -8062,19 +8077,20 @@ async function _initCRM(){
     // Se não encontrou (usuário novo sem profile ainda), cria entrada mínima
     if(!meLocal) {
       const _nome = window._session?.user?.user_metadata?.nome || _email?.split('@')[0] || 'Usuário';
-      const _role = window._session?.user?.user_metadata?.role || 'vendedor';
+      // Prioriza role dos pending profiles (banco) — mais confiável que metadados Auth
+      const _pendingMe = window._pendingProfiles?.find(p => p.id === _uid || p.email === _email);
+      const _role = _pendingMe?.role || window._session?.user?.user_metadata?.role || 'vendedor';
       meLocal = {
         id: nextUserId++,
         sb_id: _uid,
         email: _email,
-        nome: _nome,
+        nome: _pendingMe?.nome || _nome,
         role: _role,
         managerId: null, vendas: 0, credito: 0, foto: null, meta: 500000,
         hierarquiaId: null, equipeId: null, empresaId: window._empresaIdDireto || null,
         perms: {}, hperms: {}
       };
       users.push(meLocal);
-      console.log('[_initCRM] Criou entrada local para usuário logado:', _email);
     } else {
       meLocal.sb_id = _uid;
       if(!meLocal.email) meLocal.email = _email;
@@ -8164,6 +8180,20 @@ async function _initCRM(){
         console.log('[_initCRM] master vinculado à empresa existente:', empId, emps[0].nome);
       }
     }catch(e){console.warn('[_initCRM] fallback empresa master:',e);}
+  }
+
+  // PASSO 5: Auto-promoção — primeiro usuário da empresa deve ser gestor
+  // Cobre casos de usuários criados antes da correção do trigger
+  if(meCheck && meCheck.empresaId && meCheck.role === 'vendedor'){
+    try{
+      const {data:allProfs}=await window._sb.from('profiles').select('id,role').eq('empresa_id',meCheck.empresaId);
+      const gestores=allProfs?allProfs.filter(p=>['gestor','supervisor','master','superadmin'].includes(p.role)):[];
+      if(gestores.length===0){
+        // É o único/primeiro usuário e não há gestor — promove para gestor
+        await window._sb.from('profiles').update({role:'gestor'}).eq('id',meCheck.sb_id||_uid);
+        meCheck.role='gestor';
+      }
+    }catch(e){console.warn('[_initCRM] auto-promoção gestor:',e);}
   }
 
   // Agora renderiza com o usuário correto
