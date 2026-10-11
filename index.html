@@ -549,7 +549,7 @@ async function enviarReset(){
   setLoading(btn, true);
 
   const {error} = await sb.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin + '/crm.html'
+    redirectTo: window.location.origin + '/crm.html?from=login'
   });
 
   setLoading(btn, false);

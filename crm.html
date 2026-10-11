@@ -100,24 +100,41 @@
 
   // ── 1. Guard + carregamento inicial de profiles ────────────────────────────
   // Executa ANTES do DOM estar pronto; guarda promise para init aguardar
+
   // ── RECUPERAÇÃO DE SENHA — intercepta link do e-mail ─────────────────────
+  // Detecta token de recuperação na URL (Supabase coloca no hash)
+  var _isPasswordRecovery = window.location.hash.includes('type=recovery')
+    || window.location.hash.includes('type=signup');
   window._sb.auth.onAuthStateChange(function(event, session){
     if(event==='PASSWORD_RECOVERY'){
-      // Esconde o CRM inteiro e mostra o modal de nova senha
-      document.addEventListener('DOMContentLoaded', function(){
+      _isPasswordRecovery = true;
+      // Mostra modal e esconde o CRM
+      function _showRecoveryModal(){
         var modal = document.getElementById('modal-nova-senha');
-        if(modal) modal.style.display='flex';
-      });
-      // Se DOM já carregou
-      var modal = document.getElementById('modal-nova-senha');
-      if(modal) modal.style.display='flex';
+        if(modal){
+          modal.style.display='flex';
+          // Esconde sidebar e conteúdo principal para não aparecer por baixo
+          var sb=document.getElementById('sidebar');
+          var main=document.querySelector('.main-content');
+          if(sb) sb.style.visibility='hidden';
+          if(main) main.style.visibility='hidden';
+        }
+      }
+      if(document.readyState==='loading'){
+        document.addEventListener('DOMContentLoaded', _showRecoveryModal);
+      } else {
+        _showRecoveryModal();
+      }
     }
   });
 
   window._profilesLoadPromise = window._sb.auth.getSession().then(async function(res){
     const session=res.data.session;
-    // Sempre exige passar pela tela de login — só entra no CRM se vier com ?from=login
-    if(!session){window.location.href='index.html';return;}
+    // Se for recuperação de senha, não redireciona — aguarda o evento PASSWORD_RECOVERY
+    if(!session){
+      if(!_isPasswordRecovery) window.location.href='index.html';
+      return;
+    }
     window._session=session;
     window._currentUserId=session.user.id;
 
