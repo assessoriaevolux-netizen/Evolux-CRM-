@@ -189,7 +189,15 @@
     // Carrega profiles da empresa do usuário logado (antes do init renderizar)
     // NUNCA carrega sem empresa_id — isolamento multi-tenant obrigatório
     try{
-      const _empId=window._empresaIdDireto;
+      // Garante empresa_id — busca direto do banco se ainda não tiver
+      let _empId=window._empresaIdDireto;
+      if(!_empId){
+        const {data:prof}=await window._sb.from('profiles').select('empresa_id').eq('id',session.user.id).single();
+        if(prof?.empresa_id){
+          _empId=prof.empresa_id;
+          window._empresaIdDireto=_empId;
+        }
+      }
       if(_empId){
         const {data,error}=await window._sb.from('profiles').select('*').eq('empresa_id',_empId).order('credito',{ascending:false});
         if(!error&&data&&data.length){
