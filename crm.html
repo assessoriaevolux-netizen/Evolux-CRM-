@@ -100,6 +100,20 @@
 
   // ── 1. Guard + carregamento inicial de profiles ────────────────────────────
   // Executa ANTES do DOM estar pronto; guarda promise para init aguardar
+  // ── RECUPERAÇÃO DE SENHA — intercepta link do e-mail ─────────────────────
+  window._sb.auth.onAuthStateChange(function(event, session){
+    if(event==='PASSWORD_RECOVERY'){
+      // Esconde o CRM inteiro e mostra o modal de nova senha
+      document.addEventListener('DOMContentLoaded', function(){
+        var modal = document.getElementById('modal-nova-senha');
+        if(modal) modal.style.display='flex';
+      });
+      // Se DOM já carregou
+      var modal = document.getElementById('modal-nova-senha');
+      if(modal) modal.style.display='flex';
+    }
+  });
+
   window._profilesLoadPromise = window._sb.auth.getSession().then(async function(res){
     const session=res.data.session;
     // Sempre exige passar pela tela de login — só entra no CRM se vier com ?from=login
@@ -658,15 +672,13 @@
   // ── VENDAS (histórico) ─────────────────────────────────────────────────────
   window._registrarVenda = async function(lead, userId) {
     const empresaId = await window._getEmpresaId();
-    console.log('[_registrarVenda] empresaId=', empresaId, 'userId=', userId, 'lead=', lead);
-    if (!empresaId) { console.error('[_registrarVenda] ABORTOU: sem empresaId'); return; }
+    if (!empresaId) return;
     const user = users.find(u => u.id === userId);
     const userSbId = user?.sb_id || null;
     const valorCredito = lead?.credito || 0;
-    console.log('[_registrarVenda] userSbId=', userSbId, 'valorCredito=', valorCredito, 'lead.sb_id=', lead?.sb_id);
 
     // 1) Registra a venda na tabela de histórico
-    const {data:vendaData, error:vendaError} = await window._sb.from('vendas').insert({
+    await window._sb.from('vendas').insert({
       empresa_id: empresaId,
       user_id: userSbId,
       lead_id: lead?.sb_id || null,
@@ -674,27 +686,22 @@
       valor_credito: valorCredito,
       data_fechamento: new Date().toISOString().split('T')[0],
     });
-    console.log('[_registrarVenda] insert vendas:', vendaData, 'erro:', vendaError);
 
     // 2) Incrementa atomicamente no banco
     if(userSbId){
-      const {data:rpcData, error:rpcError} = await window._sb.rpc('increment_user_stats', {
+      const {error:rpcError} = await window._sb.rpc('increment_user_stats', {
         p_user_id: userSbId,
         p_vendas: 1,
         p_credito: valorCredito
       });
-      console.log('[_registrarVenda] rpc result:', rpcData, 'erro:', rpcError);
       if(rpcError){
-        console.warn('[_registrarVenda] RPC falhou, tentando fallback direto...', rpcError);
-        const {data:cur, error:selErr}=await window._sb.from('profiles').select('vendas,credito').eq('id',userSbId).single();
-        console.log('[_registrarVenda] fallback select:', cur, 'erro:', selErr);
+        const {data:cur}=await window._sb.from('profiles').select('vendas,credito').eq('id',userSbId).single();
         if(cur){
-          const {data:updData, error:updErr}=await window._sb.from('profiles').update({
+          await window._sb.from('profiles').update({
             vendas:(cur.vendas||0)+1,
             credito:(cur.credito||0)+valorCredito,
             updated_at:new Date().toISOString()
           }).eq('id',userSbId);
-          console.log('[_registrarVenda] fallback update:', updData, 'erro:', updErr);
         }
       }
     }
@@ -9020,5 +9027,68 @@ function _renderProtocoloPDF(proto,lead,consultor,dataFmt,horaIni,horaFim,obs){
 </script>
 
 </div><!-- /main-area -->
+
+<!-- ═══ MODAL RECUPERAÇÃO DE SENHA ═══════════════════════════════════════ -->
+<div id="modal-nova-senha" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;">
+  <div style="background:var(--card);border-radius:16px;padding:36px 32px;width:min(420px,92vw);box-shadow:0 20px 60px rgba(0,0,0,0.4);font-family:inherit;">
+    <div style="text-align:center;margin-bottom:24px;">
+      <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#16a34a,#15803d);display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <h2 style="margin:0 0 6px;font-size:20px;font-weight:700;color:var(--fg)">Criar nova senha</h2>
+      <p style="margin:0;font-size:14px;color:var(--tm)">Defina uma nova senha segura para sua conta.</p>
+    </div>
+    <div id="nova-senha-err" style="display:none;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#dc2626;"></div>
+    <div style="margin-bottom:14px;">
+      <label style="display:block;font-size:13px;font-weight:600;color:var(--fg);margin-bottom:6px;">Nova senha</label>
+      <div style="position:relative;">
+        <input type="password" id="nova-senha-input" placeholder="Mínimo 6 caracteres" autocomplete="new-password"
+          style="width:100%;box-sizing:border-box;padding:11px 44px 11px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;background:var(--input-bg,var(--card));color:var(--fg);outline:none;"
+          onkeydown="if(event.key==='Enter')salvarNovaSenha()">
+        <button type="button" onclick="(function(b){var i=document.getElementById('nova-senha-input');i.type=i.type==='password'?'text':'password';})(this)"
+          style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--tm);padding:2px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+    </div>
+    <div style="margin-bottom:22px;">
+      <label style="display:block;font-size:13px;font-weight:600;color:var(--fg);margin-bottom:6px;">Confirmar nova senha</label>
+      <input type="password" id="nova-senha-confirma" placeholder="Repita a senha" autocomplete="new-password"
+        style="width:100%;box-sizing:border-box;padding:11px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;background:var(--input-bg,var(--card));color:var(--fg);outline:none;"
+        onkeydown="if(event.key==='Enter')salvarNovaSenha()">
+    </div>
+    <button onclick="salvarNovaSenha()" id="btn-salvar-nova-senha"
+      style="width:100%;padding:13px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
+      <span id="btn-nova-senha-txt">Salvar nova senha</span>
+    </button>
+  </div>
+</div>
+
+<script>
+async function salvarNovaSenha(){
+  var senha = document.getElementById('nova-senha-input').value;
+  var confirma = document.getElementById('nova-senha-confirma').value;
+  var errEl = document.getElementById('nova-senha-err');
+  var btnTxt = document.getElementById('btn-nova-senha-txt');
+  errEl.style.display='none';
+  if(!senha||senha.length<6){ errEl.textContent='A senha deve ter pelo menos 6 caracteres.'; errEl.style.display='block'; return; }
+  if(senha!==confirma){ errEl.textContent='As senhas não coincidem.'; errEl.style.display='block'; return; }
+  btnTxt.textContent='Salvando...';
+  document.getElementById('btn-salvar-nova-senha').disabled=true;
+  var res = await window._sb.auth.updateUser({password: senha});
+  if(res.error){
+    errEl.textContent='Erro ao salvar senha. Tente novamente.';
+    errEl.style.display='block';
+    btnTxt.textContent='Salvar nova senha';
+    document.getElementById('btn-salvar-nova-senha').disabled=false;
+    return;
+  }
+  // Sucesso — fecha modal e redireciona para login
+  document.getElementById('modal-nova-senha').style.display='none';
+  await window._sb.auth.signOut();
+  window.location.href='index.html';
+}
+</script>
+
 </body>
 </html>
