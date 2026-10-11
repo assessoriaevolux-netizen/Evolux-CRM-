@@ -6336,7 +6336,7 @@ function cfgRenderSection(){
       <div class="field"><label>Etapa inicial no funil</label><select class="fi">${ETAPAS.slice(0,5).map(e=>`<option>${e}</option>`).join('')}</select></div>
       <div class="cfg-divider"></div>
       <div style="font-size:12.5px;font-weight:700;color:var(--tx);margin-bottom:8px">URL do Webhook</div>
-      <div class="wh-row"><div class="wh-url">https://evolux-crm.vercel.app/api/meta-webhook</div><span class="wh-badge">POST</span><button class="btn bg bsm" onclick="navigator.clipboard?.writeText('https://evolux-crm.vercel.app/api/meta-webhook').then(()=>showToast('URL copiada!','ti-copy')).catch(()=>showToast('Copie manualmente','ti-copy'))"><i class="ti ti-copy"></i></button></div>
+      <div class="wh-row"><div class="wh-url" id="meta-webhook-url">${window.location.origin}/api/meta-webhook</div><span class="wh-badge">POST</span><button class="btn bg bsm" onclick="var u=document.getElementById('meta-webhook-url')?.textContent||window.location.origin+'/api/meta-webhook';navigator.clipboard?.writeText(u).then(()=>showToast('URL copiada!','ti-copy')).catch(()=>showToast('Copie manualmente','ti-copy'))"><i class="ti ti-copy"></i></button></div>
       <div style="font-size:11px;color:var(--tm);margin-bottom:14px"><i class="ti ti-info-circle"></i> Cole esta URL nos Webhooks do seu app no Meta for Developers.</div>
       <button class="btn bp" onclick="integConectar('meta')"><i class="ti ti-brand-facebook"></i>Conectar conta Meta</button>
     </div>`,
