@@ -3651,8 +3651,8 @@ function selectAllFunil(){
 }
 function transferirSelecionados(){
   const destId=parseInt(document.getElementById('funil-transfer-dest').value)||0;
-  if(!destId){alert('Selecione um consultor de destino.');return;}
-  if(funilSelected.size===0){alert('Selecione ao menos um lead.');return;}
+  if(!destId){showToast('Selecione um consultor de destino.','ti-alert-triangle','#d97706');return;}
+  if(funilSelected.size===0){showToast('Selecione ao menos um lead.','ti-alert-triangle','#d97706');return;}
   const dest=users.find(u=>u.id===destId);
   const f=getFunilFiltros();
   const vis=getVisiveisParaMim();
@@ -3735,7 +3735,7 @@ function salvarEditarFunil(){
     const inp=document.getElementById(`ef-${i}`);
     if(!inp)continue;
     const novo=inp.value.trim();
-    if(!novo){alert('O nome da etapa não pode estar vazio.');return;}
+    if(!novo){showToast('O nome da etapa não pode estar vazio.','ti-alert-triangle','#d97706');return;}
     const old=ETAPAS[i];
     if(novo!==old){
       leads.forEach(l=>{if(l.etapa===old)l.etapa=novo;});
@@ -3787,7 +3787,7 @@ function closeLeadDetalhe(){
 function saveLeadDetalhe(){
   const l=leads.find(x=>x.id===_leadDetalheId);if(!l)return;
   const nome=document.getElementById('ld-nome').value.trim();
-  if(!nome){alert('Informe o nome.');return;}
+  if(!nome){showToast('Informe o nome.','ti-alert-triangle','#d97706');return;}
   const oldEtapa=l.etapa;
   const newEtapa=document.getElementById('ld-etapa').value;
   const newResp=parseInt(document.getElementById('ld-resp').value)||l.responsavelId;
@@ -3807,11 +3807,11 @@ function saveLeadDetalhe(){
   renderKanban();renderDashboard();renderTable();renderNotifPanel();
 }
 function removeLeadDetalhe(){
-  if(!confirm('Remover este lead?'))return;
-  const _rld=leads.find(l=>l.id===_leadDetalheId); if(_rld?.sb_id&&window._deleteLead) window._deleteLead(_rld.sb_id);
-  // Bug #3: usar splice em vez de reassignar — mantém a referência window.leads intacta
-  const _rldIdx=leads.findIndex(l=>l.id===_leadDetalheId); if(_rldIdx!==-1) leads.splice(_rldIdx,1);
-  closeLeadDetalhe();renderKanban();renderDashboard();renderTable();
+  showConfirm('Remover este lead? Esta ação não pode ser desfeita.',function(){
+    const _rld=leads.find(l=>l.id===_leadDetalheId); if(_rld?.sb_id&&window._deleteLead) window._deleteLead(_rld.sb_id);
+    const _rldIdx=leads.findIndex(l=>l.id===_leadDetalheId); if(_rldIdx!==-1) leads.splice(_rldIdx,1);
+    closeLeadDetalhe();renderKanban();renderDashboard();renderTable();
+  });
 }
 
 // ─── EXPORTAR / IMPORTAR CSV ──────────────────────────────────────────────────
@@ -3835,7 +3835,7 @@ function importarLeadsCSV(input){
   const reader=new FileReader();
   reader.onload=function(e){
     const lines=e.target.result.replace(/^﻿/,'').split('\n').filter(Boolean);
-    if(lines.length<2){alert('CSV vazio ou inválido.');return;}
+    if(lines.length<2){showToast('CSV vazio ou inválido.','ti-alert-triangle','#d97706');return;}
     const headers=lines[0].split(',').map(h=>h.replace(/"/g,'').trim().toLowerCase());
     let imported=0;
     for(let i=1;i<lines.length;i++){
@@ -3856,7 +3856,7 @@ function importarLeadsCSV(input){
       imported++;
     }
     input.value='';
-    alert(`${imported} lead${imported!==1?'s':''} importado${imported!==1?'s':''} com sucesso.`);
+    showToast(`${imported} lead${imported!==1?'s':''} importado${imported!==1?'s':''} com sucesso!`,'ti-check','#1db954');
     renderKanban();renderDashboard();renderTable();renderNotifPanel();
   };
   reader.readAsText(file,'UTF-8');
@@ -3947,7 +3947,7 @@ function renderTable(){
 function openModal(){populateSelects();document.getElementById('modal').classList.add('open');}
 function closeModal(){document.getElementById('modal').classList.remove('open');}
 function saveLead(){
-  const nome=document.getElementById('fNome').value.trim();if(!nome){alert('Informe o nome do lead.');return;}
+  const nome=document.getElementById('fNome').value.trim();if(!nome){showToast('Informe o nome do lead.','ti-alert-triangle','#d97706');return;}
   const credito=unM(document.getElementById('fCredito').value);
   const respId=parseInt(document.getElementById('fResp').value)||(getMe()||users[0]||{}).id||1;
   const lead={id:nextLeadId++,nome,tel:document.getElementById('fTel').value,tipo:document.getElementById('fTipo2').value,credito,etapa:document.getElementById('fEtapa2').value,origem:document.getElementById('fOrigem2').value,responsavelId:respId,data:toDate(),obs:document.getElementById('fObs').value};
@@ -3966,7 +3966,7 @@ function saveLead(){
   closeModal();['fNome','fTel','fObs'].forEach(id=>document.getElementById(id).value='');document.getElementById('fCredito').value='';
   renderKanban();renderTable();renderDashboard();renderNotifPanel();
 }
-function removeLead(id){if(!confirm('Remover este lead?'))return;const _rl=leads.find(l=>l.id===id); if(_rl?.sb_id&&window._deleteLead) window._deleteLead(_rl.sb_id);const _rlIdx=leads.findIndex(l=>l.id===id);if(_rlIdx!==-1)leads.splice(_rlIdx,1);renderKanban();renderTable();renderDashboard();}
+function removeLead(id){showConfirm('Remover este lead? Esta ação não pode ser desfeita.',function(){const _rl=leads.find(l=>l.id===id); if(_rl?.sb_id&&window._deleteLead) window._deleteLead(_rl.sb_id);const _rlIdx=leads.findIndex(l=>l.id===id);if(_rlIdx!==-1)leads.splice(_rlIdx,1);renderKanban();renderTable();renderDashboard();});}
 function simFromLead(id){
   showTab('simulador',document.querySelectorAll('.nb')[3]);
   setTimeout(()=>{
@@ -4330,7 +4330,7 @@ function simTipoBemChange(){
 }
 function openSimPDFModal(){
   const out=document.getElementById('sim-output').innerHTML;
-  if(!out||out.includes('Selecione a tabela')){alert('Faça a simulação antes de gerar o PDF.');return;}
+  if(!out||out.includes('Selecione a tabela')){showToast('Faça a simulação antes de gerar o PDF.','ti-alert-triangle','#d97706');return;}
   const m=document.getElementById('sim-pdf-modal');
   if(m){m.style.display='flex';}
 }
@@ -4353,7 +4353,7 @@ function downloadSimPDF(comDados){
   const admin=getAdmin();
   const adminNomeSim=admin?admin.nome:(window._simAdminManualNome||'—');
   const out=document.getElementById('sim-output').innerHTML;
-  if(!out||out.includes('Selecione a tabela')){alert('Faça a simulação antes de baixar.');return;}
+  if(!out||out.includes('Selecione a tabela')){showToast('Faça a simulação antes de baixar.','ti-alert-triangle','#d97706');return;}
 
   const data=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
   const _me=getMe()||{};
@@ -4555,7 +4555,7 @@ function downloadSimPDF(comDados){
   URL.revokeObjectURL(a.href);
 }
 function convertToLead(nome,tipo,credito){
-  if(!nome){alert('Preencha o nome do cliente.');return;}
+  if(!nome){showToast('Preencha o nome do cliente.','ti-alert-triangle','#d97706');return;}
   leads.push({id:nextLeadId++,nome,tel:'',tipo,credito,etapa:'Novo lead',origem:'Simulador',responsavelId:(getMe()||users[0]||{}).id||1,data:toDate(),obs:'Convertido via simulador.'});
   const _cl=leads[leads.length-1]; if(window._syncLead) window._syncLead(_cl).catch(e=>console.warn(e));
   if(window._saveAtividade)window._saveAtividade('ti-calculator',`${nome} convertido via simulador — ${fmtR(credito)}`);
@@ -4639,7 +4639,7 @@ function openLanceModal(){populateSelects();window._editandoLanceId=null;const d
 function closeLanceModal(){document.getElementById('lance-modal').classList.remove('open');window._editandoLanceId=null;}
 function saveLance(){
   const leadId=parseInt(document.getElementById('lCliente').value);
-  const lead=leads.find(l=>l.id===leadId);if(!lead){alert('Selecione um cliente.');return;}
+  const lead=leads.find(l=>l.id===leadId);if(!lead){showToast('Selecione um cliente.','ti-alert-triangle','#d97706');return;}
   const valor=unM(document.getElementById('lValor').value);
   const pct=parseFloat(document.getElementById('lPct').value)||0;
   const dataOferta=document.getElementById('lData').value;
@@ -4661,7 +4661,7 @@ function saveLance(){
   renderLances();
 }
 function marcarOfertado(id){const l=lances.find(x=>x.id===id);if(l){l.ofertado=true;if(window._syncLance) window._syncLance(l).catch(e=>console.warn(e));if(window._saveAtividade)window._saveAtividade('ti-gavel',`Lance de ${l.clienteNome} ofertado`);}renderLances();}
-function removeLance(id){if(!confirm('Remover lance?'))return;const l=lances.find(x=>x.id===id);if(l&&l._auto){l._removido=true;if(window._syncLance) window._syncLance(l).catch(e=>console.warn(e));}else{if(l?.sb_id){window._sb&&window._sb.from('lances').delete().eq('id',l.sb_id).catch(e=>console.warn(e));}lances=lances.filter(x=>x.id!==id);}renderLances();}
+function removeLance(id){showConfirm('Remover este lance?',function(){const l=lances.find(x=>x.id===id);if(l&&l._auto){l._removido=true;if(window._syncLance) window._syncLance(l).catch(e=>console.warn(e));}else{if(l?.sb_id){window._sb&&window._sb.from('lances').delete().eq('id',l.sb_id).catch(e=>console.warn(e));}lances=lances.filter(x=>x.id!==id);}renderLances();});}
 
 // ─── RANKING ──────────────────────────────────────────────────────────────────
 function rankAtualizarSidebar(){
@@ -4874,9 +4874,9 @@ function renderRanking(){
 // Registra venda para o próprio usuário logado
 function addMinhaVenda(){
   const val=unM(document.getElementById('vval-me').value);
-  if(!val){alert('Informe o valor da venda.');return;}
+  if(!val){showToast('Informe o valor da venda.','ti-alert-triangle','#d97706');return;}
   const me=getMe();
-  if(!me){alert('Usuário não identificado.');return;}
+  if(!me){showToast('Usuário não identificado.','ti-alert-triangle','#d97706');return;}
   // Incrementa localmente para UI imediata
   me.vendas++;
   me.credito+=val;
@@ -4893,8 +4893,8 @@ function addMinhaVenda(){
 function addVenda(){
   const id=parseInt(document.getElementById('vvend').value);
   const val=unM(document.getElementById('vval').value);
-  if(!id){alert('Selecione um vendedor.');return;}
-  if(!val){alert('Informe o valor da venda.');return;}
+  if(!id){showToast('Selecione um vendedor.','ti-alert-triangle','#d97706');return;}
+  if(!val){showToast('Informe o valor da venda.','ti-alert-triangle','#d97706');return;}
   const u=users.find(x=>x.id===id);
   if(u){
     // Incrementa localmente para UI imediata
@@ -4927,11 +4927,10 @@ function addVenda(){
   setTimeout(()=>{ showCelebra(u?u.nome:'Vendedor', val); }, 100);
 }
 function resetRanking(){
-  if(!confirm(`Resetar o ranking de ${mesAtual()}?`))return;
-  // Bug #13: _syncUser sem await/catch — reseta localmente mas não zeramos vendas no DB aqui
-  // (vendas do DB só são zeradas via _registrarVenda/_estornarVenda — reset visual apenas)
-  users.forEach(u=>{u.vendas=0;u.credito=0;if(window._syncUser)window._syncUser(u).catch(e=>console.warn('[resetRanking]',e));});
-  if(window._saveAtividade)window._saveAtividade('ti-refresh',`Ranking resetado para novo mês`);renderRanking();
+  showConfirm(`Resetar o ranking de ${mesAtual()}? Esta ação não pode ser desfeita.`,function(){
+    users.forEach(u=>{u.vendas=0;u.credito=0;if(window._syncUser)window._syncUser(u).catch(e=>console.warn('[resetRanking]',e));});
+    if(window._saveAtividade)window._saveAtividade('ti-refresh',`Ranking resetado para novo mês`);renderRanking();
+  });
 }
 let tvFilter=3;
 let tvTheme='dark';
@@ -5203,13 +5202,14 @@ function selectAdmin(id){
 }
 
 function deleteAdmin(id){
-  if(!confirm('Remover esta administradora e todos os seus grupos?'))return;
-  const _da=administradoras.find(a=>a.id===id);
-  if(_da?.sb_id&&window._sb) window._sb.from('administradoras').delete().eq('id',_da.sb_id).catch(e=>console.warn(e));
-  administradoras=administradoras.filter(a=>a.id!==id);
-  if(!administradoras.find(a=>a.ativa)&&administradoras.length)administradoras[0].ativa=true;
-  renderAdminList();
-  syncSim();
+  showConfirm('Remover esta administradora e todos os seus grupos? Esta ação não pode ser desfeita.',function(){
+    const _da=administradoras.find(a=>a.id===id);
+    if(_da?.sb_id&&window._sb) window._sb.from('administradoras').delete().eq('id',_da.sb_id).catch(e=>console.warn(e));
+    administradoras=administradoras.filter(a=>a.id!==id);
+    if(!administradoras.find(a=>a.ativa)&&administradoras.length)administradoras[0].ativa=true;
+    renderAdminList();
+    syncSim();
+  });
 }
 
 function saveTaxaFin(){const el=document.getElementById('eTaxaFin');if(!el)return;const v=parseFloat(el.value);if(!isNaN(v))taxaFin=v;}
@@ -5796,20 +5796,20 @@ async function inviteUser(){
   const email=document.getElementById('uEmail').value.trim();
   const senha=document.getElementById('uSenha').value;
   const senhaConf=document.getElementById('uSenhaConf').value;
-  if(!nomeVal){alert('Informe o nome completo.');return;}
-  if(!email||!email.includes('@')){alert('E-mail inválido.');return;}
-  if(!senha||senha.length<6){alert('A senha deve ter pelo menos 6 caracteres.');return;}
-  if(senha!==senhaConf){alert('As senhas não coincidem. Verifique e tente novamente.');return;}
-  if(users.find(u=>u.email===email)){alert('Este e-mail já está cadastrado no sistema.');return;}
+  if(!nomeVal){showToast('Informe o nome completo.','ti-alert-triangle','#d97706');return;}
+  if(!email||!email.includes('@')){showToast('E-mail inválido.','ti-alert-triangle','#d97706');return;}
+  if(!senha||senha.length<6){showToast('A senha deve ter pelo menos 6 caracteres.','ti-alert-triangle','#d97706');return;}
+  if(senha!==senhaConf){showToast('As senhas não coincidem. Verifique e tente novamente.','ti-alert-triangle','#dc3545');return;}
+  if(users.find(u=>u.email===email)){showToast('Este e-mail já está cadastrado no sistema.','ti-alert-triangle','#d97706');return;}
   const hierSel=document.getElementById('uHierarquia');
   const hierLocalId=hierSel?parseInt(hierSel.value)||null:null;
-  if(!hierLocalId){alert('Selecione a hierarquia do usuário.');return;}
+  if(!hierLocalId){showToast('Selecione a hierarquia do usuário.','ti-alert-triangle','#d97706');return;}
   const selH=getHier(hierLocalId);
   // Sempre usa UUID do banco para armazenar/enviar ao Supabase
   const hierarquiaId=selH?(selH.sb_id||selH.id):hierLocalId;
   const metaEl=document.getElementById('uMeta');
   const metaRaw=metaEl?unM(metaEl.value)||0:0;
-  if(!metaRaw){alert('Informe a meta do usuário.');return;}
+  if(!metaRaw){showToast('Informe a meta do usuário.','ti-alert-triangle','#d97706');return;}
   const equipeEl=document.getElementById('uEquipe');
   const equipeId=equipeEl?parseInt(equipeEl.value)||null:null;
   const role=slugToRole(selH);
@@ -6052,37 +6052,35 @@ async function changeUserHier(userId,hierIdStr){
   }
   renderUserList();
 }
-async function removeUser(id){
+function removeUser(id){
   const u=users.find(x=>x.id===id);
   if(!u)return;
-  if(!confirm(`Remover o usuário "${u.nome}"?\n\nEsta ação revogará o acesso ao CRM permanentemente.`))return;
-  // Tentar remover do Supabase (via Edge Function ou admin API)
-  if(u.sb_id){
-    try{
-      const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/delete-user',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':`Bearer ${window._session?.access_token||''}`},
-        body:JSON.stringify({userId:u.sb_id})
-      });
-      if(!res.ok){
-        const j=await res.json().catch(()=>({}));
-        console.warn('delete-user Edge Function falhou:',j.error||res.status);
-        // Fallback: tentar via admin API diretamente
-        try{await window._sb.auth.admin.deleteUser(u.sb_id);}catch(e2){console.warn('admin.deleteUser falhou:',e2.message);}
+  showConfirm(`Remover o usuário "${u.nome}"?\n\nEsta ação revogará o acesso ao CRM permanentemente.`,async function(){
+    // Tentar remover do Supabase (via Edge Function ou admin API)
+    if(u.sb_id){
+      try{
+        const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/delete-user',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':`Bearer ${window._session?.access_token||''}`},
+          body:JSON.stringify({userId:u.sb_id})
+        });
+        if(!res.ok){
+          const j=await res.json().catch(()=>({}));
+          console.warn('delete-user Edge Function falhou:',j.error||res.status);
+          try{await window._sb.auth.admin.deleteUser(u.sb_id);}catch(e2){console.warn('admin.deleteUser falhou:',e2.message);}
+        }
+      }catch(err){
+        try{await window._sb.auth.admin.deleteUser(u.sb_id);}catch(e2){console.warn('Não foi possível remover do Supabase (normal sem service_role):',e2.message);}
       }
-    }catch(err){
-      try{await window._sb.auth.admin.deleteUser(u.sb_id);}catch(e2){console.warn('Não foi possível remover do Supabase (normal sem service_role):',e2.message);}
     }
-  }
-  // Remover do profile no Supabase
-  if(u.sb_id&&window._sb){
-    await window._sb.from('profiles').delete().eq('id',u.sb_id).catch(()=>{});
-  }
-  users=users.filter(x=>x.id!==id);
-  // Remover de equipes
-  equipes.forEach(eq=>{eq.membroIds=(eq.membroIds||[]).filter(mid=>mid!==id);});
-  showToast(`Usuário "${u.nome}" removido.`,'ti-user-x');
-  renderUserList();populateSelects();
+    if(u.sb_id&&window._sb){
+      await window._sb.from('profiles').delete().eq('id',u.sb_id).catch(()=>{});
+    }
+    users=users.filter(x=>x.id!==id);
+    equipes.forEach(eq=>{eq.membroIds=(eq.membroIds||[]).filter(mid=>mid!==id);});
+    showToast(`Usuário "${u.nome}" removido.`,'ti-user-x');
+    renderUserList();populateSelects();
+  });
 }
 // ─── CONFIGURAÇÕES PROFISSIONAL ───────────────────────────────────────────────
 const CFG_SECTIONS=[
@@ -6790,8 +6788,8 @@ function calAgendar(){
   const hi=document.getElementById('cal-hora-ini').value;
   const hf=document.getElementById('cal-hora-fim').value;
   const obs=document.getElementById('cal-obs').value.trim();
-  if(!lid){alert('Selecione um lead.');return;}
-  if(!data){alert('Selecione uma data.');return;}
+  if(!lid){showToast('Selecione um lead.','ti-alert-triangle','#d97706');return;}
+  if(!data){showToast('Selecione uma data.','ti-alert-triangle','#d97706');return;}
   const lead=leads.find(l=>l.id===lid);
   const novoEvt={id:nextEventoId++,leadId:lid,leadNome:lead?lead.nome:'—',tipo,data,horaIni:hi,horaFim:hf,obs};
   eventos.push(novoEvt);
@@ -6933,9 +6931,9 @@ function waPreview(){
 }
 function waDemoSend(){
   const n=waSelected.size;
-  if(!n){alert('Selecione pelo menos um lead para disparar.');return;}
+  if(!n){showToast('Selecione pelo menos um lead para disparar.','ti-alert-triangle','#d97706');return;}
   const msg=document.getElementById('wa-msg').value.trim();
-  if(!msg){alert('Escreva a mensagem antes de disparar.');return;}
+  if(!msg){showToast('Escreva a mensagem antes de disparar.','ti-alert-triangle','#d97706');return;}
   showToast(`Disparo simulado para ${n} lead(s) — integração real ativa após deploy.`, 'ti-brand-whatsapp');
   if(window._saveAtividade)window._saveAtividade('ti-brand-whatsapp',`Disparo demo: ${n} mensagens enviadas via WhatsApp`);
 }
@@ -7074,12 +7072,12 @@ function toggleLeadSelect(id) {
 }
 function distribuirLeads() {
   const destId = parseInt(document.getElementById('distrib-dest').value);
-  if(!destId){alert('Selecione um responsável.');return;}
-  if(!selectedLeads.size){alert('Selecione pelo menos um lead.');return;}
+  if(!destId){showToast('Selecione um responsável.','ti-alert-triangle','#d97706');return;}
+  if(!selectedLeads.size){showToast('Selecione pelo menos um lead.','ti-alert-triangle','#d97706');return;}
   const dest = users.find(u=>u.id===destId);
   leads.forEach(l=>{if(selectedLeads.has(l.id))l.responsavelId=destId;});
   if(window._saveAtividade)window._saveAtividade('ti-arrows-exchange',`${selectedLeads.size} lead${selectedLeads.size!==1?'s':''} distribuído${selectedLeads.size!==1?'s':''} para ${dest?.nome}`);
-  alert(`✅ ${selectedLeads.size} lead(s) distribuído(s) para ${dest?.nome}!`);
+  showToast(`${selectedLeads.size} lead(s) distribuído(s) para ${dest?.nome}!`,'ti-check','#1db954');
   toggleDistrib();
 }
 
@@ -7181,13 +7179,13 @@ function downloadRelatorio() {
 
 // ─── LANCE: ALERTA CLIENTE FECHOU ────────────────────────────────────────────
 function alertarCadastroLance(nomeLead, leadId) {
-  if(confirm(`🔔 ${nomeLead} fechou! Deseja cadastrar um lance para acompanhamento?`)) {
+  showConfirm(`${nomeLead} fechou! Deseja cadastrar um lance para acompanhamento?`,function(){
     openLanceModal();
     setTimeout(()=>{
       const cl = document.getElementById('lCliente');
       if(cl) cl.value = leadId;
     }, 100);
-  }
+  });
 }
 
 
@@ -7375,18 +7373,18 @@ function getMe(){
 }
 window.getMe=getMe; // expõe globalmente para _loadProfiles poder chamar
 
-async function fazerLogout(){
-  if(!confirm('Deseja sair do CRM?'))return;
-  try{ await window._sb.auth.signOut(); }catch(e){}
-  localStorage.removeItem('evolux_last_active');
-  // Bug #16: limpar token do Google Calendar para não vazar entre usuários no mesmo dispositivo
-  try{
-    localStorage.removeItem('evolux_gcal_token');
-    localStorage.removeItem('evolux_gcal_token_expiry');
-    localStorage.removeItem('evolux_gcal_return_tab');
-  }catch(e){}
-  window._gcalToken=null;
-  window.location.href='index.html';
+function fazerLogout(){
+  showConfirm('Deseja sair do CRM?',async function(){
+    try{ await window._sb.auth.signOut(); }catch(e){}
+    localStorage.removeItem('evolux_last_active');
+    try{
+      localStorage.removeItem('evolux_gcal_token');
+      localStorage.removeItem('evolux_gcal_token_expiry');
+      localStorage.removeItem('evolux_gcal_return_tab');
+    }catch(e){}
+    window._gcalToken=null;
+    window.location.href='index.html';
+  });
 }
 window.fazerLogout=fazerLogout;
 
@@ -7440,9 +7438,9 @@ async function openNovaEmpresaModal(){
 async function criarEmpresaConfirm(){
   const nome=document.getElementById('ne-nome')?.value.trim();
   const plano=document.getElementById('ne-plano')?.value||'basico';
-  if(!nome){alert('Informe o nome da empresa.');return;}
+  if(!nome){showToast('Informe o nome da empresa.','ti-alert-triangle','#d97706');return;}
   const {data,error}=await window._sb.from('empresas').insert({nome,plano,ativo:true}).select().single();
-  if(error){alert('Erro: '+error.message);return;}
+  if(error){showToast('Erro: '+error.message,'ti-alert-circle','#dc3545');return;}
   // Link admin to this new empresa
   await window._sb.from('profiles').update({empresa_id: data.id}).eq('id', window._currentUserId);
   const me = window.users && window.users.find(u => u.sb_id === window._currentUserId);
@@ -7618,7 +7616,7 @@ function saveEditUser() {
   const email = document.getElementById('edit-user-email').value.trim();
   const role = document.getElementById('edit-user-role').value;
   const foto = document.getElementById('edit-user-foto-data').value;
-  if(!nome){alert('Informe o nome.');return;}
+  if(!nome){showToast('Informe o nome.','ti-alert-triangle','#d97706');return;}
   u.nome = nome;
   u.email = email;
   u.role = role;
@@ -7808,7 +7806,7 @@ function renderEqMbList(){
 }
 function saveEquipe(){
   const nome=document.getElementById('eq-nome').value.trim();
-  if(!nome){alert('Informe o nome da equipe.');return;}
+  if(!nome){showToast('Informe o nome da equipe.','ti-alert-triangle','#d97706');return;}
   const editId=parseInt(document.getElementById('eq-edit-id').value)||null;
   const obj={
     nome,
@@ -7834,11 +7832,12 @@ function saveEquipe(){
   cfgShow('equipes');
 }
 function deleteEquipe(id){
-  if(!confirm('Excluir esta equipe?'))return;
-  const _deq=equipes.find(e=>e.id===id);
-  if(_deq?.sb_id&&window._sb) window._sb.from('equipes').delete().eq('id',_deq.sb_id).catch(e=>console.warn(e));
-  equipes=equipes.filter(e=>e.id!==id);
-  cfgRenderSection();
+  showConfirm('Excluir esta equipe?',function(){
+    const _deq=equipes.find(e=>e.id===id);
+    if(_deq?.sb_id&&window._sb) window._sb.from('equipes').delete().eq('id',_deq.sb_id).catch(e=>console.warn(e));
+    equipes=equipes.filter(e=>e.id!==id);
+    cfgRenderSection();
+  });
 }
 function removeMembro(eqId,uid){
   const eq=equipes.find(e=>e.id===eqId);
@@ -7930,6 +7929,28 @@ function showToast(msg, icon='ti-check', cor='#1db954'){
   t.innerHTML='<i class="ti '+icon+'" style="font-size:16px;flex-shrink:0"></i><span>'+msg+'</span>';
   document.body.appendChild(t);
   setTimeout(()=>{t.style.transition='opacity .4s';t.style.opacity='0';setTimeout(()=>t.remove(),400);},3000);
+}
+
+// ── Modal de confirmação visual (substitui confirm() nativo) ──────────────────
+function showConfirm(msg, onOk, onCancel){
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center;animation:fadeIn .15s ease';
+  overlay.innerHTML=`
+    <div style="background:var(--card,#1a1a2e);border-radius:14px;padding:28px 32px;max-width:420px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.4);text-align:center">
+      <div style="width:48px;height:48px;border-radius:50%;background:rgba(220,53,69,.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+        <i class="ti ti-alert-triangle" style="font-size:22px;color:#dc3545"></i>
+      </div>
+      <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:var(--fg,#e0e0e0)">${msg}</p>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button id="_conf_cancel" style="padding:10px 24px;border:1.5px solid var(--bord,#333);background:transparent;color:var(--fg,#e0e0e0);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+        <button id="_conf_ok" style="padding:10px 24px;border:none;background:#dc3545;color:#fff;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Confirmar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  function fechar(){overlay.style.opacity='0';overlay.style.transition='opacity .15s';setTimeout(()=>overlay.remove(),150);}
+  overlay.querySelector('#_conf_ok').onclick=()=>{fechar();if(onOk)onOk();};
+  overlay.querySelector('#_conf_cancel').onclick=()=>{fechar();if(onCancel)onCancel();};
+  overlay.addEventListener('click',e=>{if(e.target===overlay){fechar();if(onCancel)onCancel();}});
 }
 
 // ─── INTEGRAÇÕES: estado e ações ──────────────────────────────────────────────
@@ -8352,16 +8373,17 @@ function hierGetCurrentPerms(){
 }
 
 function hierRestoreDefaults(){
-  if(!confirm('Tem certeza que deseja restaurar as permissões padrão desta hierarquia?'))return;
-  const nome=(document.getElementById('hm-nome').value||'').toLowerCase().trim();
-  const slug=hmEditId?getHier(hmEditId)?.slug:nome;
-  const def=HPERM_DEFAULTS[slug]||HPERM_DEFAULTS.vendedor;
-  renderHierPerms(def);
+  showConfirm('Tem certeza que deseja restaurar as permissões padrão desta hierarquia?',function(){
+    const nome=(document.getElementById('hm-nome').value||'').toLowerCase().trim();
+    const slug=hmEditId?getHier(hmEditId)?.slug:nome;
+    const def=HPERM_DEFAULTS[slug]||HPERM_DEFAULTS.vendedor;
+    renderHierPerms(def);
+  });
 }
 
 async function saveHierModal(){
   const nome=document.getElementById('hm-nome').value.trim();
-  if(!nome){alert('Informe o nome da hierarquia.');return;}
+  if(!nome){showToast('Informe o nome da hierarquia.','ti-alert-triangle','#d97706');return;}
   const descricao=document.getElementById('hm-descricao').value.trim();
   const ordem=parseInt(document.getElementById('hm-ordem').value)||hierarquias.length+1;
   const status=document.getElementById('hm-status').value||'ativa';
@@ -8429,7 +8451,7 @@ function gerarNumProtocolo(){
 
 function openProtocolo(leadId, data, horaIni, horaFim, obs){
   const lead=leads.find(l=>l.id===leadId);
-  if(!lead){alert('Lead não encontrado.');return;}
+  if(!lead){showToast('Lead não encontrado.','ti-alert-triangle','#d97706');return;}
   // Protocolo usa quem está logado (quem agendou), não o responsável do lead
   const me=typeof getMe==='function'?getMe():null;
   const resp=me||(users.find(u=>u.id===lead.responsavelId)||users[0]);
