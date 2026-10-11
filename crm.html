@@ -5960,6 +5960,7 @@ function renderUserList(){
               ${hierarquias.map(h=>`<option value="${h.id}" ${(u.hierarquiaId&&(String(u.hierarquiaId)===String(h.sb_id)||String(u.hierarquiaId)===String(h.id)))?'selected':''}>${h.nome}</option>`).join('')}
             </select>
             <button class="ulist-hier-save-btn" data-uid="${u.id}" title="Salvar hierarquia" style="padding:4px 10px;font-size:12px;border-radius:6px;border:none;background:#016b3c;color:#fff;cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:600"><i class="ti ti-check"></i> Salvar</button>
+            <button class="btn bd bsm ulist-edit-btn" data-uid="${u.id}" title="Editar usuário" style="color:var(--g);border-color:var(--g)"><i class="ti ti-pencil"></i></button>
             <button class="btn bd bsm ulist-remove-btn" data-uid="${u.id}" title="Remover usuário"><i class="ti ti-trash"></i></button>
           </div>
         `:`<span class="rbadge rg">Administrador</span>`}
@@ -5967,6 +5968,13 @@ function renderUserList(){
     </div>`;
   }).join('');
   // bind events via delegation — no inline onclick/onchange
+  list.querySelectorAll('.ulist-edit-btn').forEach(function(btn){
+    btn.addEventListener('click',function(e){
+      e.stopPropagation();
+      const uid=parseInt(btn.getAttribute('data-uid'));
+      abrirModalEditarUsuario(uid);
+    });
+  });
   list.querySelectorAll('.ulist-remove-btn').forEach(function(btn){
     btn.addEventListener('click',function(e){
       e.stopPropagation();
@@ -6060,6 +6068,108 @@ async function changeUserHier(userId,hierIdStr){
   }
   renderUserList();
 }
+
+function abrirModalEditarUsuario(uid){
+  const u=users.find(x=>x.id===uid);
+  if(!u)return;
+  const metaFmt=u.meta?u.meta.toLocaleString('pt-BR'):'';
+  const hierOpts=hierarquias.map(h=>`<option value="${h.id}" ${(u.hierarquiaId&&(String(u.hierarquiaId)===String(h.sb_id)||String(u.hierarquiaId)===String(h.id)))?'selected':''}>${h.nome}</option>`).join('');
+  const eqOpts=`<option value="">Nenhuma</option>`+equipes.map(e=>`<option value="${e.id}" ${String(u.equipeId)===String(e.id)?'selected':''}>${e.nome}</option>`).join('');
+  const html=`<div id="modal-edit-user" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">
+    <div style="background:var(--w,#1a1a2e);border-radius:16px;padding:28px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div style="font-size:17px;font-weight:800;color:var(--tx)"><i class="ti ti-user-edit" style="color:var(--g)"></i> Editar usuário</div>
+        <button onclick="document.getElementById('modal-edit-user').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--tm)"><i class="ti ti-x"></i></button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--tm);display:block;margin-bottom:4px">Nome completo</label>
+          <input id="eu-nome" class="fi" value="${u.nome||''}" placeholder="Nome completo" style="width:100%;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--tm);display:block;margin-bottom:4px">Meta (R$)</label>
+          <input id="eu-meta" class="fi" value="${metaFmt}" placeholder="Meta em reais" oninput="maskMeta(this)" style="width:100%;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--tm);display:block;margin-bottom:4px">Hierarquia</label>
+          <select id="eu-hier" class="fi" style="width:100%;box-sizing:border-box">
+            <option value="">Selecione...</option>
+            ${hierOpts}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--tm);display:block;margin-bottom:4px">Equipe</label>
+          <select id="eu-equipe" class="fi" style="width:100%;box-sizing:border-box">
+            ${eqOpts}
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px">
+        <button id="eu-salvar-btn" onclick="salvarEdicaoUsuario(${uid})" style="flex:2;padding:12px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:14px;font-weight:700;cursor:pointer"><i class="ti ti-check"></i> Salvar alterações</button>
+        <button onclick="document.getElementById('modal-edit-user').remove()" style="flex:1;padding:12px;border:1px solid var(--c2);border-radius:8px;background:transparent;color:var(--tx);font-size:14px;cursor:pointer">Cancelar</button>
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('modal-edit-user')?.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+async function salvarEdicaoUsuario(uid){
+  const u=users.find(x=>x.id===uid);
+  if(!u)return;
+  const nomeVal=document.getElementById('eu-nome')?.value.trim();
+  const metaVal=unM(document.getElementById('eu-meta')?.value)||0;
+  const hierVal=document.getElementById('eu-hier')?.value;
+  const equipeVal=document.getElementById('eu-equipe')?.value;
+  if(!nomeVal){showToast('Informe o nome.','ti-alert-triangle','#d97706');return;}
+  const btn=document.getElementById('eu-salvar-btn');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i> Salvando...';}
+
+  try{
+    const h=hierVal?getHier(parseInt(hierVal)):null;
+    const updates={
+      nome:nomeVal,
+      meta:metaVal,
+      equipe_id:equipeVal?parseInt(equipeVal):null,
+    };
+    if(h&&h.sb_id){
+      updates.hierarquia_id=h.sb_id;
+      updates.role=slugToRole(h);
+    }
+    // Salva no banco
+    if(u.sb_id){
+      const token=window._session?.access_token;
+      // Tenta Edge Function primeiro
+      let salvoViaEdge=false;
+      try{
+        const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/update-profile',{
+          method:'POST',
+          headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+          body:JSON.stringify({target_id:u.sb_id,...updates})
+        });
+        if(res.ok) salvoViaEdge=true;
+      }catch(e){console.warn('Edge Function update-profile falhou, usando direto');}
+      // Fallback: salva direto na tabela profiles
+      if(!salvoViaEdge){
+        await window._sb.from('profiles').update(updates).eq('id',u.sb_id);
+      }
+    }
+    // Atualiza objeto local
+    u.nome=nomeVal;
+    u.meta=metaVal;
+    if(equipeVal) u.equipeId=parseInt(equipeVal); else u.equipeId=null;
+    if(h&&h.sb_id){u.hierarquiaId=h.sb_id;u.role=slugToRole(h);}
+    document.getElementById('modal-edit-user')?.remove();
+    showToast('Usuário atualizado com sucesso!','ti-check','#016b3c');
+    renderUserList();
+    try{window.renderRanking&&window.renderRanking();}catch(e){}
+  }catch(err){
+    console.error('[salvarEdicaoUsuario]',err);
+    showToast('Erro ao salvar: '+err.message,'ti-alert-circle','#dc3545');
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i> Salvar alterações';}
+  }
+}
+
 function removeUser(id){
   const u=users.find(x=>x.id===id);
   if(!u)return;
