@@ -4972,9 +4972,8 @@ function renderRanking(){
   // Filtro por visibilidade: admin/master vê todos, supervisor vê sua equipe, vendedor só si mesmo
   const _meRk=getMe();
   const _empRk=_meRk?.empresaId;
-  const _visRk=getVisiveisParaMim();
-  // Se há override de período, usa os valores filtrados; senão usa totais dos profiles
-  const _usersRkBase=(_empRk?users.filter(u=>u.empresaId===_empRk):users).filter(u=>_visRk.has(u.id));
+  // Ranking mostra todos da empresa — não filtra por visibilidade de leads
+  const _usersRkBase=(_empRk?users.filter(u=>u.empresaId===_empRk):users);
   const _usersRk=_rankOverride
     ? _usersRkBase.map(u=>{const ov=_rankOverride[u.sb_id]||{vendas:0,credito:0};return Object.assign({},u,{vendas:ov.vendas,credito:ov.credito});})
     : _usersRkBase;
