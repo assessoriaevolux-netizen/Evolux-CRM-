@@ -3708,10 +3708,10 @@ function toggleFunilSelMode(){
   const bar=document.getElementById('funil-transfer-bar');
   bar.style.display=funilSelMode?'flex':'none';
   const dest=document.getElementById('funil-transfer-dest');
-  // Só permite transferir para usuários visíveis
-  const vis=getVisiveisParaMim();
-  const usersVis=users.filter(u=>vis.has(u.id));
-  if(dest)dest.innerHTML='<option value="">Selecionar consultor...</option>'+usersVis.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+  // Para transferência: mostra todos os usuários da mesma empresa (não restringe por hierarquia)
+  const me=getMe();
+  const usersTransf=users.filter(u=>!me||u.empresaId===me.empresaId||me.role==='superadmin'||me.role==='master');
+  if(dest)dest.innerHTML='<option value="">Selecionar consultor...</option>'+usersTransf.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
   renderKanban();
 }
 function cancelarSelecaoFunil(){funilSelMode=false;funilSelected.clear();document.getElementById('funil-transfer-bar').style.display='none';renderKanban();}
