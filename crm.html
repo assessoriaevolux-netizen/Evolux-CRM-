@@ -7490,13 +7490,27 @@ async function _aplicarFiltroVendas(){
     const range=_getRankDateRange(p,dc);
     const empresaId=await window._getEmpresaId().catch(()=>null);
     if(!empresaId||!window._sb){return;}
-    const {data,error}=await window._sb.from('vendas')
-      .select('user_id,valor_credito')
-      .eq('empresa_id',empresaId)
-      .gte('data_fechamento',range.de)
-      .lte('data_fechamento',range.ate);
-    if(error){console.warn('[RankFiltro]',error);return;}
-    rows=data||[];
+    // Busca 1: registros com data_fechamento preenchida no intervalo
+    const [res1, res2] = await Promise.all([
+      window._sb.from('vendas')
+        .select('id,user_id,valor_credito')
+        .eq('empresa_id',empresaId)
+        .gte('data_fechamento',range.de)
+        .lte('data_fechamento',range.ate),
+      // Busca 2: registros com data_fechamento nula, usando created_at como fallback
+      window._sb.from('vendas')
+        .select('id,user_id,valor_credito')
+        .eq('empresa_id',empresaId)
+        .is('data_fechamento',null)
+        .gte('created_at',range.de+'T00:00:00')
+        .lte('created_at',range.ate+'T23:59:59')
+    ]);
+    if(res1.error) console.warn('[RankFiltro] data_fechamento query:',res1.error);
+    if(res2.error) console.warn('[RankFiltro] created_at fallback query:',res2.error);
+    // Une os resultados sem duplicar (pelo id)
+    const allRows=[...(res1.data||[]),...(res2.data||[])];
+    const seen=new Set();
+    rows=allRows.filter(r=>{if(seen.has(r.id))return false;seen.add(r.id);return true;});
     _rankVendasCache={periodo:cacheKey,resultado:rows};
   }
 
