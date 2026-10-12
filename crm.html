@@ -4055,7 +4055,8 @@ function importarLeadsCSV(input){
     const headers=parseCSVLine(lines[0],sep).map(h=>h.replace(/"/g,'').trim().toLowerCase()
       .normalize('NFD').replace(/[̀-ͯ]/g,''));// remove acentos do header
 
-    let imported=0,skipped=0;
+    let imported=0,skipped=0,duplicados=0;
+    const duplicadosNomes=[];
     for(let i=1;i<lines.length;i++){
       if(!lines[i].trim())continue;
       const vals=parseCSVLine(lines[i],sep);
@@ -4141,6 +4142,22 @@ function importarLeadsCSV(input){
       const obsExtra=[cidade&&estado?`${cidade}/${estado}`:cidade||estado, parcela?`Parcela: ${parcela}`:'', entrada?`Entrada: ${entrada}`:'', prazo?`Prazo: ${prazo}`:''].filter(Boolean).join(' | ');
       const obs=obsBase||(obsExtra)||'';
 
+      // Checagem de duplicata: mesmo nome (case-insensitive) OU mesmo telefone (se preenchido)
+      const nomeLower=nome.trim().toLowerCase();
+      const telLimpo=tel.replace(/\D/g,'');
+      const isDuplicado=leads.some(l=>{
+        const lNome=(l.nome||'').trim().toLowerCase();
+        const lTel=(l.tel||'').replace(/\D/g,'');
+        if(lNome===nomeLower) return true;
+        if(telLimpo&&lTel&&telLimpo===lTel) return true;
+        return false;
+      });
+      if(isDuplicado){
+        duplicados++;
+        duplicadosNomes.push(nome);
+        continue;
+      }
+
       const _il={id:nextLeadId++,nome,tel,tipo,credito,etapa:etapaValida,
         origem,
         responsavelId:resp?resp.id:(users[0]?.id||1),
@@ -4153,10 +4170,17 @@ function importarLeadsCSV(input){
       imported++;
     }
     input.value='';
-    if(imported===0){
+    if(imported===0&&duplicados===0){
       showToast(`Nenhum lead importado. Verifique se o CSV tem coluna "nome".`,'ti-alert-triangle','#d97706');
-    } else {
+    } else if(imported>0&&duplicados===0){
       showToast(`${imported} lead${imported!==1?'s':''} importado${imported!==1?'s':''} com sucesso!`,'ti-check','#1db954');
+    } else if(imported===0&&duplicados>0){
+      showToast(`Nenhum lead novo — ${duplicados} já cadastrado${duplicados!==1?'s':''} no sistema.`,'ti-copy-off','#d97706');
+    } else {
+      // Importou alguns e pulou duplicados
+      setTimeout(()=>{
+        showToast(`${imported} importado${imported!==1?'s':''} · ${duplicados} duplicado${duplicados!==1?'s':''} ignorado${duplicados!==1?'s':''}`,'ti-copy-off','#d97706');
+      },100);
     }
     renderKanban();renderDashboard();renderTable();renderNotifPanel();
   };
