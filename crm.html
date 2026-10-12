@@ -3404,7 +3404,8 @@ function fmtMetaVal(v){
 function maskM(el){
   let v=el.value.replace(/\D/g,'');
   if(!v){el.value='';return;}
-  el.value=parseInt(v).toLocaleString('pt-BR');
+  // Insere ponto a cada 3 dígitos da direita durante a digitação
+  el.value=v.replace(/\B(?=(\d{3})+(?!\d))/g,'.');
 }
 function unM(v){return parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.'))||0;}
 function maskMeta(el){maskM(el);}
