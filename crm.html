@@ -944,12 +944,25 @@
       const _empFilter=window._empresaIdDireto;
       const _profFilter=_empFilter?`empresa_id=eq.${_empFilter}`:undefined;
 
-      // Realtime profiles (filtrado por empresa)
+      // Remove canais existentes para evitar duplicatas ao re-assinar
+      try{
+        const _chNames=['profiles-sync','hierarquias-sync','leads-sync','lances-sync','atividades-sync','vendas-sync'];
+        _chNames.forEach(function(name){
+          const _existing=window._sb.getChannels&&window._sb.getChannels().find(function(c){return c.topic&&c.topic.includes(name);});
+          if(_existing){try{window._sb.removeChannel(_existing);}catch(e){}}
+        });
+      }catch(e){console.warn('[Realtime] cleanup canais:',e);}
+
+      // Realtime profiles (filtrado por empresa) → re-renderiza ranking e dashboard
       const _profChanOpts={event:'*',schema:'public',table:'profiles'};
       if(_profFilter) _profChanOpts.filter=_profFilter;
       window._sb.channel('profiles-sync')
-        .on('postgres_changes',_profChanOpts,function(){
-          window._loadProfiles();
+        .on('postgres_changes',_profChanOpts,async function(){
+          await window._loadProfiles();
+          // Vendas são salvas no profile — precisa re-renderizar ranking e dashboard
+          try{window.renderRanking&&window.renderRanking();}catch(e){}
+          try{window.renderDashboard&&window.renderDashboard();}catch(e){}
+          try{window.renderUserList&&window.renderUserList();}catch(e){}
         })
         .subscribe();
 
@@ -1012,6 +1025,18 @@
         .on('postgres_changes',_lancesChanOpts,async function(){
           await window._loadLances();
           try{window.renderLances&&window.renderLances();}catch(e){}
+          try{window.renderRanking&&window.renderRanking();}catch(e){}
+          try{window.renderDashboard&&window.renderDashboard();}catch(e){}
+        })
+        .subscribe();
+
+      // Realtime vendas → quando qualquer vendedor registra venda, atualiza ranking imediatamente
+      const _vendasChanOpts={event:'INSERT',schema:'public',table:'vendas'};
+      if(_profFilter) _vendasChanOpts.filter=_profFilter;
+      window._sb.channel('vendas-sync')
+        .on('postgres_changes',_vendasChanOpts,async function(payload){
+          // Recarrega profiles para pegar vendas/credito atualizados
+          await window._loadProfiles();
           try{window.renderRanking&&window.renderRanking();}catch(e){}
           try{window.renderDashboard&&window.renderDashboard();}catch(e){}
         })
