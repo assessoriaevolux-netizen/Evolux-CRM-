@@ -7517,7 +7517,9 @@ function _getRankDateRange(p, dataCustom){
   return{de:fmt(ini),ate:fmt(hoje)};
 }
 
-// Busca vendas do período no Supabase e aplica nos users temporariamente
+// Aplica filtro de período no ranking
+// "mes" = acumulado do profiles (mesma fonte do painel, sempre bate)
+// outros períodos = tabela vendas filtrada por data
 // _rankOverride: mapa {sb_id -> {vendas, credito}} usado pelo renderRanking quando não é null
 let _rankOverride=null;
 
@@ -7525,42 +7527,35 @@ async function _aplicarFiltroVendas(){
   const p=rankPeriodo;
   const dc=rankDataSelecionada;
 
+  // Para "mês atual": usa acumulado dos profiles — mesma fonte do painel
+  // Assim ranking e painel sempre batem
+  if(p==='mes'){
+    _rankOverride=null; // null = renderRanking usa profiles diretamente
+    renderRanking();
+    return;
+  }
+
+  // Para outros períodos: busca na tabela vendas com filtro de data
   const cacheKey=p+(dc||'');
   let rows=null;
   if(_rankVendasCache.periodo===cacheKey&&_rankVendasCache.resultado){
     rows=_rankVendasCache.resultado;
   } else {
-    // Renderiza primeiro com dados atuais enquanto busca (evita piscar zero)
-    renderRanking();
+    renderRanking(); // mostra dados atuais enquanto carrega
     const range=_getRankDateRange(p,dc);
     const empresaId=await window._getEmpresaId().catch(()=>null);
     if(!empresaId||!window._sb){return;}
-    // Busca 1: registros com data_fechamento preenchida no intervalo
-    const [res1, res2] = await Promise.all([
-      window._sb.from('vendas')
-        .select('id,user_id,valor_credito')
-        .eq('empresa_id',empresaId)
-        .gte('data_fechamento',range.de)
-        .lte('data_fechamento',range.ate),
-      // Busca 2: registros com data_fechamento nula, usando created_at como fallback
-      window._sb.from('vendas')
-        .select('id,user_id,valor_credito')
-        .eq('empresa_id',empresaId)
-        .is('data_fechamento',null)
-        .gte('created_at',range.de+'T00:00:00')
-        .lte('created_at',range.ate+'T23:59:59')
-    ]);
-    if(res1.error) console.warn('[RankFiltro] data_fechamento query:',res1.error);
-    if(res2.error) console.warn('[RankFiltro] created_at fallback query:',res2.error);
-    // Une os resultados sem duplicar (pelo id)
-    const allRows=[...(res1.data||[]),...(res2.data||[])];
-    const seen=new Set();
-    rows=allRows.filter(r=>{if(seen.has(r.id))return false;seen.add(r.id);return true;});
-    console.log('[RankFiltro] período:',p,'range:',range,'total rows encontrados:',rows.length,'total crédito:',rows.reduce((s,r)=>s+(r.valor_credito||0),0));
+    const {data,error}=await window._sb.from('vendas')
+      .select('id,user_id,valor_credito')
+      .eq('empresa_id',empresaId)
+      .gte('data_fechamento',range.de)
+      .lte('data_fechamento',range.ate);
+    if(error){console.warn('[RankFiltro]',error);return;}
+    rows=data||[];
     _rankVendasCache={periodo:cacheKey,resultado:rows};
   }
 
-  // Agrega por user_id
+  // Agrega por user_id (sb_id)
   const agg={};
   rows.forEach(r=>{
     if(!r.user_id)return;
@@ -7569,10 +7564,8 @@ async function _aplicarFiltroVendas(){
     agg[r.user_id].credito+=(r.valor_credito||0);
   });
 
-  // Mantém override ativo — só é limpo ao trocar período ou ir para Geral
   _rankOverride=agg;
   renderRanking();
-  // NÃO limpa _rankOverride aqui — fica ativo para qualquer re-render subsequente
 }
 
 function setRankPeriodo(p, btn) {
