@@ -3554,7 +3554,7 @@ function showTab(id,btn){
   document.querySelectorAll('.nb').forEach(el=>el.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
   if(btn) btn.classList.add('active');
-  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,simulador:()=>{syncSim();calcSim();},lances:renderLances,ranking:()=>{_rankVendasCache={periodo:null,data:null,resultado:null};_aplicarFiltroVendas();},relatorios:renderRelatorios,whatsapp:renderWhatsapp,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
+  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,simulador:()=>{syncSim();calcSim();},lances:renderLances,ranking:()=>{_rankOverride=null;renderRanking();},relatorios:renderRelatorios,whatsapp:renderWhatsapp,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
 }
 // Oculta/mostra botões do nav de acordo com permissões do usuário logado
 function applyNavPermissions(){
@@ -4722,7 +4722,11 @@ function renderRanking(){
   const _meRk=getMe();
   const _empRk=_meRk?.empresaId;
   const _visRk=getVisiveisParaMim();
-  const _usersRk=(_empRk?users.filter(u=>u.empresaId===_empRk):users).filter(u=>_visRk.has(u.id));
+  // Se há override de período, usa os valores filtrados; senão usa totais dos profiles
+  const _usersRkBase=(_empRk?users.filter(u=>u.empresaId===_empRk):users).filter(u=>_visRk.has(u.id));
+  const _usersRk=_rankOverride
+    ? _usersRkBase.map(u=>{const ov=_rankOverride[u.sb_id]||{vendas:0,credito:0};return Object.assign({},u,{vendas:ov.vendas,credito:ov.credito});})
+    : _usersRkBase;
 
   const periodoLabel={hoje:'Hoje',dia:'Hoje',semana:'Esta semana',mes:mesAtual(),custom:rankDataSelecionada?new Date(rankDataSelecionada+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'}):'Data personalizada',semana_passada:'Semana passada',mes_passado:'Mês passado',ultimos_7:'Últimos 7 dias',ultimos_30:'Últimos 30 dias'};
   document.getElementById('rank-month').textContent=periodoLabel[rankPeriodo]||mesAtual();
@@ -7466,25 +7470,29 @@ function _getRankDateRange(p, dataCustom){
 }
 
 // Busca vendas do período no Supabase e aplica nos users temporariamente
+// _rankOverride: mapa {sb_id -> {vendas, credito}} usado pelo renderRanking quando não é null
+let _rankOverride=null;
+
 async function _aplicarFiltroVendas(){
   const p=rankPeriodo;
   const dc=rankDataSelecionada;
-  const cacheKey=p+(dc||'');
 
-  // Usa cache se mesmo período
+  const cacheKey=p+(dc||'');
   let rows=null;
   if(_rankVendasCache.periodo===cacheKey&&_rankVendasCache.resultado){
     rows=_rankVendasCache.resultado;
   } else {
+    // Renderiza primeiro com dados atuais enquanto busca (evita piscar zero)
+    renderRanking();
     const range=_getRankDateRange(p,dc);
     const empresaId=await window._getEmpresaId().catch(()=>null);
-    if(!empresaId||!window._sb){renderRanking();return;}
+    if(!empresaId||!window._sb){return;}
     const {data,error}=await window._sb.from('vendas')
       .select('user_id,valor_credito')
       .eq('empresa_id',empresaId)
       .gte('data_fechamento',range.de)
       .lte('data_fechamento',range.ate);
-    if(error){console.warn('[RankFiltro]',error);renderRanking();return;}
+    if(error){console.warn('[RankFiltro]',error);return;}
     rows=data||[];
     _rankVendasCache={periodo:cacheKey,resultado:rows};
   }
@@ -7498,20 +7506,10 @@ async function _aplicarFiltroVendas(){
     agg[r.user_id].credito+=(r.valor_credito||0);
   });
 
-  // Sobrepõe temporariamente nos users (salva original)
-  users.forEach(u=>{
-    if(!u._vendas_orig&&u._vendas_orig!==0){u._vendas_orig=u.vendas;u._credito_orig=u.credito;}
-    const a=agg[u.sb_id]||{vendas:0,credito:0};
-    u.vendas=a.vendas;
-    u.credito=a.credito;
-  });
-
+  // Seta override e re-renderiza com os dados corretos do período
+  _rankOverride=agg;
   renderRanking();
-
-  // Restaura originais após render
-  users.forEach(u=>{
-    if(u._vendas_orig!==undefined){u.vendas=u._vendas_orig;u.credito=u._credito_orig;delete u._vendas_orig;delete u._credito_orig;}
-  });
+  _rankOverride=null;
 }
 
 function setRankPeriodo(p, btn) {
