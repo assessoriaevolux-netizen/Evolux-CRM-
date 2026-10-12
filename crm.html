@@ -2485,7 +2485,18 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
 <div id="tab-funil" class="content">
   <div class="shdr" style="flex-wrap:wrap;gap:8px">
     <span class="stitle">Funil de vendas — <span id="funil-total">0</span> leads</span>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
+    <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-left:auto">
+      <button class="btn bsm periodo-tab-funil active" id="fp-max" onclick="setFunilPeriodo('max',this)">Máximo</button>
+      <button class="btn bsm periodo-tab-funil" id="fp-mes" onclick="setFunilPeriodo('mes',this)">Mês</button>
+      <button class="btn bsm periodo-tab-funil" id="fp-7" onclick="setFunilPeriodo('7dias',this)">7 dias</button>
+      <button class="btn bsm periodo-tab-funil" id="fp-hoje" onclick="setFunilPeriodo('hoje',this)">Hoje</button>
+      <button class="btn bsm periodo-tab-funil" id="fp-custom" onclick="setFunilPeriodo('mes_custom',this)" style="padding-right:6px">
+        <i class="ti ti-calendar" style="font-size:12px"></i>
+        <span id="fp-custom-label">Escolher mês</span>
+      </button>
+      <input type="month" id="fp-month-input" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid var(--c2);background:var(--c1);color:var(--tx);font-size:12px" onchange="onFunilMonthChange(this.value)">
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:0">
       <button class="btn bg bsm" onclick="toggleFunilFiltros()" id="btn-funil-filtros"><i class="ti ti-filter"></i>Filtros</button>
       <button class="btn bg bsm" onclick="openEditarFunil()"><i class="ti ti-pencil"></i>Editar funil</button>
       <button class="btn bg bsm" onclick="exportarLeadsCSV()"><i class="ti ti-download"></i>Exportar</button>
@@ -2494,6 +2505,10 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
       <button class="btn bp bsm" onclick="openModal()"><i class="ti ti-plus"></i>Novo lead</button>
     </div>
   </div>
+  <style>
+    .periodo-tab-funil{background:var(--c1);color:var(--tm);border:1px solid var(--c2);font-size:11px;padding:4px 10px}
+    .periodo-tab-funil.active{background:var(--b);color:#fff;border-color:var(--b)}
+  </style>
   <!-- Barra de filtros funil -->
   <div id="funil-filtros-bar" style="display:none;padding:10px 16px;background:var(--c0);border-bottom:1px solid var(--c2);display:none;flex-wrap:wrap;gap:8px;align-items:center">
     <select id="ff-consultor" class="tfield" onchange="renderKanban()" style="flex:1;min-width:130px"><option value="">Todos os consultores</option></select>
@@ -3694,6 +3709,63 @@ function limparFiltrosFunil(){
   ['ff-consultor','ff-origem','ff-tipo','ff-atendimento'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   renderKanban();
 }
+// ─── FILTRO DE PERÍODO DO FUNIL ──────────────────────────────────────────────
+let funilPeriodo='max'; // 'max' | 'mes' | '7dias' | 'hoje' | 'mes_custom'
+let funilMesCustom=''; // 'YYYY-MM'
+
+function setFunilPeriodo(p,btn){
+  funilPeriodo=p;
+  document.querySelectorAll('.periodo-tab-funil').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const inp=document.getElementById('fp-month-input');
+  if(p==='mes_custom'){
+    inp.style.display='inline-block';
+    if(!funilMesCustom){
+      const hoje=new Date();
+      funilMesCustom=`${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`;
+      inp.value=funilMesCustom;
+      document.getElementById('fp-custom-label').textContent=_fmtMesLabel(funilMesCustom);
+    }
+  } else {
+    inp.style.display='none';
+  }
+  renderKanban();
+}
+function onFunilMonthChange(val){
+  funilMesCustom=val;
+  document.getElementById('fp-custom-label').textContent=_fmtMesLabel(val);
+  renderKanban();
+}
+function _fmtMesLabel(ym){
+  if(!ym)return 'Escolher mês';
+  const [y,m]=ym.split('-');
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  return `${meses[parseInt(m)-1]}/${y}`;
+}
+function _funilDateRange(){
+  const hoje=new Date();
+  const fmt=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  if(funilPeriodo==='hoje') return {de:fmt(hoje),ate:fmt(hoje)};
+  if(funilPeriodo==='7dias'){const d=new Date(hoje);d.setDate(d.getDate()-6);return{de:fmt(d),ate:fmt(hoje)};}
+  if(funilPeriodo==='mes'){const ini=new Date(hoje.getFullYear(),hoje.getMonth(),1);return{de:fmt(ini),ate:fmt(hoje)};}
+  if(funilPeriodo==='mes_custom'&&funilMesCustom){
+    const [y,m]=funilMesCustom.split('-').map(Number);
+    const ini=new Date(y,m-1,1);
+    const fim=new Date(y,m,0);
+    return{de:fmt(ini),ate:fmt(fim)};
+  }
+  return null; // max = sem filtro
+}
+// Converte data do lead (dd/mm/yyyy ou yyyy-mm-dd) para yyyy-mm-dd para comparação
+function _leadDataISO(l){
+  const d=l.data||'';
+  if(!d)return '';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(d))return d;
+  const p=d.split('/');
+  if(p.length===3)return `${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`;
+  return d;
+}
+
 function getFunilFiltros(){
   return {
     consultor:document.getElementById('ff-consultor')?.value||'',
@@ -3778,6 +3850,12 @@ function applyFunilFilter(l,f,vis){
   if(f.origem&&l.origem!==f.origem)return false;
   if(f.tipo&&l.tipo!==f.tipo)return false;
   if(f.atendimento&&(l.atendimento||'')!==f.atendimento)return false;
+  // Filtro de período
+  const range=_funilDateRange();
+  if(range){
+    const dataLead=_leadDataISO(l);
+    if(!dataLead||dataLead<range.de||dataLead>range.ate)return false;
+  }
   return true;
 }
 
