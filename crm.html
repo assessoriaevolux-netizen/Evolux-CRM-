@@ -754,6 +754,51 @@
     }
   };
 
+  // Sincroniza leads "Fechado / Convertido" que não têm linha na tabela vendas
+  // Roda uma vez após o carregamento para corrigir histórico incompleto
+  window._sincronizarVendasHistoricas = async function() {
+    const empresaId = await window._getEmpresaId().catch(()=>null);
+    if(!empresaId||!window._sb) return;
+    // Busca todos os leads convertidos da empresa
+    const {data:leadsConv,error:e1} = await window._sb.from('leads')
+      .select('id,responsavel_id,credito,updated_at,created_at')
+      .eq('empresa_id', empresaId)
+      .eq('etapa', 'Fechado / Convertido');
+    if(e1||!leadsConv||!leadsConv.length) return;
+    // Busca todos os lead_id já registrados na tabela vendas
+    const {data:vendasExist,error:e2} = await window._sb.from('vendas')
+      .select('lead_id')
+      .eq('empresa_id', empresaId)
+      .not('lead_id','is',null);
+    if(e2) return;
+    const jaRegistrados = new Set((vendasExist||[]).map(v=>v.lead_id));
+    // Filtra os que ainda não têm registro
+    const faltando = leadsConv.filter(l => !jaRegistrados.has(l.id));
+    if(!faltando.length){ console.log('[SincVendas] Tudo ok, nada faltando.'); return; }
+    console.log('[SincVendas] Inserindo',faltando.length,'vendas históricas faltando...');
+    // Insere em lote
+    const inserts = faltando.map(l => ({
+      empresa_id: empresaId,
+      user_id: l.responsavel_id || null,
+      lead_id: l.id,
+      cliente_nome: '',
+      valor_credito: l.credito || 0,
+      // usa updated_at do lead como data de fechamento (melhor estimativa)
+      data_fechamento: (l.updated_at || l.created_at || new Date().toISOString()).split('T')[0],
+    }));
+    const {error:e3} = await window._sb.from('vendas').insert(inserts);
+    if(e3) console.warn('[SincVendas] Erro ao inserir histórico:',e3);
+    else {
+      console.log('[SincVendas] Histórico sincronizado com sucesso.');
+      // Invalida cache para refletir os novos registros
+      _rankVendasCache={periodo:null,data:null,resultado:null};
+      _rankOverride=null;
+      if(document.getElementById('tab-ranking')?.classList.contains('active')){
+        _aplicarFiltroVendas();
+      }
+    }
+  };
+
   window._estornarVenda = async function(lead) {
     if (!lead?.sb_id) return;
     // Busca a venda antes de deletar para estornar o valor correto
@@ -8534,6 +8579,8 @@ async function _initCRM(){
   if(window._loadAllData) await window._loadAllData();
   // Garante hierarquias padrão para a empresa (cria se não existir nenhuma)
   try{ if(window._ensureHierarquiasPadrao) await window._ensureHierarquiasPadrao(); }catch(e){ console.warn('ensureHierarquias err:',e); }
+  // Sincroniza vendas históricas (leads convertidos sem linha na tabela vendas)
+  try{ if(window._sincronizarVendasHistoricas) window._sincronizarVendasHistoricas(); }catch(e){ console.warn('sincVendas err:',e); }
 
   // Se voltou do OAuth do Google Calendar, mostra mensagem de sucesso agora que o CRM está pronto
   if(window._gcalJustConnected){
