@@ -3954,8 +3954,8 @@ function importarLeadsCSV(input){
       const obj={};
       headers.forEach((h,idx)=>obj[h]=(vals[idx]||'').replace(/^"|"$/g,'').replace(/""/g,'"').trim());
 
-      // Aceita "nome", "name", "cliente", "lead"
-      const nome=obj['nome']||obj['name']||obj['cliente']||obj['lead']||'';
+      // Aceita "nome", "nome_completo" (Meta Ads), "name", "cliente", "lead"
+      const nome=obj['nome']||obj['nome_completo']||obj['name']||obj['cliente']||obj['lead']||'';
       if(!nome){skipped++;continue;}
 
       // Responsável
@@ -3973,15 +3973,29 @@ function importarLeadsCSV(input){
       // Telefone — aceita "telefone", "tel", "fone", "celular", "whatsapp"
       const tel=obj['telefone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'';
 
-      // Tipo
-      const tipo=obj['tipo']||'Imóvel';
+      // Tipo — aceita campo do Meta Ads "o_que_voce_pretende_comprar"
+      const tipoRaw=obj['tipo']||obj['o_que_voce_pretende_comprar?']||obj['o_que_você_pretende_comprar?']||'';
+      const tipo=tipoRaw||'Imóvel';
+
+      // Origem — usa plataforma do Meta Ads (fb/ig) ou campaign_name
+      const origem=obj['origem']||obj['platform']||obj['campaign_name']||obj['source']||'';
+
+      // Observações — agrega dados extras do Meta Ads
+      const cidade=obj['cidade']||obj['city']||'';
+      const estado=obj['estado']||obj['state']||'';
+      const parcela=obj['qual_parcela_mensal_cabe_no_seu_orcamento?']||obj['qual_parcela_mensal_cabe_no_seu_orçamento?']||'';
+      const entrada=obj['voce_possui_algum_valor_para_dar_de_entrada?']||obj['você_possui_algum_valor_para_dar_de_entrada?']||'';
+      const prazo=obj['quando_voce_pretende_comprar_seu_veiculo?_🔥']||obj['quando_você_pretende_comprar_seu_veículo?_🔥']||'';
+      const obsBase=obj['obs']||obj['observacoes']||obj['observacao']||'';
+      const obsExtra=[cidade&&estado?`${cidade}/${estado}`:cidade||estado, parcela?`Parcela: ${parcela}`:'', entrada?`Entrada: ${entrada}`:'', prazo?`Prazo: ${prazo}`:''].filter(Boolean).join(' | ');
+      const obs=obsBase||(obsExtra)||'';
 
       const _il={id:nextLeadId++,nome,tel,tipo,credito,etapa:etapaValida,
-        origem:obj['origem']||obj['source']||'',
+        origem,
         responsavelId:resp?resp.id:(users[0]?.id||1),
         atendimento:obj['atendimento']||'',
         data:obj['data']||toDate(),
-        obs:obj['obs']||obj['observacoes']||obj['observacao']||obj['observacoes']||''
+        obs
       };
       leads.push(_il);
       if(window._syncLead) window._syncLead(_il).catch(e=>console.warn(e));
