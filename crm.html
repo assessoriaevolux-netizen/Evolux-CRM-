@@ -961,6 +961,7 @@
     try { window.renderLances && window.renderLances(); } catch(e) {}
     try { window.renderUserList && window.renderUserList(); } catch(e) {}
     try { window.populateSelects && window.populateSelects(); } catch(e) {}
+    try { window.rankAtualizarSidebar && window.rankAtualizarSidebar(); } catch(e) {}
   };
 
   // ── Helper: retorna empresaId do usuário logado, com fallback ao Supabase ───
@@ -4192,7 +4193,7 @@ function populateSelects(){
   const fe=document.getElementById('fEtapa');if(fe)fe.innerHTML='<option value="">Todas as etapas</option>'+ETAPAS.map(e=>`<option>${e}</option>`).join('');
   const fe2=document.getElementById('fEtapa2');if(fe2)fe2.innerHTML=ETAPAS.map(e=>`<option>${e}</option>`).join('');
   const fr=document.getElementById('fResp');if(fr)fr.innerHTML=users.map(u=>`<option value="${u.id}">${u.nome} (${getHierLabel(u)})</option>`).join('');
-  const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+users.map(u=>`<option value="${u.id}">${u.nome} — ${getHierLabel(u)}</option>`).join('');
+  // vvend é populado exclusivamente por rankAtualizarSidebar() com as regras de permissão corretas — NÃO sobrescrever aqui
   const lc=document.getElementById('lCliente');if(lc)lc.innerHTML=leads.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');
   const sl=document.getElementById('sLeadSel');if(sl)sl.innerHTML='<option value="">Selecionar lead existente...</option>'+leads.map(l=>`<option value="${l.id}">${l.nome} — ${l.tipo} · ${fmtR(l.credito)}</option>`).join('');
   // Atualiza selects de hierarquia em todo o CRM
@@ -5220,6 +5221,20 @@ function addVenda(){
   const val=unM(document.getElementById('vval').value);
   if(!id){showToast('Selecione um vendedor.','ti-alert-triangle','#d97706');return;}
   if(!val){showToast('Informe o valor da venda.','ti-alert-triangle','#d97706');return;}
+  // Validação de permissão: verifica se quem lança tem direito sobre este usuário
+  const me=getMe();
+  if(me){
+    const isGestorAV=me.role==='admin'||me.role==='gestor'||me.role==='master'||me.role==='superadmin';
+    if(!isGestorAV){
+      // Não é gestor: só pode lançar para membros da própria equipe
+      const minhaEquipeAV=equipes.find(eq=>eq.membroIds&&eq.membroIds.includes(me.id));
+      const membrosDaEquipe=minhaEquipeAV?minhaEquipeAV.membroIds:[];
+      if(!membrosDaEquipe.includes(id)){
+        showToast('Sem permissão para registrar venda para este usuário.','ti-shield-lock','#d97706');
+        return;
+      }
+    }
+  }
   const u=users.find(x=>x.id===id);
   if(u){
     // Incrementa localmente para UI imediata
