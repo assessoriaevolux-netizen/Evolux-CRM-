@@ -4969,11 +4969,19 @@ function rankAtualizarSidebar(){
 }
 
 function renderRanking(){
-  // Filtro por visibilidade: admin/master vê todos, supervisor vê sua equipe, vendedor só si mesmo
   const _meRk=getMe();
   const _empRk=_meRk?.empresaId;
-  // Ranking mostra todos da empresa — não filtra por visibilidade de leads
-  const _usersRkBase=(_empRk?users.filter(u=>u.empresaId===_empRk):users);
+  // Ranking: filtra por empresa se possível, senão mostra quem tem sb_id (está no banco)
+  // Inclui também usuários sem empresaId definido no array (podem ter sido carregados antes do merge)
+  let _usersRkBase;
+  if(_empRk){
+    _usersRkBase=users.filter(u=>u.empresaId===_empRk||!u.empresaId);
+  } else {
+    _usersRkBase=users;
+  }
+  // Remove usuários sem nome (fantasmas de seed local)
+  _usersRkBase=_usersRkBase.filter(u=>u.nome&&u.nome.trim());
+  console.log('[renderRanking] _empRk=',_empRk,'total users=',users.length,'filtrados=',_usersRkBase.length,_usersRkBase.map(u=>u.nome+'/'+u.empresaId));
   const _usersRk=_rankOverride
     ? _usersRkBase.map(u=>{const ov=_rankOverride[u.sb_id]||{vendas:0,credito:0};return Object.assign({},u,{vendas:ov.vendas,credito:ov.credito});})
     : _usersRkBase;
