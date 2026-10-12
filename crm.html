@@ -8375,31 +8375,15 @@ function getNivelHier(u){
 function getVisiveisParaMim(){
   const me=getMe();
   if(!me) return new Set();
-  // superadmin vê todos
+  // superadmin/master vê todos (cross-empresa)
   if(me.role==='superadmin'||me.role==='master') return new Set(users.map(u=>u.id));
-  // filtra usuários da mesma empresa
-  const usersEmpresa=users.filter(u=>u.empresaId===me.empresaId||me.role==='superadmin'||me.role==='master');
+  // usuários da mesma empresa
+  const usersEmpresa=users.filter(u=>u.empresaId===me.empresaId);
   const meuNivel=getNivelHier(me);
-  // Nível 1 (Gestor/Admin) vê todos da empresa
+  // Gestor/Admin (nível 1 ou role admin) vê TODOS da empresa
   if(meuNivel===1||me.role==='admin') return new Set(usersEmpresa.map(u=>u.id));
-  // Coleta IDs que estão sob a liderança direta:
-  // 1. Equipes onde eu sou supervisor
-  const minhasEquipes=equipes.filter(e=>e.supervisorId===me.id);
-  const idsSubordinados=new Set([me.id]);
-  minhasEquipes.forEach(eq=>(eq.membroIds||[]).forEach(id=>idsSubordinados.add(id)));
-  // 2. Usuários com nível hierárquico maior (abaixo) que ainda não estejam em equipe minha
-  // — apenas se meu nível ≤ 3 (Representante ou Supervisor)
-  if(meuNivel<=3){
-    usersEmpresa.forEach(u=>{
-      if(getNivelHier(u)>meuNivel) idsSubordinados.add(u.id);
-    });
-  }
-  // Se não sou supervisor de nenhuma equipe e não tenho nível de gestão → só vejo os meus
-  if(idsSubordinados.size===1&&meuNivel>2){
-    // vendedor: só leads próprios
-    return new Set([me.id]);
-  }
-  return idsSubordinados;
+  // Todos os demais (representantes, supervisores, etc.) só veem os próprios leads
+  return new Set([me.id]);
 }
 
 // Verifica se o usuário logado pode editar/mover um lead
