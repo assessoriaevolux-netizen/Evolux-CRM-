@@ -4954,18 +4954,44 @@ function removeLance(id){showConfirm('Remover este lance?',function(){const l=la
 
 // ─── RANKING ──────────────────────────────────────────────────────────────────
 function rankAtualizarSidebar(){
-  // Identifica usuário logado
   const me=getMe();
-  const isGestor=me&&(me.role==='admin'||me.role==='gestor'||(me.hperms&&me.hperms.vendas_edit));
-  const podeAddOutro=isGestor||(me&&me.hperms&&me.hperms.equipe_edit);
+  if(!me) return;
+
+  // Gestor → lança para qualquer pessoa da empresa
+  // Representante (vendas_create via hperms) → lança só para membros da mesma equipe
+  // Sem permissão → só lança para si mesmo (card "minha venda")
+  const isGestor=me.role==='admin'||me.role==='gestor'||me.role==='master'||me.role==='superadmin';
+  const isRepresentante=!isGestor&&me.hperms&&me.hperms.vendas_create;
 
   // Atualiza subtítulo do card "minha venda"
   const sub=document.getElementById('minha-venda-sub');
-  if(sub&&me) sub.textContent=`Olá, ${me.nome.split(' ')[0]}! Registre uma venda no seu nome.`;
+  if(sub) sub.textContent=`Olá, ${me.nome.split(' ')[0]}! Registre uma venda no seu nome.`;
 
   // Mostra/esconde card de venda por outro
   const cardOutro=document.getElementById('card-venda-outro');
+  const podeAddOutro=isGestor||isRepresentante;
   if(cardOutro) cardOutro.style.display=podeAddOutro?'':'none';
+
+  // Popula o select com as pessoas certas
+  if(podeAddOutro){
+    const vv=document.getElementById('vvend');
+    if(vv){
+      let candidatos=[];
+      if(isGestor){
+        // Gestor vê todos da empresa
+        candidatos=users.filter(u=>u.empresaId===me.empresaId||!u.empresaId);
+      } else {
+        // Representante: só membros da mesma equipe (excluindo a si mesmo, já tem "minha venda")
+        const minhaEquipe=equipes.find(eq=>eq.membroIds&&eq.membroIds.includes(me.id));
+        if(minhaEquipe){
+          candidatos=users.filter(u=>minhaEquipe.membroIds.includes(u.id));
+        } else {
+          candidatos=[]; // sem equipe = não pode lançar para ninguém além de si
+        }
+      }
+      vv.innerHTML='<option value="">Selecionar...</option>'+candidatos.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+    }
+  }
 }
 
 function renderRanking(){
@@ -5037,7 +5063,7 @@ function renderRanking(){
             </div>
           </div>
         </div>`).join('');
-    const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+_usersRk.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+    try{rankAtualizarSidebar();}catch(e){}
     return;
   }
 
@@ -5062,7 +5088,7 @@ function renderRanking(){
             <td class="rt-green">${fmtR(u.credito)}</td>
           </tr>`;
         }).join('')}</tbody></table></div>`;
-    const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+_usersRk.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+    try{rankAtualizarSidebar();}catch(e){}
     return;
   }
 
@@ -5110,7 +5136,7 @@ function renderRanking(){
       <div style="font-size:15px;font-weight:800;color:var(--tx);margin-bottom:6px">Ranking vazio</div>
       <div style="font-size:13px;color:var(--tm)">Cadastre vendedores em Configurações → Usuários para eles aparecerem aqui automaticamente.</div>
     </div>`;
-    const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+_usersRk.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+    try{rankAtualizarSidebar();}catch(e){}
     return;
   }
   rankEl.innerHTML=sorted.map((u,i)=>{
@@ -5167,8 +5193,7 @@ function renderRanking(){
       <div class="tv-info"><div class="tv-name">${u.nome}${i===0?' 👑':''}</div><div class="tv-meta">${u.vendas} venda${u.vendas!==1?'s':''} · ${getHierLabel(u)}</div></div>
       <div><div class="tv-sc">${fmtR(u.credito)}</div><div class="tv-sl">volume</div></div>
     </div>`).join('');
-  const vv=document.getElementById('vvend');if(vv)vv.innerHTML='<option value="">Selecionar...</option>'+_usersRk.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
-  // Atualiza sidebar de vendas com base no usuário logado
+  // Atualiza sidebar de vendas com base no usuário logado (popula vvend com regra correta)
   try{rankAtualizarSidebar();}catch(e){}
 }
 // Registra venda para o próprio usuário logado
@@ -6230,6 +6255,11 @@ function renderUserList(){
   const list=document.getElementById('user-list');if(!list)return;
   const _meUL=getMe();const _empUL=_meUL?.empresaId;
   const _usersUL=_empUL?users.filter(u=>u.empresaId===_empUL):users;
+  // Hierarquias disponíveis para atribuição dependem do nível de quem está logado:
+  // Gestor → todas; outros → só hierarquias de nível INFERIOR ao seu (ordem maior)
+  const isGestorUL=_meUL&&(_meUL.role==='gestor'||_meUL.role==='admin'||_meUL.role==='master'||_meUL.role==='superadmin');
+  const meuNivelUL=isGestorUL?0:getNivelHier(_meUL);
+  const hierDisponiveisUL=hierarquias.filter(h=>isGestorUL||(h.ordem>meuNivelUL)).sort((a,b)=>a.ordem-b.ordem);
   list.innerHTML=_usersUL.map(u=>{
     const hier=u.hierarquiaId?getHier(u.hierarquiaId):null;
     const eq=u.equipeId?equipes.find(e=>e.id===u.equipeId):null;
@@ -6249,7 +6279,7 @@ function renderUserList(){
           <div style="display:flex;align-items:center;gap:6px">
             <select class="fi ulist-hier-sel" data-uid="${u.id}" style="font-size:11.5px;padding:4px 8px;height:auto">
               <option value="">Hierarquia...</option>
-              ${hierarquias.map(h=>`<option value="${h.id}" ${(u.hierarquiaId&&(String(u.hierarquiaId)===String(h.sb_id)||String(u.hierarquiaId)===String(h.id)))?'selected':''}>${h.nome}</option>`).join('')}
+              ${hierDisponiveisUL.map(h=>`<option value="${h.id}" ${(u.hierarquiaId&&(String(u.hierarquiaId)===String(h.sb_id)||String(u.hierarquiaId)===String(h.id)))?'selected':''}>${h.nome}</option>`).join('')}
             </select>
             <button class="ulist-hier-save-btn" data-uid="${u.id}" title="Salvar hierarquia" style="padding:4px 10px;font-size:12px;border-radius:6px;border:none;background:#016b3c;color:#fff;cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:600"><i class="ti ti-check"></i> Salvar</button>
             <button class="btn bd bsm ulist-edit-btn" data-uid="${u.id}" title="Editar usuário" style="color:var(--g);border-color:var(--g)"><i class="ti ti-pencil"></i></button>
@@ -6311,6 +6341,17 @@ async function changeUserHier(userId,hierIdStr){
   const h=hid?getHier(hid):null;
   if(!h) throw new Error('Hierarquia não encontrada (id='+hierIdStr+')');
   if(!h.sb_id) throw new Error('Hierarquia ainda não tem ID do banco (sb_id ausente). Recarregue a página e tente novamente.');
+  // Regra de hierarquia: só gestor pode promover para qualquer nível.
+  // Representante/Supervisor só pode atribuir hierarquias de nível INFERIOR ao seu.
+  const quemFaz=getMe();
+  const isGestorFaz=quemFaz&&(quemFaz.role==='gestor'||quemFaz.role==='admin'||quemFaz.role==='master'||quemFaz.role==='superadmin');
+  if(!isGestorFaz){
+    const meuNivel=getNivelHier(quemFaz)||99;
+    const nivelDestino=h.ordem||99;
+    if(nivelDestino<=meuNivel){
+      throw new Error('Você não pode atribuir uma hierarquia igual ou superior à sua. Apenas o gestor pode fazer isso.');
+    }
+  }
   console.log('[changeUserHier] user='+u.nome+' sb_id='+u.sb_id+' hier='+h.nome+' hier_sb_id='+h.sb_id);
   // Sempre usa o UUID do banco (sb_id) como hierarquiaId — nunca ID local numérico
   u.hierarquiaId=h.sb_id;
