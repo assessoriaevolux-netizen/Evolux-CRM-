@@ -2514,6 +2514,7 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
     <button class="btn bg bsm" onclick="selectAllFunil()"><i class="ti ti-layout-grid"></i>Todos</button>
     <select id="funil-transfer-dest" class="fi" style="max-width:200px;padding:6px 10px;margin-left:auto"></select>
     <button class="btn bp bsm" onclick="transferirSelecionados()"><i class="ti ti-check"></i>Transferir</button>
+    <button class="btn bsm" style="background:#e53e3e;color:#fff" onclick="excluirSelecionados()"><i class="ti ti-trash"></i>Excluir</button>
     <button class="btn bg bsm" onclick="cancelarSelecaoFunil()">Cancelar</button>
   </div>
   <div class="kw"><div class="kanban" id="kanban"></div></div>
@@ -3751,6 +3752,23 @@ function transferirSelecionados(){
   });
   cancelarSelecaoFunil();
   renderDashboard();renderNotifPanel();
+}
+function excluirSelecionados(){
+  if(funilSelected.size===0){showToast('Selecione ao menos um lead.','ti-alert-triangle','#d97706');return;}
+  const qtd=funilSelected.size;
+  if(!confirm(`Excluir ${qtd} lead${qtd!==1?'s':''} selecionado${qtd!==1?'s':''}? Essa ação não pode ser desfeita.`))return;
+  const idsParaExcluir=[...funilSelected];
+  idsParaExcluir.forEach(id=>{
+    const idx=leads.findIndex(x=>x.id===id);
+    if(idx!==-1){
+      const l=leads[idx];
+      leads.splice(idx,1);
+      if(l.sb_id&&window._deleteLead) window._deleteLead(l.sb_id).catch(e=>console.warn(e));
+    }
+  });
+  cancelarSelecaoFunil();
+  showToast(`${qtd} lead${qtd!==1?'s':''} excluído${qtd!==1?'s':''}.`,'ti-trash','#e53e3e');
+  renderKanban();renderDashboard();renderTable();renderNotifPanel();
 }
 function applyFunilFilter(l,f,vis){
   // Visibilidade hierárquica: só mostra leads que o usuário pode ver
