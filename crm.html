@@ -3813,20 +3813,27 @@ function transferirSelecionados(){
   if(!destId){showToast('Selecione um consultor de destino.','ti-alert-triangle','#d97706');return;}
   if(funilSelected.size===0){showToast('Selecione ao menos um lead.','ti-alert-triangle','#d97706');return;}
   const dest=users.find(u=>u.id===destId);
-  const f=getFunilFiltros();
-  const vis=getVisiveisParaMim();
+  if(!dest){showToast('Consultor não encontrado.','ti-alert-triangle','#d97706');return;}
+  if(!dest.sb_id){showToast('Consultor sem ID válido no banco.','ti-alert-triangle','#d97706');return;}
+  const destSbId=dest.sb_id;
   funilSelected.forEach(id=>{
     const l=leads.find(x=>x.id===id);
-    if(l){
+    if(l&&l.sb_id){
       l.responsavelId=destId;
-      // Salva no Supabase
-      if(window._syncLead) window._syncLead(l).catch(e=>console.warn('[transferir]',e));
-      if(window._saveAtividade) window._saveAtividade('ti-arrows-right-left',`${l.nome} transferido para ${dest?dest.nome:'—'}`);
+      // UPDATE direto só do responsavel_id — mais seguro que _syncLead completo
+      window._sb.from('leads')
+        .update({responsavel_id:destSbId,updated_at:new Date().toISOString()})
+        .eq('id',l.sb_id)
+        .then(({error})=>{
+          if(error) console.error('[transferir] erro ao salvar no banco:',error);
+          else console.log('[transferir] lead',l.nome,'→',dest.nome,'salvo no banco');
+        });
+      if(window._saveAtividade) window._saveAtividade('ti-arrows-right-left',`${l.nome} transferido para ${dest.nome}`);
     }
   });
   const qtd=funilSelected.size;
   cancelarSelecaoFunil();
-  showToast(`${qtd} lead${qtd!==1?'s':''} transferido${qtd!==1?'s':''} para ${dest?dest.nome:'—'}.`,'ti-check','#1db954');
+  showToast(`${qtd} lead${qtd!==1?'s':''} transferido${qtd!==1?'s':''} para ${dest.nome}.`,'ti-check','#1db954');
   renderKanban();renderDashboard();renderTable();renderNotifPanel();
 }
 function excluirSelecionados(){
