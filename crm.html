@@ -4145,13 +4145,10 @@ function importarLeadsCSV(input){
       // Checagem de duplicata: mesmo nome (case-insensitive) OU mesmo telefone (se preenchido)
       const nomeLower=nome.trim().toLowerCase();
       const telLimpo=tel.replace(/\D/g,'');
-      const isDuplicado=leads.some(l=>{
-        const lNome=(l.nome||'').trim().toLowerCase();
+      const isDuplicado=telLimpo?leads.some(l=>{
         const lTel=(l.tel||'').replace(/\D/g,'');
-        if(lNome===nomeLower) return true;
-        if(telLimpo&&lTel&&telLimpo===lTel) return true;
-        return false;
-      });
+        return lTel&&telLimpo===lTel;
+      }):false;
       if(isDuplicado){
         duplicados++;
         duplicadosNomes.push(nome);
