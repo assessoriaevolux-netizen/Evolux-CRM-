@@ -1038,7 +1038,9 @@
         .on('postgres_changes',_vendasChanOpts,async function(payload){
           // Recarrega profiles para pegar vendas/credito atualizados
           await window._loadProfiles();
-          try{window.renderRanking&&window.renderRanking();}catch(e){}
+          // Invalida cache de período para refletir nova venda no filtro ativo
+          if(window._rankVendasCache) window._rankVendasCache={periodo:null,data:null,resultado:null};
+          try{window._aplicarFiltroVendas?window._aplicarFiltroVendas():window.renderRanking&&window.renderRanking();}catch(e){}
           try{window.renderDashboard&&window.renderDashboard();}catch(e){}
         })
         .subscribe();
@@ -3552,7 +3554,7 @@ function showTab(id,btn){
   document.querySelectorAll('.nb').forEach(el=>el.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
   if(btn) btn.classList.add('active');
-  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,simulador:()=>{syncSim();calcSim();},lances:renderLances,ranking:renderRanking,relatorios:renderRelatorios,whatsapp:renderWhatsapp,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
+  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,simulador:()=>{syncSim();calcSim();},lances:renderLances,ranking:()=>{_rankVendasCache={periodo:null,data:null,resultado:null};_aplicarFiltroVendas();},relatorios:renderRelatorios,whatsapp:renderWhatsapp,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
 }
 // Oculta/mostra botões do nav de acordo com permissões do usuário logado
 function applyNavPermissions(){
@@ -7415,8 +7417,106 @@ function toggleDarkMode(on) {
 // ─── CALENDÁRIO POPUP DO RANKING ──────────────────────────────────────────────
 let rankCalYear=new Date().getFullYear(), rankCalMonth=new Date().getMonth();
 let rankDataSelecionada='';
+
+// Cache de vendas por período para não rebuscar toda vez
+let _rankVendasCache={periodo:null,data:null,resultado:null};
+
+// Calcula intervalo de datas para o período selecionado
+function _getRankDateRange(p, dataCustom){
+  const hoje=new Date();
+  hoje.setHours(0,0,0,0);
+  const fmt=d=>d.toISOString().split('T')[0];
+  if(p==='hoje'||p==='dia'){
+    return{de:fmt(hoje),ate:fmt(hoje)};
+  }
+  if(p==='semana'){
+    const ini=new Date(hoje);
+    ini.setDate(hoje.getDate()-hoje.getDay()); // domingo
+    return{de:fmt(ini),ate:fmt(hoje)};
+  }
+  if(p==='mes'){
+    const ini=new Date(hoje.getFullYear(),hoje.getMonth(),1);
+    return{de:fmt(ini),ate:fmt(hoje)};
+  }
+  if(p==='semana_passada'){
+    const dom=new Date(hoje);
+    dom.setDate(hoje.getDate()-hoje.getDay()-7);
+    const sab=new Date(dom);sab.setDate(dom.getDate()+6);
+    return{de:fmt(dom),ate:fmt(sab)};
+  }
+  if(p==='mes_passado'){
+    const ini=new Date(hoje.getFullYear(),hoje.getMonth()-1,1);
+    const fim=new Date(hoje.getFullYear(),hoje.getMonth(),0);
+    return{de:fmt(ini),ate:fmt(fim)};
+  }
+  if(p==='ultimos_7'){
+    const ini=new Date(hoje);ini.setDate(hoje.getDate()-6);
+    return{de:fmt(ini),ate:fmt(hoje)};
+  }
+  if(p==='ultimos_30'){
+    const ini=new Date(hoje);ini.setDate(hoje.getDate()-29);
+    return{de:fmt(ini),ate:fmt(hoje)};
+  }
+  if(p==='custom'&&dataCustom){
+    return{de:dataCustom,ate:dataCustom};
+  }
+  // padrão: mês atual
+  const ini=new Date(hoje.getFullYear(),hoje.getMonth(),1);
+  return{de:fmt(ini),ate:fmt(hoje)};
+}
+
+// Busca vendas do período no Supabase e aplica nos users temporariamente
+async function _aplicarFiltroVendas(){
+  const p=rankPeriodo;
+  const dc=rankDataSelecionada;
+  const cacheKey=p+(dc||'');
+
+  // Usa cache se mesmo período
+  let rows=null;
+  if(_rankVendasCache.periodo===cacheKey&&_rankVendasCache.resultado){
+    rows=_rankVendasCache.resultado;
+  } else {
+    const range=_getRankDateRange(p,dc);
+    const empresaId=await window._getEmpresaId().catch(()=>null);
+    if(!empresaId||!window._sb){renderRanking();return;}
+    const {data,error}=await window._sb.from('vendas')
+      .select('user_id,valor_credito')
+      .eq('empresa_id',empresaId)
+      .gte('data_fechamento',range.de)
+      .lte('data_fechamento',range.ate);
+    if(error){console.warn('[RankFiltro]',error);renderRanking();return;}
+    rows=data||[];
+    _rankVendasCache={periodo:cacheKey,resultado:rows};
+  }
+
+  // Agrega por user_id
+  const agg={};
+  rows.forEach(r=>{
+    if(!r.user_id)return;
+    if(!agg[r.user_id])agg[r.user_id]={vendas:0,credito:0};
+    agg[r.user_id].vendas++;
+    agg[r.user_id].credito+=(r.valor_credito||0);
+  });
+
+  // Sobrepõe temporariamente nos users (salva original)
+  users.forEach(u=>{
+    if(!u._vendas_orig&&u._vendas_orig!==0){u._vendas_orig=u.vendas;u._credito_orig=u.credito;}
+    const a=agg[u.sb_id]||{vendas:0,credito:0};
+    u.vendas=a.vendas;
+    u.credito=a.credito;
+  });
+
+  renderRanking();
+
+  // Restaura originais após render
+  users.forEach(u=>{
+    if(u._vendas_orig!==undefined){u.vendas=u._vendas_orig;u.credito=u._credito_orig;delete u._vendas_orig;delete u._credito_orig;}
+  });
+}
+
 function setRankPeriodo(p, btn) {
   rankPeriodo = p;
+  _rankVendasCache={periodo:null,data:null,resultado:null}; // limpa cache ao trocar período
   document.querySelectorAll('.rank-hdr .periodo-tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   const popup=document.getElementById('rank-cal-popup');
@@ -7425,7 +7525,7 @@ function setRankPeriodo(p, btn) {
   } else {
     if(popup) popup.style.display='none';
     rankDataSelecionada='';
-    renderRanking();
+    _aplicarFiltroVendas();
   }
 }
 function rankCalNav(dir){
@@ -7455,21 +7555,24 @@ function rankCalRender(){
 }
 function rankCalSelect(dStr){
   rankDataSelecionada=dStr;
+  rankPeriodo='custom';
+  _rankVendasCache={periodo:null,data:null,resultado:null};
   rankCalRender();
   const popup=document.getElementById('rank-cal-popup');
   if(popup) popup.style.display='none';
   const d=new Date(dStr+'T00:00:00');
   document.getElementById('rank-month').textContent=d.toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
   document.getElementById('tv-month-title').textContent=d.toLocaleDateString('pt-BR',{day:'2-digit',month:'long'});
-  renderRanking();
+  _aplicarFiltroVendas();
 }
 function rankCalPeriod(p){
   const popup=document.getElementById('rank-cal-popup');
   if(popup) popup.style.display='none';
   rankPeriodo=p; rankDataSelecionada='';
+  _rankVendasCache={periodo:null,data:null,resultado:null};
   const labels={'semana_passada':'Semana passada','mes_passado':'Mês passado','ultimos_7':'Últimos 7 dias','ultimos_30':'Últimos 30 dias'};
   document.getElementById('rank-month').textContent=labels[p]||'';
-  renderRanking();
+  _aplicarFiltroVendas();
 }
 // Fechar popup ao clicar fora
 document.addEventListener('click',function(e){
@@ -7630,6 +7733,8 @@ function updateSbUser(){
 window.updateSbUser=updateSbUser;
 // Expõe funções globais para _loadProfiles poder chamá-las após profiles carregarem
 window.renderDashboard=renderDashboard;
+window._aplicarFiltroVendas=_aplicarFiltroVendas;
+window._rankVendasCache=_rankVendasCache;
 // renderRanking, renderUserList, renderConfig, applyNavPermissions são
 // function declarations e já são globais — não precisam ser re-atribuídas
 
