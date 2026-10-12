@@ -3966,16 +3966,47 @@ function importarLeadsCSV(input){
       const etapaCSV=obj['etapa']||obj['status']||'';
       const etapaValida=ETAPAS.find(e=>e.toLowerCase()===etapaCSV.toLowerCase())||ETAPAS[0];
 
-      // Crédito — aceita "credito", "crédito", "valor", "credito r$"
-      const creditoRaw=obj['credito']||obj['valor']||obj['credito r$']||'0';
-      const credito=parseFloat(creditoRaw.replace(/[^\d.,]/g,'').replace('.','').replace(',','.'))||0;
+      // Crédito — aceita campo direto ou campo do Meta Ads "qual_valor_de_credito_voce_precisa"
+      // Converte "Até R$ 30 mil" → 30000, "R$ 50 mil" → 50000, "R$ 1.200" → 1200
+      const creditoRaw=obj['credito']||obj['crédito']||obj['valor']||obj['credito r$']||
+        obj['qual_valor_de_credito_voce_precisa?']||obj['qual_valor_de_crédito_você_precisa?']||'0';
+      function parseCreditoBR(s){
+        if(!s)return 0;
+        // "Até R$ 30 mil" / "R$ 50 mil" / "Acima de R$ 100 mil"
+        const milMatch=s.match(/([\d.,]+)\s*mil/i);
+        if(milMatch){
+          const n=parseFloat(milMatch[1].replace('.','').replace(',','.'));
+          return isNaN(n)?0:n*1000;
+        }
+        // "R$ 1.200" / "1200" / "1.200,00"
+        const nums=s.replace(/[^\d.,]/g,'');
+        if(!nums)return 0;
+        // Se tem ponto E vírgula, formato BR: 1.200,50
+        if(nums.includes(',')&&nums.includes('.')){
+          return parseFloat(nums.replace('.','').replace(',','.'))||0;
+        }
+        // Só vírgula: "1200,50" → 1200.50
+        if(nums.includes(','))return parseFloat(nums.replace(',','.'))||0;
+        return parseFloat(nums)||0;
+      }
+      const credito=parseCreditoBR(creditoRaw);
 
       // Telefone — aceita "telefone", "tel", "fone", "celular", "whatsapp"
       const tel=obj['telefone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'';
 
       // Tipo — aceita campo do Meta Ads "o_que_voce_pretende_comprar"
-      const tipoRaw=obj['tipo']||obj['o_que_voce_pretende_comprar?']||obj['o_que_você_pretende_comprar?']||'';
-      const tipo=tipoRaw||'Imóvel';
+      // Normaliza: "Carro" → "Automóvel", "Moto" → "Moto", "Caminhão" → "Caminhão", "Imóvel" → "Imóvel"
+      const tipoRaw=(obj['tipo']||obj['o_que_voce_pretende_comprar?']||obj['o_que_você_pretende_comprar?']||'').trim();
+      function normalizaTipo(t){
+        const tl=t.toLowerCase();
+        if(tl.includes('carro')||tl.includes('automovel')||tl.includes('automóvel')||tl.includes('veiculo')||tl.includes('veículo'))return 'Automóvel';
+        if(tl.includes('moto'))return 'Moto';
+        if(tl.includes('caminhao')||tl.includes('caminhão'))return 'Caminhão';
+        if(tl.includes('imovel')||tl.includes('imóvel')||tl.includes('casa')||tl.includes('apto')||tl.includes('apartamento'))return 'Imóvel';
+        if(tl.includes('servico')||tl.includes('serviço'))return 'Serviço';
+        return t||'Automóvel';
+      }
+      const tipo=normalizaTipo(tipoRaw);
 
       // Origem — usa plataforma do Meta Ads (fb/ig) ou campaign_name
       const origem=obj['origem']||obj['platform']||obj['campaign_name']||obj['source']||'';
