@@ -8486,22 +8486,31 @@ async function _initCRM(){
   // Agora renderiza com o usuário correto
   updateSbUser();
   populateSelects();
-  renderDashboard();
+
+  // ── Restaura aba ativa ANTES de qualquer render para evitar piscar o Painel ──
+  let _tabInicial='dashboard';
+  try{
+    const _saved=localStorage.getItem('evolux_last_tab');
+    if(_saved&&document.getElementById('tab-'+_saved)) _tabInicial=_saved;
+  }catch(e){}
+  // Ativa a aba visualmente sem chamar showTab (que faria render antecipado)
+  document.querySelectorAll('.content').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.nb').forEach(el=>el.classList.remove('active'));
+  const _tabElInicial=document.getElementById('tab-'+_tabInicial);
+  const _btnInicial=document.querySelector(`.nb[onclick*="'${_tabInicial}'"]`);
+  if(_tabElInicial) _tabElInicial.classList.add('active');
+  if(_btnInicial) _btnInicial.classList.add('active');
+
   renderNotifPanel();
   try{if(localStorage.getItem('sb_collapsed')==='1'){const sb=document.getElementById('sidebar');const btn=document.getElementById('sb-toggle');if(sb)sb.classList.add('collapsed');if(btn){btn.style.left='60px';btn.classList.add('collapsed');}}}catch(e){}
   syncSim();
   renderAdminList();
   try{applyNavPermissions();}catch(e){}
-  try{renderRanking();}catch(e){}
   try{renderUserList();}catch(e){}
-  // Restaura última aba ativa após reload
-  try{
-    const _lastTab=localStorage.getItem('evolux_last_tab');
-    if(_lastTab&&_lastTab!=='dashboard'){
-      const _lastBtn=document.querySelector(`.nb[onclick*="'${_lastTab}'"]`);
-      if(_lastBtn) showTab(_lastTab,_lastBtn);
-    }
-  }catch(e){}
+
+  // Renderiza apenas a aba inicial (evita renderizar tudo de uma vez)
+  const _initRenders={dashboard:()=>renderDashboard(),funil:()=>renderKanban(),leads:()=>renderTable(),ranking:()=>{_rankOverride=null;renderRanking();},relatorios:()=>renderRelatorios(),lances:()=>renderLances(),simulador:()=>{syncSim();calcSim();},whatsapp:()=>renderWhatsapp(),calendario:()=>renderCalendario(),configuracoes:()=>renderConfig(),empresas:()=>{try{renderEmpresas();}catch(e){}}};
+  try{(_initRenders[_tabInicial]||_initRenders.dashboard)();}catch(e){try{renderDashboard();}catch(e2){}}
   // Carrega dados persistidos do Supabase após profiles prontos
   if(window._loadAllData) await window._loadAllData();
   // Garante hierarquias padrão para a empresa (cria se não existir nenhuma)
