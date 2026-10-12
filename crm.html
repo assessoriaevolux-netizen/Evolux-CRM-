@@ -3920,29 +3920,79 @@ function importarLeadsCSV(input){
   const file=input.files[0];if(!file)return;
   const reader=new FileReader();
   reader.onload=function(e){
-    const lines=e.target.result.replace(/^﻿/,'').split('\n').filter(Boolean);
+    const raw=e.target.result.replace(/^﻿/,'').replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+    const allLines=raw.split('\n');
+    const lines=allLines.filter(l=>l.trim());
     if(lines.length<2){showToast('CSV vazio ou inválido.','ti-alert-triangle','#d97706');return;}
-    const headers=lines[0].split(',').map(h=>h.replace(/"/g,'').trim().toLowerCase());
-    let imported=0;
+
+    // Detecta separador automaticamente (vírgula ou ponto-e-vírgula)
+    const sep=lines[0].includes(';')?';':',';
+
+    // Parser robusto que respeita campos com aspas
+    function parseCSVLine(line,sep){
+      const result=[];let cur='';let inQ=false;
+      for(let i=0;i<line.length;i++){
+        const c=line[i];
+        if(c==='"'){
+          if(inQ&&line[i+1]==='"'){cur+='"';i++;}
+          else{inQ=!inQ;}
+        } else if(c===sep&&!inQ){
+          result.push(cur.trim());cur='';
+        } else {cur+=c;}
+      }
+      result.push(cur.trim());
+      return result;
+    }
+
+    const headers=parseCSVLine(lines[0],sep).map(h=>h.replace(/"/g,'').trim().toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g,''));// remove acentos do header
+
+    let imported=0,skipped=0;
     for(let i=1;i<lines.length;i++){
-      const vals=lines[i].match(/(".*?"|[^,]+)(?=,|$)/g)||[];
-      const clean=v=>(v||'').replace(/^"|"$/g,'').replace(/""/g,'"').trim();
+      if(!lines[i].trim())continue;
+      const vals=parseCSVLine(lines[i],sep);
       const obj={};
-      headers.forEach((h,idx)=>obj[h]=clean(vals[idx]||''));
-      const nome=obj['nome'];if(!nome)continue;
-      // Tenta encontrar responsável pelo nome
-      const respNome=(obj['responsável']||obj['responsavel']||'').toLowerCase();
+      headers.forEach((h,idx)=>obj[h]=(vals[idx]||'').replace(/^"|"$/g,'').replace(/""/g,'"').trim());
+
+      // Aceita "nome", "name", "cliente", "lead"
+      const nome=obj['nome']||obj['name']||obj['cliente']||obj['lead']||'';
+      if(!nome){skipped++;continue;}
+
+      // Responsável
+      const respNome=(obj['responsavel']||obj['vendedor']||obj['representante']||'').toLowerCase();
       const resp=users.find(u=>u.nome.toLowerCase()===respNome)||users[0];
-      const etapaCSV=obj['etapa']||'';
-      const etapaValida=ETAPAS.includes(etapaCSV)?etapaCSV:ETAPAS[0];
-      const credito=parseFloat((obj['crédito']||obj['credito']||'0').replace(/[^\d.,]/g,'').replace(',','.'))||0;
-      const _il={id:nextLeadId++,nome,tel:obj['telefone']||'',tipo:obj['tipo']||'Imóvel',credito,etapa:etapaValida,origem:obj['origem']||'',responsavelId:resp.id,atendimento:obj['atendimento']||'',data:obj['data']||toDate(),obs:obj['observações']||obj['observacoes']||''};
+
+      // Etapa
+      const etapaCSV=obj['etapa']||obj['status']||'';
+      const etapaValida=ETAPAS.find(e=>e.toLowerCase()===etapaCSV.toLowerCase())||ETAPAS[0];
+
+      // Crédito — aceita "credito", "crédito", "valor", "credito r$"
+      const creditoRaw=obj['credito']||obj['valor']||obj['credito r$']||'0';
+      const credito=parseFloat(creditoRaw.replace(/[^\d.,]/g,'').replace('.','').replace(',','.'))||0;
+
+      // Telefone — aceita "telefone", "tel", "fone", "celular", "whatsapp"
+      const tel=obj['telefone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'';
+
+      // Tipo
+      const tipo=obj['tipo']||'Imóvel';
+
+      const _il={id:nextLeadId++,nome,tel,tipo,credito,etapa:etapaValida,
+        origem:obj['origem']||obj['source']||'',
+        responsavelId:resp?resp.id:(users[0]?.id||1),
+        atendimento:obj['atendimento']||'',
+        data:obj['data']||toDate(),
+        obs:obj['obs']||obj['observacoes']||obj['observacao']||obj['observacoes']||''
+      };
       leads.push(_il);
       if(window._syncLead) window._syncLead(_il).catch(e=>console.warn(e));
       imported++;
     }
     input.value='';
-    showToast(`${imported} lead${imported!==1?'s':''} importado${imported!==1?'s':''} com sucesso!`,'ti-check','#1db954');
+    if(imported===0){
+      showToast(`Nenhum lead importado. Verifique se o CSV tem coluna "nome".`,'ti-alert-triangle','#d97706');
+    } else {
+      showToast(`${imported} lead${imported!==1?'s':''} importado${imported!==1?'s':''} com sucesso!`,'ti-check','#1db954');
+    }
     renderKanban();renderDashboard();renderTable();renderNotifPanel();
   };
   reader.readAsText(file,'UTF-8');
