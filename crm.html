@@ -1039,7 +1039,8 @@
           // Recarrega profiles para pegar vendas/credito atualizados
           await window._loadProfiles();
           // Invalida cache de período para refletir nova venda no filtro ativo
-          if(window._rankVendasCache) window._rankVendasCache={periodo:null,data:null,resultado:null};
+          _rankVendasCache={periodo:null,data:null,resultado:null};
+          if(window._rankVendasCache) window._rankVendasCache=_rankVendasCache;
           try{window._aplicarFiltroVendas?window._aplicarFiltroVendas():window.renderRanking&&window.renderRanking();}catch(e){}
           try{window.renderDashboard&&window.renderDashboard();}catch(e){}
         })
@@ -3556,7 +3557,7 @@ function showTab(id,btn){
   if(btn) btn.classList.add('active');
   // Persiste aba ativa para restaurar após reload
   try{localStorage.setItem('evolux_last_tab',id);}catch(e){}
-  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,simulador:()=>{syncSim();calcSim();},lances:renderLances,ranking:()=>{_rankOverride=null;renderRanking();},relatorios:renderRelatorios,whatsapp:renderWhatsapp,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
+  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,simulador:()=>{syncSim();calcSim();},lances:renderLances,ranking:()=>{_rankVendasCache={periodo:null,data:null,resultado:null};_aplicarFiltroVendas();},relatorios:renderRelatorios,whatsapp:renderWhatsapp,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
 }
 // Oculta/mostra botões do nav de acordo com permissões do usuário logado
 function applyNavPermissions(){
@@ -7508,15 +7509,16 @@ async function _aplicarFiltroVendas(){
     agg[r.user_id].credito+=(r.valor_credito||0);
   });
 
-  // Seta override e re-renderiza com os dados corretos do período
+  // Mantém override ativo — só é limpo ao trocar período ou ir para Geral
   _rankOverride=agg;
   renderRanking();
-  _rankOverride=null;
+  // NÃO limpa _rankOverride aqui — fica ativo para qualquer re-render subsequente
 }
 
 function setRankPeriodo(p, btn) {
   rankPeriodo = p;
   _rankVendasCache={periodo:null,data:null,resultado:null}; // limpa cache ao trocar período
+  _rankOverride=null; // limpa override ao trocar período
   document.querySelectorAll('.rank-hdr .periodo-tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   const popup=document.getElementById('rank-cal-popup');
@@ -7557,6 +7559,7 @@ function rankCalSelect(dStr){
   rankDataSelecionada=dStr;
   rankPeriodo='custom';
   _rankVendasCache={periodo:null,data:null,resultado:null};
+  _rankOverride=null; // limpa override ao selecionar nova data
   rankCalRender();
   const popup=document.getElementById('rank-cal-popup');
   if(popup) popup.style.display='none';
@@ -7570,6 +7573,7 @@ function rankCalPeriod(p){
   if(popup) popup.style.display='none';
   rankPeriodo=p; rankDataSelecionada='';
   _rankVendasCache={periodo:null,data:null,resultado:null};
+  _rankOverride=null; // limpa override ao trocar período
   const labels={'semana_passada':'Semana passada','mes_passado':'Mês passado','ultimos_7':'Últimos 7 dias','ultimos_30':'Últimos 30 dias'};
   document.getElementById('rank-month').textContent=labels[p]||'';
   _aplicarFiltroVendas();
@@ -8509,7 +8513,7 @@ async function _initCRM(){
   try{renderUserList();}catch(e){}
 
   // Renderiza apenas a aba inicial (evita renderizar tudo de uma vez)
-  const _initRenders={dashboard:()=>renderDashboard(),funil:()=>renderKanban(),leads:()=>renderTable(),ranking:()=>{_rankOverride=null;renderRanking();},relatorios:()=>renderRelatorios(),lances:()=>renderLances(),simulador:()=>{syncSim();calcSim();},whatsapp:()=>renderWhatsapp(),calendario:()=>renderCalendario(),configuracoes:()=>renderConfig(),empresas:()=>{try{renderEmpresas();}catch(e){}}};
+  const _initRenders={dashboard:()=>renderDashboard(),funil:()=>renderKanban(),leads:()=>renderTable(),ranking:()=>{_aplicarFiltroVendas();},relatorios:()=>renderRelatorios(),lances:()=>renderLances(),simulador:()=>{syncSim();calcSim();},whatsapp:()=>renderWhatsapp(),calendario:()=>renderCalendario(),configuracoes:()=>renderConfig(),empresas:()=>{try{renderEmpresas();}catch(e){}}};
   try{(_initRenders[_tabInicial]||_initRenders.dashboard)();}catch(e){try{renderDashboard();}catch(e2){}}
   // Carrega dados persistidos do Supabase após profiles prontos
   if(window._loadAllData) await window._loadAllData();
