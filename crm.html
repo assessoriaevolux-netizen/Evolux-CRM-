@@ -4100,7 +4100,17 @@ function importarLeadsCSV(input){
       const credito=parseCreditoBR(creditoRaw);
 
       // Telefone — aceita "telefone", "tel", "fone", "celular", "whatsapp"
-      const tel=obj['telefone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'';
+      // Também lida com notação científica do Excel (ex: 5.51197E+12 → "55 11 970958949")
+      function normalizaTel(raw){
+        if(!raw)return '';
+        let s=String(raw).trim();
+        // Notação científica do Excel: 5.51197E+12
+        if(/^\d[\d.]*[eE][+\-]\d+$/.test(s)){
+          s=Number(s).toFixed(0); // converte para string de dígitos
+        }
+        return s;
+      }
+      const tel=normalizaTel(obj['telefone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'');
 
       // Tipo — aceita campo do Meta Ads "o_que_voce_pretende_comprar"
       // Normaliza: "Carro" → "Automóvel", "Moto" → "Moto", "Caminhão" → "Caminhão", "Imóvel" → "Imóvel"
@@ -4122,8 +4132,10 @@ function importarLeadsCSV(input){
       // Observações — agrega dados extras do Meta Ads
       const cidade=obj['cidade']||obj['city']||'';
       const estado=obj['estado']||obj['state']||'';
-      const parcela=obj['qual_parcela_mensal_cabe_no_seu_orcamento?']||obj['qual_parcela_mensal_cabe_no_seu_orçamento?']||'';
-      const entrada=obj['voce_possui_algum_valor_para_dar_de_entrada?']||obj['você_possui_algum_valor_para_dar_de_entrada?']||'';
+      const parcela=obj['qual_parcela_mensal_cabe_no_seu_orcamento?']||obj['qual_parcela_mensal_cabe_no_seu_orçamento?']
+        ||obj['qual_valor_de_parcela_voce_pretende_pagar?']||obj['qual_valor_de_parcela_você_pretende_pagar?']||'';
+      const entrada=obj['voce_possui_algum_valor_para_dar_de_entrada?']||obj['você_possui_algum_valor_para_dar_de_entrada?']
+        ||obj['quanto_voce_tem_disponivel_para_dar_de_entrada?']||obj['quanto_você_tem_disponível_para_dar_de_entrada?']||'';
       const prazo=obj['quando_voce_pretende_comprar_seu_veiculo?_🔥']||obj['quando_você_pretende_comprar_seu_veículo?_🔥']||'';
       const obsBase=obj['obs']||obj['observacoes']||obj['observacao']||'';
       const obsExtra=[cidade&&estado?`${cidade}/${estado}`:cidade||estado, parcela?`Parcela: ${parcela}`:'', entrada?`Entrada: ${entrada}`:'', prazo?`Prazo: ${prazo}`:''].filter(Boolean).join(' | ');
