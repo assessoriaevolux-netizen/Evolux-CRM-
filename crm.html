@@ -3407,6 +3407,7 @@ function maskM(el){
   el.value=parseInt(v).toLocaleString('pt-BR');
 }
 function unM(v){return parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.'))||0;}
+function maskMeta(el){maskM(el);}
 function toDate(){const d=new Date();return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;}
 function getAdminById(id){return administradoras.find(a=>a.id===id)||null;}
 function mesAtual(){const m=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];const d=new Date();return `${m[d.getMonth()]} ${d.getFullYear()}`;}
