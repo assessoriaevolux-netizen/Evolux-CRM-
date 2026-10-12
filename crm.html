@@ -7511,6 +7511,7 @@ async function _aplicarFiltroVendas(){
     const allRows=[...(res1.data||[]),...(res2.data||[])];
     const seen=new Set();
     rows=allRows.filter(r=>{if(seen.has(r.id))return false;seen.add(r.id);return true;});
+    console.log('[RankFiltro] período:',p,'range:',range,'total rows encontrados:',rows.length,'total crédito:',rows.reduce((s,r)=>s+(r.valor_credito||0),0));
     _rankVendasCache={periodo:cacheKey,resultado:rows};
   }
 
