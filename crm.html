@@ -3817,13 +3817,17 @@ function transferirSelecionados(){
   const vis=getVisiveisParaMim();
   funilSelected.forEach(id=>{
     const l=leads.find(x=>x.id===id);
-    if(l&&applyFunilFilter(l,f,vis)){
+    if(l){
       l.responsavelId=destId;
-      if(window._saveAtividade)window._saveAtividade('ti-arrows-right-left',`${l.nome} transferido para ${dest?dest.nome:'—'}`);
+      // Salva no Supabase
+      if(window._syncLead) window._syncLead(l).catch(e=>console.warn('[transferir]',e));
+      if(window._saveAtividade) window._saveAtividade('ti-arrows-right-left',`${l.nome} transferido para ${dest?dest.nome:'—'}`);
     }
   });
+  const qtd=funilSelected.size;
   cancelarSelecaoFunil();
-  renderDashboard();renderNotifPanel();
+  showToast(`${qtd} lead${qtd!==1?'s':''} transferido${qtd!==1?'s':''} para ${dest?dest.nome:'—'}.`,'ti-check','#1db954');
+  renderKanban();renderDashboard();renderTable();renderNotifPanel();
 }
 function excluirSelecionados(){
   if(funilSelected.size===0){showToast('Selecione ao menos um lead.','ti-alert-triangle','#d97706');return;}
