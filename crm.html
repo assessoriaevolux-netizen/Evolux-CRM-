@@ -3500,7 +3500,7 @@ function renderNotifPanel(){
   const list=document.getElementById('notif-list');
   const dot=document.getElementById('bell-dot');
   if(!list) return;
-  const items=[...activities].reverse().slice(0,20);
+  const items=[...(window.activities||activities||[])].slice(0,20);
   const unreadCount=items.filter((_,i)=>!notifRead.has(i)).length;
   if(dot) dot.style.display=unreadCount>0?'block':'none';
   if(items.length===0){
@@ -3681,7 +3681,8 @@ function renderDashboard(){
   const AV_MAP={'ti-user-plus':'ti-user','ti-circle-check':'ti-currency-dollar','ti-message':'ti-brand-whatsapp','ti-brand-whatsapp':'ti-brand-whatsapp','ti-arrows-right-left':'ti-arrows-right-left'};
   const AV_CLS={'ti-brand-whatsapp':'av-wa','ti-message':'av-wa','ti-circle-check':'av-cash'};
   const feed=document.getElementById('activity-feed');
-  feed.innerHTML=activities.length?activities.slice().reverse().slice(0,5).map(act=>{
+  const _acts=window.activities||activities||[];
+  feed.innerHTML=_acts.length?_acts.slice(0,5).map(act=>{
     const[badgeTxt,badgeCls]=BADGE_MAP[act.icon]||['Atividade','bdg-gen'];
     const avIcon=AV_MAP[act.icon]||'ti-user';
     const avCls=AV_CLS[act.icon]||'';
@@ -3691,6 +3692,7 @@ function renderDashboard(){
     const desc=txt.slice(nome.length).replace(/^[\s:—–]+/,'');
     return `<div class="act2-item"><div class="act2-av ${avCls}"><i class="ti ${avIcon}"></i></div><div class="act2-body"><div class="act2-name"><strong>${nome}</strong>${desc?' '+desc:''}</div><div class="act2-time">${act.time}</div></div><span class="act2-badge ${badgeCls}">${badgeTxt}</span><button class="act2-menu"><i class="ti ti-dots-vertical"></i></button></div>`;
   }).join(''):'<p style="color:var(--tm);font-size:12.5px;padding:12px 0">Nenhuma atividade ainda.</p>';
+
   const max=Math.max(...ETAPAS.map(e=>_leadsD.filter(l=>l.etapa===e).length),1);
   document.getElementById('dash-etapas').innerHTML=ETAPAS.map((e,i)=>{const c=_leadsD.filter(l=>l.etapa===e).length;return `<div class="br"><span class="brl">${e}</span><div class="brt"><div class="brf" style="width:${Math.round(c/max*100)}%;background:${EC[i]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
 }
