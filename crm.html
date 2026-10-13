@@ -3485,7 +3485,10 @@ function mesAtual(){const m=['Janeiro','Fevereiro','Março','Abril','Maio','Junh
 
 // ─── SIDEBAR TOGGLE ───────────────────────────────────────────────────────────
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
+// Usa sb_id da atividade como chave — índice muda quando chega nova notificação
 let notifRead=new Set();
+
+function _notifKey(act){ return act.sb_id||act.text; }
 
 function getNotifIconClass(icon){
   if(icon==='ti-trophy') return 'ni-trophy';
@@ -3501,16 +3504,17 @@ function renderNotifPanel(){
   const dot=document.getElementById('bell-dot');
   if(!list) return;
   const items=[...(window.activities||activities||[])].slice(0,20);
-  const unreadCount=items.filter((_,i)=>!notifRead.has(i)).length;
+  const unreadCount=items.filter(act=>!notifRead.has(_notifKey(act))).length;
   if(dot) dot.style.display=unreadCount>0?'block':'none';
   if(items.length===0){
     list.innerHTML='<div class="notif-empty"><i class="ti ti-bell-off" style="font-size:28px;display:block;margin-bottom:8px;opacity:.35"></i>Nenhuma notificação</div>';
     return;
   }
-  list.innerHTML=items.map((act,i)=>{
-    const read=notifRead.has(i);
+  list.innerHTML=items.map((act)=>{
+    const key=_notifKey(act);
+    const read=notifRead.has(key);
     const cls=getNotifIconClass(act.icon);
-    return `<div class="notif-item${read?'':' unread'}" onclick="readNotif(${i})">
+    return `<div class="notif-item${read?'':' unread'}" onclick="readNotif('${key.toString().replace(/'/g,'\\')}')">
       <div class="notif-icon ${cls}"><i class="ti ${act.icon}"></i></div>
       <div class="notif-body">
         <div class="notif-text">${act.text}</div>
@@ -3547,14 +3551,14 @@ function toggleNotifPanel(){
   }
 }
 
-function readNotif(i){
-  notifRead.add(i);
+function readNotif(key){
+  notifRead.add(key);
   renderNotifPanel();
 }
 
 function markAllRead(){
   const items=[...(window.activities||activities||[])].slice(0,20);
-  items.forEach((_,i)=>notifRead.add(i));
+  items.forEach(act=>notifRead.add(_notifKey(act)));
   renderNotifPanel();
   const panel=document.getElementById('notif-panel');
   if(panel) panel.classList.remove('open');
