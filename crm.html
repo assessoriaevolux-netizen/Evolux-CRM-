@@ -43,6 +43,9 @@
 
   // ── Helpers de sync ────────────────────────────────────────────────────────
   function sbRowToUser(row,idx){
+    const _permsRaw=row.perms?JSON.parse(row.perms):{};
+    const _wa=row.whatsapp||_permsRaw._whatsapp||null;
+    const _ig=row.instagram||_permsRaw._instagram||null;
     return {
       id: row.crm_id||idx+100,
       sb_id: row.id,
@@ -56,10 +59,10 @@
       credito: row.credito||0,
       meta: row.meta||500000,
       foto: row.foto_url||null,
-      whatsapp: row.whatsapp||null,
-      instagram: row.instagram||null,
+      whatsapp: _wa,
+      instagram: _ig,
       empresaId: row.empresa_id||null,
-      perms: row.perms?JSON.parse(row.perms):{},
+      perms: _permsRaw,
       hperms: row.hperms?JSON.parse(row.hperms):{}
     };
   }
@@ -87,7 +90,14 @@
         local.empresaId=row.empresa_id||local.empresaId;
         if(row.whatsapp!==undefined) local.whatsapp=row.whatsapp||local.whatsapp;
         if(row.instagram!==undefined) local.instagram=row.instagram||local.instagram;
-        if(row.perms){try{local.perms=JSON.parse(row.perms);}catch(e){}}
+        if(row.perms){
+          try{
+            local.perms=JSON.parse(row.perms);
+            // Fallback: recupera whatsapp/instagram guardados dentro de perms se colunas dedicadas estiverem vazias
+            if(!local.whatsapp && local.perms._whatsapp) local.whatsapp=local.perms._whatsapp;
+            if(!local.instagram && local.perms._instagram) local.instagram=local.perms._instagram;
+          }catch(e){}
+        }
         // hperms do banco NÃO é aplicado aqui — sempre vem da hierarquia via _ensureMeHperms/_loadAllData
         // Isso garante que permissões refletem a hierarquia atual, não snapshot antigo do banco
       } else {
@@ -292,7 +302,7 @@
           instagram:u.instagram||null,
           meta:u.meta||0,
           equipe_id:u.equipeId||null,
-          perms:u.perms?JSON.stringify(u.perms):null,
+          perms:(()=>{const _p2=Object.assign({},u.perms||{});if(u.whatsapp)_p2._whatsapp=u.whatsapp;else delete _p2._whatsapp;if(u.instagram)_p2._instagram=u.instagram;else delete _p2._instagram;return JSON.stringify(_p2);})(),
           hperms:u.hperms?JSON.stringify(u.hperms):null,
         };
         // Bug #7: só inclui hierarquia_id no payload se temos um UUID real
@@ -335,6 +345,14 @@
     if(u.whatsapp!==undefined) payload.whatsapp=u.whatsapp||null;
     // Bug #9: instagram nunca era incluído no payload — agora salva junto ao perfil
     if(u.instagram!==undefined) payload.instagram=u.instagram||null;
+    // Fallback de persistência: guarda whatsapp e instagram dentro de perms também,
+    // para o caso de as colunas dedicadas não existirem na tabela do Supabase.
+    {
+      const _mergedPerms=Object.assign({},u.perms||{});
+      if(u.whatsapp) _mergedPerms._whatsapp=u.whatsapp; else delete _mergedPerms._whatsapp;
+      if(u.instagram) _mergedPerms._instagram=u.instagram; else delete _mergedPerms._instagram;
+      payload.perms=JSON.stringify(_mergedPerms);
+    }
     console.log('[_syncUser] upserting id='+payload.id, 'email='+payload.email, 'empresa_id='+payload.empresa_id);
     const {data,error}=await window._sb.from('profiles').upsert(payload,{onConflict:'id'}).select().single();
     if(error){console.warn('Erro ao salvar profile:',error);return;}
