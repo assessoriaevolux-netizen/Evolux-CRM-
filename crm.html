@@ -3553,7 +3553,7 @@ function readNotif(i){
 }
 
 function markAllRead(){
-  const items=[...activities].reverse().slice(0,20);
+  const items=[...(window.activities||activities||[])].slice(0,20);
   items.forEach((_,i)=>notifRead.add(i));
   renderNotifPanel();
   const panel=document.getElementById('notif-panel');
