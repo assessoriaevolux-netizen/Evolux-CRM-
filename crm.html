@@ -4713,8 +4713,9 @@ function downloadSimPDF(comDados){
   const fotoEl=document.getElementById('foto-preview-conta')?.querySelector('img');
   const fotoSrc=(fotoEl&&fotoEl.src&&!fotoEl.src.endsWith('/v7.html'))?fotoEl.src:(_me.foto||'');
 
-  const accInstagram=(document.getElementById('accInstagram')?.value||'').trim();
-  const accWhatsapp=(document.getElementById('accWhatsapp')?.value||_me.whatsapp||'').trim();
+  let _lsCfgPdf={};try{const _k='evolux_cfg_'+(window._currentUserId||'default');_lsCfgPdf=JSON.parse(localStorage.getItem(_k)||'{}');}catch(e){}
+  const accInstagram=(document.getElementById('accInstagram')?.value||_me.instagram||_lsCfgPdf.instagram||'').trim();
+  const accWhatsapp=(document.getElementById('accWhatsapp')?.value||_me.whatsapp||_lsCfgPdf.whatsapp||'').trim();
   const accNomeVal=(document.getElementById('accNome')?.value||_me.nome||'').trim();
 
   const tipoBemStr=[tipoBem!=='—'?tipoBem:'',modelo].filter(Boolean).join(' — ');
@@ -7201,10 +7202,15 @@ function cfgRenderSection(){
       if(nEl) nEl.value=parts[0]||'';
       if(sEl) sEl.value=parts.slice(1).join(' ')||'';
       const waEl=document.getElementById('accWhatsapp');
-      if(waEl && me.whatsapp) waEl.value=me.whatsapp;
+      // Lê também do localStorage como fallback caso Supabase não tenha a coluna
+      let _lsCfg={};
+      try{const _lsKey='evolux_cfg_'+(window._currentUserId||'default');_lsCfg=JSON.parse(localStorage.getItem(_lsKey)||'{}');}catch(e){}
+      const _wa = me.whatsapp || _lsCfg.whatsapp || '';
+      if(waEl) waEl.value = _wa;
       // Bug #9: pré-preenche instagram salvo no perfil
       const instaEl2=document.getElementById('accInstagram');
-      if(instaEl2 && me.instagram) instaEl2.value=me.instagram;
+      const _ig = me.instagram || _lsCfg.instagram || '';
+      if(instaEl2) instaEl2.value = _ig;
       if(me.foto){
         const prev=document.getElementById('foto-preview-conta');
         if(prev) prev.innerHTML=`<img src="${me.foto}" style="width:80px;height:80px;object-fit:cover;border-radius:50%;border:3px solid var(--g)">`;
@@ -8351,7 +8357,18 @@ function salvarConfiguracoesConta(){
     if(waEl) me.whatsapp = waEl.value.trim();
     // Bug #9: salvar instagram no objeto usuário para persistir no DB
     if(instaEl) me.instagram = instaEl.value.trim();
+    // Garante que email e sb_id estão no objeto me para _syncUser não abortar
+    if(!me.email && window._session?.user?.email) me.email = window._session.user.email;
+    if(!me.sb_id && window._currentUserId) me.sb_id = window._currentUserId;
   }
+  // Salva no localStorage como camada extra de persistência (independente do Supabase)
+  try{
+    const _lsKey = 'evolux_cfg_' + (window._currentUserId||'default');
+    const _cfg = JSON.parse(localStorage.getItem(_lsKey)||'{}');
+    _cfg.whatsapp = waEl?.value.trim()||'';
+    _cfg.instagram = instaEl?.value.trim()||'';
+    localStorage.setItem(_lsKey, JSON.stringify(_cfg));
+  }catch(e){}
 
   // Atualiza sidebar e topbar imediatamente
   const sbName = document.getElementById('sb-user-name');
