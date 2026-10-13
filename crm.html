@@ -2854,10 +2854,12 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
       <!-- Card: minha venda (qualquer usuário logado) -->
       <div class="side-card" id="card-minha-venda">
         <h3><i class="ti ti-trophy" style="color:var(--g)"></i>Registrar minha venda</h3>
-        <p id="minha-venda-sub">Registre uma venda no seu nome.</p>
+        <p id="minha-venda-sub">Selecione o lead convertido ou informe o valor.</p>
         <div class="vf">
+          <select id="vleadme" onchange="rankAutoFillMe()" style="font-size:12px"><option value="">Selecionar lead (opcional)...</option></select>
           <input type="text" id="vval-me" placeholder="Valor do crédito (R$)" oninput="maskM(this)">
           <button class="btn bp" style="justify-content:center" onclick="addMinhaVenda()"><i class="ti ti-check"></i>Registrar</button>
+          <button class="btn" style="justify-content:center;background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)" onclick="removerMinhaVenda()"><i class="ti ti-trash"></i>Remover última venda</button>
         </div>
       </div>
       <!-- Card: registrar por qualquer vendedor (gestor/permissão) -->
@@ -2865,9 +2867,11 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
         <h3><i class="ti ti-plus" style="color:var(--g)"></i>Registrar venda</h3>
         <p>Registre venda para qualquer membro da equipe.</p>
         <div class="vf">
-          <select id="vvend"><option value="">Selecionar vendedor...</option></select>
+          <select id="vvend" onchange="rankCarregarLeadsVendedor()"><option value="">Selecionar vendedor...</option></select>
+          <select id="vlead" style="font-size:12px" onchange="rankAutoFillVend()"><option value="">Selecionar lead (opcional)...</option></select>
           <input type="text" id="vval" placeholder="Valor do crédito (R$)" oninput="maskM(this)">
           <button class="btn bp" style="justify-content:center" onclick="addVenda()"><i class="ti ti-check"></i>Registrar venda</button>
+          <button class="btn" style="justify-content:center;background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)" onclick="removerVenda()"><i class="ti ti-trash"></i>Remover última venda</button>
         </div>
       </div>
     </div>
@@ -4999,7 +5003,14 @@ function rankAtualizarSidebar(){
 
   // Atualiza subtítulo do card "minha venda"
   const sub=document.getElementById('minha-venda-sub');
-  if(sub) sub.textContent=`Olá, ${me.nome.split(' ')[0]}! Registre uma venda no seu nome.`;
+  if(sub) sub.textContent=`Olá, ${me.nome.split(' ')[0]}! Selecione o lead ou informe o valor.`;
+
+  // Popula leads do usuário logado no card "minha venda"
+  const vleadme=document.getElementById('vleadme');
+  if(vleadme){
+    const meusLeads=leads.filter(l=>l.responsavelId===me.id&&l.etapa!=='Fechado / Convertido'&&l.etapa!=='Perdido');
+    vleadme.innerHTML='<option value="">Selecionar lead (opcional)...</option>'+meusLeads.map(l=>`<option value="${l.id}">${l.nome}${l.credito?' — '+fmtR(l.credito):''}</option>`).join('');
+  }
 
   // Mostra/esconde card de venda por outro
   const cardOutro=document.getElementById('card-venda-outro');
@@ -5230,23 +5241,131 @@ function renderRanking(){
   // Atualiza sidebar de vendas com base no usuário logado (popula vvend com regra correta)
   try{rankAtualizarSidebar();}catch(e){}
 }
+// Auto-preenche valor ao selecionar lead no card "minha venda"
+function rankAutoFillMe(){
+  const sel=document.getElementById('vleadme');
+  const inp=document.getElementById('vval-me');
+  if(!sel||!inp)return;
+  if(sel.value){
+    const lead=leads.find(l=>l.id===parseInt(sel.value));
+    if(lead&&lead.credito){inp.value=fmtR(lead.credito);}
+  }
+}
+// Carrega leads do vendedor selecionado no card "venda outro"
+function rankCarregarLeadsVendedor(){
+  const vvend=document.getElementById('vvend');
+  const vlead=document.getElementById('vlead');
+  const vval=document.getElementById('vval');
+  if(!vvend||!vlead)return;
+  vlead.innerHTML='<option value="">Selecionar lead (opcional)...</option>';
+  if(vval)vval.value='';
+  const uid=parseInt(vvend.value);
+  if(!uid)return;
+  const meusLeads=leads.filter(l=>l.responsavelId===uid&&l.etapa!=='Fechado / Convertido'&&l.etapa!=='Perdido');
+  meusLeads.forEach(l=>{
+    const opt=document.createElement('option');
+    opt.value=l.id;
+    opt.textContent=`${l.nome}${l.credito?' — '+fmtR(l.credito):''}`;
+    vlead.appendChild(opt);
+  });
+}
+// Auto-preenche valor ao selecionar lead no card "venda outro"
+function rankAutoFillVend(){
+  const sel=document.getElementById('vlead');
+  const inp=document.getElementById('vval');
+  if(!sel||!inp)return;
+  if(sel.value){
+    const lead=leads.find(l=>l.id===parseInt(sel.value));
+    if(lead&&lead.credito){inp.value=fmtR(lead.credito);}
+  }
+}
 // Registra venda para o próprio usuário logado
 function addMinhaVenda(){
-  const val=unM(document.getElementById('vval-me').value);
-  if(!val){showToast('Informe o valor da venda.','ti-alert-triangle','#d97706');return;}
   const me=getMe();
   if(!me){showToast('Usuário não identificado.','ti-alert-triangle','#d97706');return;}
+  // Verifica se um lead foi selecionado
+  const leadSel=document.getElementById('vleadme');
+  const leadId=leadSel?parseInt(leadSel.value)||null:null;
+  const lead=leadId?leads.find(l=>l.id===leadId):null;
+  // Usa valor do lead ou do campo manual
+  const val=unM(document.getElementById('vval-me').value)||(lead?lead.credito:0);
+  if(!val){showToast('Informe o valor da venda ou selecione um lead.','ti-alert-triangle','#d97706');return;}
   // Incrementa localmente para UI imediata
   me.vendas++;
   me.credito+=val;
   if(window._saveAtividade)window._saveAtividade('ti-trophy',`${me.nome} registrou venda de ${fmtR(val)}`,me.sb_id);
   // Persiste no banco via incremento atômico (não usa _syncUser para não sobrescrever outros campos)
-  if(window._registrarVenda) window._registrarVenda({sb_id:null,nome:'Venda manual',credito:val},me.id).catch(e=>console.warn(e));
+  if(window._registrarVenda) window._registrarVenda({sb_id:null,nome:lead?lead.nome:'Venda manual',credito:val},me.id).catch(e=>console.warn(e));
+  // Move lead para Fechado / Convertido se selecionado
+  if(lead&&lead.etapa!=='Fechado / Convertido'){
+    lead.etapa='Fechado / Convertido';
+    lead.credito=val||lead.credito;
+    lead.responsavelId=me.id;
+    if(window._syncLead)window._syncLead(lead).catch(e=>console.warn(e));
+    if(window._saveAtividade)window._saveAtividade('ti-circle-check',`${lead.nome} fechado — ${fmtR(lead.credito)}`,me.sb_id);
+  }
+  if(leadSel)leadSel.value='';
   document.getElementById('vval-me').value='';
   try{renderRanking();}catch(e){}
   try{renderDashboard();}catch(e){}
+  try{if(document.getElementById('tab-funil')&&document.getElementById('tab-funil').classList.contains('active'))renderKanban();}catch(e){}
   try{renderNotifPanel();}catch(e){}
   setTimeout(()=>{ showCelebra(me.nome, val); }, 100);
+}
+// Remove última venda do próprio usuário logado
+function removerMinhaVenda(){
+  const me=getMe();
+  if(!me){showToast('Usuário não identificado.','ti-alert-triangle','#d97706');return;}
+  showConfirm(`Remover sua última venda registrada?`,function(){
+    if(window._estornarVenda){
+      window._estornarVenda({sb_id:me.sb_id,id:me.id,nome:me.nome}).then(()=>{
+        me.vendas=Math.max(0,(me.vendas||1)-1);
+        me.credito=Math.max(0,(me.credito||0));
+        if(window._saveAtividade)window._saveAtividade('ti-trash',`${me.nome} removeu última venda`,me.sb_id);
+        try{renderRanking();}catch(e){}
+        try{renderDashboard();}catch(e){}
+        try{renderNotifPanel();}catch(e){}
+        showToast('Venda removida.','ti-check','#22c55e');
+      }).catch(e=>{showToast('Erro ao remover venda.','ti-alert-triangle','#ef4444');console.warn(e);});
+    }else{
+      showToast('Função de estorno não disponível.','ti-alert-triangle','#d97706');
+    }
+  });
+}
+// Remove última venda de um vendedor da equipe (gestor/supervisor)
+function removerVenda(){
+  const vvend=document.getElementById('vvend');
+  const uid=vvend?parseInt(vvend.value)||null:null;
+  if(!uid){showToast('Selecione um vendedor.','ti-alert-triangle','#d97706');return;}
+  // Validação de permissão
+  const me=getMe();
+  if(me){
+    const isGestorRV=me.role==='admin'||me.role==='gestor'||me.role==='master'||me.role==='superadmin';
+    if(!isGestorRV){
+      const minhaEquipeRV=equipes.find(eq=>eq.membroIds&&eq.membroIds.includes(me.id));
+      const membrosRV=minhaEquipeRV?minhaEquipeRV.membroIds:[];
+      if(!membrosRV.includes(uid)){
+        showToast('Sem permissão para remover venda deste usuário.','ti-shield-lock','#d97706');return;
+      }
+    }
+  }
+  const u=users.find(x=>x.id===uid);
+  if(!u){showToast('Vendedor não encontrado.','ti-alert-triangle','#d97706');return;}
+  showConfirm(`Remover última venda de ${u.nome}?`,function(){
+    if(window._estornarVenda){
+      window._estornarVenda({sb_id:u.sb_id,id:u.id,nome:u.nome}).then(()=>{
+        u.vendas=Math.max(0,(u.vendas||1)-1);
+        u.credito=Math.max(0,(u.credito||0));
+        if(window._saveAtividade)window._saveAtividade('ti-trash',`Venda de ${u.nome} removida por ${me?me.nome:'gestor'}`,me?me.sb_id:null);
+        try{renderRanking();}catch(e){}
+        try{renderDashboard();}catch(e){}
+        try{renderNotifPanel();}catch(e){}
+        showToast('Venda removida.','ti-check','#22c55e');
+      }).catch(e=>{showToast('Erro ao remover venda.','ti-alert-triangle','#ef4444');console.warn(e);});
+    }else{
+      showToast('Função de estorno não disponível.','ti-alert-triangle','#d97706');
+    }
+  });
 }
 
 function addVenda(){
@@ -5277,10 +5396,10 @@ function addVenda(){
     // Persiste no banco via incremento atômico (não usa _syncUser para não sobrescrever)
     if(window._registrarVenda) window._registrarVenda({sb_id:null,nome:'Venda manual',credito:val},id).catch(e=>console.warn(e));
   }
-  // Se um lead foi selecionado, mover para Fechado / Convertido
-  const sls=document.getElementById('sLeadSel');
-  if(sls&&sls.value){
-    const lid=parseInt(sls.value);
+  // Se um lead foi selecionado no ranking, mover para Fechado / Convertido
+  const rls=document.getElementById('vlead');
+  if(rls&&rls.value){
+    const lid=parseInt(rls.value);
     const lead=leads.find(l=>l.id===lid);
     if(lead&&lead.etapa!=='Fechado / Convertido'){
       lead.etapa='Fechado / Convertido';
@@ -5289,7 +5408,7 @@ function addVenda(){
       if(window._syncLead) window._syncLead(lead).catch(e=>console.warn(e));
       if(window._saveAtividade)window._saveAtividade('ti-circle-check',`${lead.nome} fechado — ${fmtR(lead.credito)}`);
     }
-    sls.value='';
+    rls.value='';
   }
   document.getElementById('vval').value='';
   try{renderRanking();}catch(e){}
@@ -7103,46 +7222,93 @@ function cfgRenderSection(){
 
 // ─── RELATÓRIOS ───────────────────────────────────────────────────────────────
 function renderRelatorios(){
-  // Filtra por visibilidade do usuário logado
+  // ── Calcula intervalo de datas conforme período selecionado ──────────────
+  function _relDataLimite(){
+    const hoje=new Date(); hoje.setHours(0,0,0,0);
+    const p=relPeriodo||'mes';
+    let ini=new Date(hoje);
+    if(p==='hoje'){ /* ini = hoje */ }
+    else if(p==='semana'){ ini.setDate(hoje.getDate()-hoje.getDay()); }
+    else if(p==='mes'){ ini.setDate(1); }
+    else if(p==='trimestre'){ ini.setMonth(hoje.getMonth()-2); ini.setDate(1); }
+    else if(p==='ano'){ ini.setMonth(0); ini.setDate(1); }
+    else { return null; } // sem filtro = tudo
+    return ini;
+  }
+  // Converte 'DD/MM/YYYY' → Date (meia noite)
+  function _parseDataLead(s){
+    if(!s) return null;
+    const p=s.split('/');
+    if(p.length===3) return new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0]));
+    // tenta YYYY-MM-DD também
+    const d=new Date(s); return isNaN(d)?null:d;
+  }
+  const _iniRel=_relDataLimite();
+
+  // ── Filtra por visibilidade + período ────────────────────────────────────
   const _visRel=getVisiveisParaMim();
-  const _leadsRel=leads.filter(l=>_visRel.has(l.responsavelId));
+  const _leadsRelTodos=leads.filter(l=>_visRel.has(l.responsavelId));
+  const _leadsRel=_iniRel
+    ? _leadsRelTodos.filter(l=>{ const d=_parseDataLead(l.data); return d&&d>=_iniRel; })
+    : _leadsRelTodos;
   const _usersRel=users.filter(u=>_visRel.has(u.id));
+
+  // ── Etapas do funil ──────────────────────────────────────────────────────
   const maxE=Math.max(...ETAPAS.map(e=>_leadsRel.filter(l=>l.etapa===e).length),1);
   document.getElementById('rel-etapas').innerHTML=ETAPAS.map((e,i)=>{const c=_leadsRel.filter(l=>l.etapa===e).length;return `<div class="br"><span class="brl">${e}</span><div class="brt"><div class="brf" style="width:${Math.round(c/maxE*100)}%;background:${EC[i]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
+
+  // ── Tipos ────────────────────────────────────────────────────────────────
   document.getElementById('rel-tipos').innerHTML=['Imóvel','Automóvel','Moto','Serviço'].map(t=>{const c=_leadsRel.filter(l=>l.tipo===t).length;return `<div class="lr"><span class="ld" style="background:${TC[t]}"></span><span style="flex:1">${t}</span><span style="font-weight:700;color:var(--tx)">${c}</span></div>`;}).join('');
+
+  // ── Origem ───────────────────────────────────────────────────────────────
   const or=['Meta Ads','Indicação','Orgânico'],maxO=Math.max(...or.map(o=>_leadsRel.filter(l=>l.origem===o).length),1);
   document.getElementById('rel-origem').innerHTML=or.map(o=>{const c=_leadsRel.filter(l=>l.origem===o).length;return `<div class="br"><span class="brl">${o}</span><div class="brt"><div class="brf" style="width:${Math.round(c/maxO*100)}%;background:${OC[o]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
-  const t=_leadsRel.length,f=_leadsRel.filter(l=>l.etapa==='Fechado / Convertido').length,p=_leadsRel.filter(l=>l.etapa==='Perdido').length;
+
+  // ── Resumo financeiro — filtrado por período ─────────────────────────────
+  const t=_leadsRel.length;
+  const f=_leadsRel.filter(l=>l.etapa==='Fechado / Convertido').length;
+  const p=_leadsRel.filter(l=>l.etapa==='Perdido').length;
   const pip=_leadsRel.filter(l=>!['Fechado / Convertido','Perdido'].includes(l.etapa)).reduce((a,l)=>a+l.credito,0);
-  const rankTotalRel=_usersRel.reduce((s,u)=>s+(u.credito||0),0);
+  // Total vendido no período = soma do crédito dos leads FECHADOS no período
+  const totalVendidoPeriodo=_leadsRel.filter(l=>l.etapa==='Fechado / Convertido').reduce((a,l)=>a+l.credito,0);
+  // Vendas registradas no ranking (total acumulado — exibe separado para clareza)
   const rankVendasRel=_usersRel.reduce((s,u)=>s+(u.vendas||0),0);
+  const rankTotalRel=_usersRel.reduce((s,u)=>s+(u.credito||0),0);
+  const periodoLabel=({hoje:'Hoje',semana:'Semana atual',mes:'Mês atual',trimestre:'Último trimestre',ano:'Ano atual'})[relPeriodo||'mes']||'Período';
   document.getElementById('rel-financeiro').innerHTML=`
-    <div class="sr"><span class="sl">Total de leads</span><span class="sv">${t}</span></div>
+    <div class="sr"><span class="sl">Total de leads (${periodoLabel})</span><span class="sv">${t}</span></div>
     <div class="sr"><span class="sl">Convertidos</span><span class="sv" style="color:var(--g)">${f}</span></div>
     <div class="sr"><span class="sl">Perdidos</span><span class="sv" style="color:var(--r)">${p}</span></div>
     <div class="sr"><span class="sl">Taxa de conversão</span><span class="sv">${t?Math.round(f/t*100):0}%</span></div>
     <div class="sr"><span class="sl">Crédito em pipeline</span><span class="sv">${fmtR(pip)}</span></div>
-    <div class="sr"><span class="sl">Total vendido (ranking)</span><span class="sv" style="color:var(--g)">${fmtR(rankTotalRel)}</span></div>
-    <div class="sr"><span class="sl">Vendas registradas</span><span class="sv">${rankVendasRel}</span></div>`;
-  // ── Desempenho por membro ──────────────────────────────────────────────────
+    <div class="sr"><span class="sl">Crédito fechado (${periodoLabel})</span><span class="sv" style="color:var(--g)">${fmtR(totalVendidoPeriodo)}</span></div>
+    <div class="sr"><span class="sl">Total vendido acumulado (ranking)</span><span class="sv" style="color:var(--g)">${fmtR(rankTotalRel)}</span></div>
+    <div class="sr"><span class="sl">Vendas registradas acumuladas</span><span class="sv">${rankVendasRel}</span></div>`;
+
+  // ── Desempenho por membro — filtrado por período ─────────────────────────
   const eqEl=document.getElementById('rel-equipe-table');
   if(eqEl){
-    const sorted=[..._usersRel].sort((a,b)=>(b.credito||0)-(a.credito||0));
-    const maxCred=Math.max(...sorted.map(u=>u.credito||0),1);
+    // Para cada user: conta leads do período que são dele
+    const sorted=[..._usersRel].map(u=>{
+      const mLeads=_leadsRel.filter(l=>l.responsavelId===u.id);
+      const mAtivos=mLeads.filter(l=>!['Fechado / Convertido','Perdido'].includes(l.etapa)).length;
+      const mConv=mLeads.filter(l=>l.etapa==='Fechado / Convertido').length;
+      const mVol=mLeads.filter(l=>l.etapa==='Fechado / Convertido').reduce((a,l)=>a+l.credito,0);
+      return {...u,_mAtivos:mAtivos,_mConv:mConv,_mVol:mVol};
+    }).sort((a,b)=>b._mVol-a._mVol);
+
     eqEl.innerHTML=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">
       <thead><tr style="border-bottom:2px solid var(--c2);text-align:left">
         <th style="padding:8px 10px;color:var(--tm);font-weight:700">Membro</th>
         <th style="padding:8px 10px;color:var(--tm);font-weight:700">Hierarquia</th>
         <th style="padding:8px 10px;color:var(--tm);font-weight:700;text-align:right">Leads ativos</th>
         <th style="padding:8px 10px;color:var(--tm);font-weight:700;text-align:right">Convertidos</th>
-        <th style="padding:8px 10px;color:var(--tm);font-weight:700;text-align:right">Total vendido</th>
+        <th style="padding:8px 10px;color:var(--tm);font-weight:700;text-align:right">Crédito fechado</th>
         <th style="padding:8px 10px;color:var(--tm);font-weight:700;text-align:right">Meta</th>
-        <th style="padding:8px 10px;color:var(--tm);font-weight:700;min-width:100px">Progresso</th>
+        <th style="padding:8px 10px;color:var(--tm);font-weight:700;min-width:100px">Progresso (acum.)</th>
       </tr></thead>
       <tbody>${sorted.map((u,i)=>{
         const h=u.hierarquiaId?getHier(u.hierarquiaId):null;
-        const leadsAtivos=_leadsRel.filter(l=>l.responsavelId===u.id&&!['Fechado / Convertido','Perdido'].includes(l.etapa)).length;
-        const leadsConv=_leadsRel.filter(l=>l.responsavelId===u.id&&l.etapa==='Fechado / Convertido').length;
         const pct=u.meta?Math.min(Math.round((u.credito||0)/u.meta*100),100):0;
         const bg=i%2===0?'':'var(--c0)';
         return `<tr style="border-bottom:1px solid var(--c1);background:${bg}">
@@ -7156,9 +7322,9 @@ function renderRelatorios(){
             </div>
           </td>
           <td style="padding:10px 10px"><span style="font-size:10.5px;padding:2px 8px;border-radius:20px;background:rgba(1,107,60,.1);color:var(--g);font-weight:600">${h?h.nome:RL[u.role]}</span></td>
-          <td style="padding:10px 10px;text-align:right;font-weight:700;color:var(--tx)">${leadsAtivos}</td>
-          <td style="padding:10px 10px;text-align:right;font-weight:700;color:var(--g)">${leadsConv}</td>
-          <td style="padding:10px 10px;text-align:right;font-weight:800;color:var(--tx)">${fmtR(u.credito||0)}</td>
+          <td style="padding:10px 10px;text-align:right;font-weight:700;color:var(--tx)">${u._mAtivos}</td>
+          <td style="padding:10px 10px;text-align:right;font-weight:700;color:var(--g)">${u._mConv}</td>
+          <td style="padding:10px 10px;text-align:right;font-weight:800;color:var(--tx)">${fmtR(u._mVol)}</td>
           <td style="padding:10px 10px;text-align:right;color:var(--tm)">${fmtR(u.meta||0)}</td>
           <td style="padding:10px 10px">
             <div style="height:6px;background:var(--c1);border-radius:20px;overflow:hidden;margin-bottom:3px">
@@ -7169,7 +7335,8 @@ function renderRelatorios(){
         </tr>`;
       }).join('')}</tbody></table></div>`;
   }
-  // ── Histórico de movimentações ─────────────────────────────────────────────
+
+  // ── Histórico de movimentações ────────────────────────────────────────────
   const histEl=document.getElementById('rel-historico');
   if(histEl){
     const searchEl=document.getElementById('rel-search-hist');
