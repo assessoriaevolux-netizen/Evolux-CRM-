@@ -567,6 +567,10 @@
       _eqQ=_eqQ.eq('empresa_id',_empIdEq); // SEMPRE filtra
       const { data, error } = await _eqQ;
       if (error || !data) return;
+      // Reconstrói o array do zero com os dados do banco (fonte da verdade)
+      const sbIdsNoBanco = data.map(r => r.id);
+      // Remove locais que não existem mais no banco
+      equipes = equipes.filter(e => !e.sb_id || sbIdsNoBanco.includes(e.sb_id));
       data.forEach(row => {
         const existing = equipes.find(e => e.sb_id === row.id);
         const membroIds = (row.membros_sb_ids || []).map(sbId => {
@@ -8685,7 +8689,7 @@ function renderEqMbList(){
     </div>`;
   }).join('');
 }
-function saveEquipe(){
+async function saveEquipe(){
   const nome=document.getElementById('eq-nome').value.trim();
   if(!nome){showToast('Informe o nome da equipe.','ti-alert-triangle','#d97706');return;}
   const editId=parseInt(document.getElementById('eq-edit-id').value)||null;
@@ -8702,12 +8706,17 @@ function saveEquipe(){
   };
   if(editId){
     const i=equipes.findIndex(e=>e.id===editId);
-    if(i>=0) equipes[i]={...equipes[i],...obj};
+    if(i>=0){
+      equipes[i]={...equipes[i],...obj};
+      // Passa a referência real do array para _syncEquipe receber o sb_id
+      if(window._syncEquipe) await window._syncEquipe(equipes[i]).catch(e=>console.warn(e));
+    }
   } else {
     obj.id=nextEquipeId++;
     equipes.push(obj);
+    // Passa a referência real (último item do array) para que sb_id seja gravado nela
+    if(window._syncEquipe) await window._syncEquipe(equipes[equipes.length-1]).catch(e=>console.warn(e));
   }
-  if(window._syncEquipe) window._syncEquipe(obj).catch(e=>console.warn(e));
   closeEqModal();
   toast(obj.nome+' salva!');
   cfgShow('equipes');
