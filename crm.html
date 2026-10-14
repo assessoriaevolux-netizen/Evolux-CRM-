@@ -136,6 +136,20 @@
       } else {
         _showRecoveryModal();
       }
+      return;
+    }
+    // SIGNED_IN disparado por signUp de outro usuário (cadastro de novo membro):
+    // se já há um usuário logado e o evento é SIGNED_IN com uid diferente,
+    // rejeita a troca de sessão para não expulsar o admin.
+    if(event==='SIGNED_IN' && window._currentUserId && session && session.user.id !== window._currentUserId){
+      console.warn('[Auth] signUp de novo usuário disparou SIGNED_IN — revertendo sessão do admin');
+      // Restaura a sessão anterior (o getSession() volta com o token do admin que ainda está salvo)
+      window._sb.auth.getSession().then(function(r){
+        if(r.data.session && r.data.session.user.id !== window._currentUserId){
+          // A sessão já trocou — força signOut do novo usuário e recarrega
+          window._sb.auth.signOut().then(function(){ window.location.reload(); });
+        }
+      });
     }
   });
 
@@ -6398,39 +6412,8 @@ async function inviteUser(){
     if(!res.ok&&!criado) throw new Error(json.error||'Edge Function retornou erro');
   }catch(err){
     console.warn('Edge Function indisponível:',err.message);
-    // 2ª tentativa: signUp direto (funciona sem Edge Function, mas manda email de confirmação)
-    // Desabilita confirmação de email no Supabase para funcionar diretamente
-    try{
-      const {data,error}=await window._sb.auth.signUp({
-        email,
-        password:senha,
-        options:{
-          data:{nome:nomeVal,role,meta:metaRaw},
-          emailRedirectTo: window.location.origin+'/index.html'
-        }
-      });
-      if(!error&&data?.user){
-        sbUserId=data.user.id;
-        criado=true;
-        // Salva profile na tabela profiles para o CRM reconhecer
-        const meInvite=getMe();
-        await window._sb.from('profiles').upsert({
-          id:data.user.id,
-          email,
-          nome:nomeVal,
-          role,
-          meta:metaRaw,
-          hierarquia_id:hierarquiaId,
-          equipe_id:equipeId||null,
-          empresa_id:meInvite?.empresaId||null,
-          vendas:0,
-          credito:0
-        },{onConflict:'id'});
-      } else if(error){
-        errMsg=error.message==='User already registered'?'Este e-mail já possui conta no Supabase.':error.message;
-        console.warn('signUp falhou:',error.message);
-      }
-    }catch(e2){errMsg=e2.message;console.warn('signUp erro:',e2.message);}
+    // NÃO usar signUp aqui — causaria troca de sessão, expulsando o admin
+    errMsg = 'Serviço de cadastro indisponível. Verifique sua conexão e tente novamente.';
   }
 
   if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-user-plus"></i>Cadastrar usuário';}
@@ -8730,12 +8713,30 @@ function saveEquipe(){
   cfgShow('equipes');
 }
 function deleteEquipe(id){
-  showConfirm('Excluir esta equipe?',function(){
-    const _deq=equipes.find(e=>e.id===id);
-    if(_deq?.sb_id&&window._sb) window._sb.from('equipes').delete().eq('id',_deq.sb_id).catch(e=>console.warn(e));
-    equipes=equipes.filter(e=>e.id!==id);
-    cfgRenderSection();
+  showConfirm('Excluir esta equipe? Os membros não serão removidos, apenas desvinculados.',function(){
+    _deleteEquipeExec(id);
   });
+}
+async function _deleteEquipeExec(id){
+  const _deq=equipes.find(e=>e.id===id);
+  if(!_deq){showToast('Equipe não encontrada.','ti-alert-triangle','#d97706');return;}
+  if(_deq.sb_id&&window._sb){
+    try{
+      const {error}=await window._sb.from('equipes').delete().eq('id',_deq.sb_id);
+      if(error){
+        showToast('Erro ao excluir equipe: '+error.message,'ti-alert-circle','#dc3545');
+        console.error('[deleteEquipe]',error);
+        return;
+      }
+    }catch(e){
+      showToast('Erro inesperado ao excluir equipe.','ti-alert-circle','#dc3545');
+      console.error('[deleteEquipe]',e);
+      return;
+    }
+  }
+  equipes=equipes.filter(e=>e.id!==id);
+  showToast('Equipe excluída.','ti-check');
+  cfgRenderSection();
 }
 function removeMembro(eqId,uid){
   const eq=equipes.find(e=>e.id===eqId);
