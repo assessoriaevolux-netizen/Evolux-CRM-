@@ -541,23 +541,32 @@
       const u = users.find(x => x.id === mid);
       return u?.sb_id || null;
     }).filter(Boolean);
-    const payload = {
-      empresa_id: empresaId,
-      nome: equipe.nome || '',
-      descricao: equipe.descricao || '',
-      membros_sb_ids: membros,
-      foto_url: equipe.foto || null
-    };
-    console.log('[_syncEquipe] payload:', JSON.stringify(payload), '| sb_id atual:', equipe.sb_id);
+    // Descobre as colunas disponíveis na tabela tentando insert mínimo primeiro
+    const payloadBase = { empresa_id: empresaId, nome: equipe.nome || '' };
+    const payloadFull = { ...payloadBase, descricao: equipe.descricao || '', membros_sb_ids: membros, foto_url: equipe.foto || null };
+    console.log('[_syncEquipe] tentando payload completo | sb_id atual:', equipe.sb_id);
     if (equipe.sb_id) {
-      const { data, error } = await window._sb.from('equipes').update(payload).eq('id', equipe.sb_id).select().single();
+      const { data, error } = await window._sb.from('equipes').update(payloadFull).eq('id', equipe.sb_id).select().single();
       console.log('[_syncEquipe] update resultado:', data, error);
-      if (error) { showToast('Erro ao salvar equipe: '+error.message,'ti-alert-circle','#dc3545'); return; }
+      if (error) {
+        // Tenta sem colunas opcionais
+        const { data:d2, error:e2 } = await window._sb.from('equipes').update(payloadBase).eq('id', equipe.sb_id).select().single();
+        console.log('[_syncEquipe] update base resultado:', d2, e2);
+        if (e2) { showToast('Erro ao salvar equipe: '+e2.message,'ti-alert-circle','#dc3545'); return; }
+      }
     } else {
-      const { data, error } = await window._sb.from('equipes').insert(payload).select().single();
+      const { data, error } = await window._sb.from('equipes').insert(payloadFull).select().single();
       console.log('[_syncEquipe] insert resultado:', data, error);
-      if (error) { showToast('Erro ao criar equipe: '+error.message,'ti-alert-circle','#dc3545'); return; }
-      if (data) equipe.sb_id = data.id;
+      if (error) {
+        console.warn('[_syncEquipe] insert completo falhou, tentando base:', error.message);
+        // Tenta sem colunas opcionais que podem não existir
+        const { data:d2, error:e2 } = await window._sb.from('equipes').insert(payloadBase).select().single();
+        console.log('[_syncEquipe] insert base resultado:', d2, e2);
+        if (e2) { showToast('Erro ao criar equipe: '+e2.message,'ti-alert-circle','#dc3545'); return; }
+        if (d2) equipe.sb_id = d2.id;
+      } else {
+        if (data) equipe.sb_id = data.id;
+      }
     }
     console.log('[_syncEquipe] sb_id após sync:', equipe.sb_id);
   };
