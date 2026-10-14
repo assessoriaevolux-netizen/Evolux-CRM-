@@ -536,7 +536,7 @@
   // ── EQUIPES ────────────────────────────────────────────────────────────────
   window._syncEquipe = async function(equipe) {
     const empresaId = await window._getEmpresaId();
-    if (!empresaId) { console.warn('[_syncEquipe] sem empresaId, abortando'); return; }
+    if (!empresaId) { console.error('[_syncEquipe] sem empresaId, abortando'); showToast('Erro: empresa não identificada.','ti-alert-circle','#dc3545'); return; }
     const membros = (equipe.membroIds || []).map(mid => {
       const u = users.find(x => x.id === mid);
       return u?.sb_id || null;
@@ -549,14 +549,20 @@
       foto_url: equipe.foto || null,
       updated_at: new Date().toISOString()
     };
+    console.log('[_syncEquipe] payload:', JSON.stringify(payload), '| sb_id atual:', equipe.sb_id);
     if (equipe.sb_id) {
       payload.id = equipe.sb_id;
       const { data, error } = await window._sb.from('equipes').upsert(payload, { onConflict: 'id' }).select().single();
-      if (!error && data) equipe.sb_id = data.id;
+      console.log('[_syncEquipe] upsert resultado:', data, error);
+      if (error) { showToast('Erro ao salvar equipe: '+error.message,'ti-alert-circle','#dc3545'); return; }
+      if (data) equipe.sb_id = data.id;
     } else {
       const { data, error } = await window._sb.from('equipes').insert(payload).select().single();
-      if (!error && data) equipe.sb_id = data.id;
+      console.log('[_syncEquipe] insert resultado:', data, error);
+      if (error) { showToast('Erro ao criar equipe: '+error.message,'ti-alert-circle','#dc3545'); return; }
+      if (data) equipe.sb_id = data.id;
     }
+    console.log('[_syncEquipe] sb_id após sync:', equipe.sb_id);
   };
 
   window._loadEquipes = async function() {
@@ -566,6 +572,7 @@
       let _eqQ=window._sb.from('equipes').select('*').order('nome');
       _eqQ=_eqQ.eq('empresa_id',_empIdEq); // SEMPRE filtra
       const { data, error } = await _eqQ;
+      console.log('[_loadEquipes] empresa_id:', _empIdEq, '| rows do banco:', data?.length, '| error:', error);
       if (error || !data) return;
       // NUNCA reatribuir equipes = ... pois quebra a referência window.equipes
       // Limpa mantendo a referência (splice) e repopula
