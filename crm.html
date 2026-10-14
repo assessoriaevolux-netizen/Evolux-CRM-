@@ -545,7 +545,7 @@
     const payload = {
       empresa_id: empresaId,
       nome: equipe.nome || '',
-      'descrição': equipe.descricao || '',
+      descricao: equipe.descricao || '',
       membros_sb_ids: membros,
       foto_url: equipe.foto || null
     };
@@ -587,7 +587,7 @@
           id: existing ? existing.id : (nextEquipeId++),
           sb_id: row.id,
           nome: row.nome || '',
-          descricao: row['descrição'] || '',
+          descricao: row.descricao || '',
           membroIds,
           foto: row.foto_url || null,
         };
