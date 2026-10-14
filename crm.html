@@ -2407,7 +2407,7 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
     <button class="nb" onclick="showTab('leads',this)" title="Leads"><i class="ti ti-users"></i><span class="nb-label">Leads</span></button>
     <button class="nb" onclick="showTab('simulador',this)" title="Simulador"><i class="ti ti-calculator"></i><span class="nb-label">Simulador</span></button>
     <button class="nb" onclick="showTab('lances',this)" title="Lances"><i class="ti ti-gavel"></i><span class="nb-label">Lances</span></button>
-    <button class="nb" onclick="showTab('minhasvendas',this)" title="Minhas Vendas"><i class="ti ti-receipt"></i><span class="nb-label">Vendas</span></button>
+    <button class="nb" onclick="showTab('minhasvendas',this)" title="Minhas Vendas"><i class="ti ti-receipt"></i><span class="nb-label">Minhas Vendas</span></button>
     <button class="nb" onclick="showTab('ranking',this)" title="Ranking"><i class="ti ti-trophy"></i><span class="nb-label">Ranking</span></button>
     <button class="nb" onclick="showTab('relatorios',this)" title="Relatórios"><i class="ti ti-chart-bar"></i><span class="nb-label">Relatórios</span></button>
     <button class="nb" onclick="showTab('whatsapp',this)" title="WhatsApp"><i class="ti ti-brand-whatsapp"></i><span class="nb-label">WhatsApp</span></button>
@@ -9168,13 +9168,22 @@ async function mvSalvarEdicao(vendaId){
   try{ renderMinhasVendas(); }catch(e){}
 }
 
-async function mvExcluirVenda(vendaId){
-  showConfirm('Excluir esta venda? O lead voltará para a etapa anterior e o crédito do vendedor será ajustado.', async function(){
+function mvExcluirVenda(vendaId){
+  showConfirm('Excluir esta venda? O lead voltará para a etapa de Negociação e o crédito do vendedor será ajustado.', function(){
+    _mvExcluirVendaExec(vendaId);
+  });
+}
+async function _mvExcluirVendaExec(vendaId){
+  try{
     const v = _mvVendasCache.find(x => String(x.id) === String(vendaId));
-    if(!v){ showToast('Venda não encontrada.','ti-alert-triangle','#d97706'); return; }
+    if(!v){ showToast('Venda não encontrada no cache. Recarregue a aba.','ti-alert-triangle','#d97706'); return; }
 
     const {error} = await window._sb.from('vendas').delete().eq('id', vendaId);
     if(error){ showToast('Erro ao excluir: '+error.message,'ti-alert-circle','#dc3545'); return; }
+
+    // Remove do cache local imediatamente
+    const idx = _mvVendasCache.findIndex(x => String(x.id) === String(vendaId));
+    if(idx > -1) _mvVendasCache.splice(idx, 1);
 
     // Decrementa vendas e crédito do vendedor
     if(v.user_id){
@@ -9185,7 +9194,6 @@ async function mvExcluirVenda(vendaId){
           credito: Math.max(0,(cur.credito||0)-(v.valor_credito||0))
         }).eq('id',v.user_id).catch(()=>{});
       }
-      // Atualiza local
       const userLocal = users.find(u=>u.sb_id===v.user_id);
       if(userLocal){
         userLocal.vendas = Math.max(0,(userLocal.vendas||0)-1);
@@ -9193,7 +9201,7 @@ async function mvExcluirVenda(vendaId){
       }
     }
 
-    // Move lead de volta para Negociação se estava Fechado
+    // Move lead de volta para Negociação
     if(v.lead_id){
       await window._sb.from('leads').update({etapa:'Negociação'}).eq('id',v.lead_id).catch(()=>{});
       const lead = leads.find(l => l.sb_id === v.lead_id);
@@ -9204,12 +9212,14 @@ async function mvExcluirVenda(vendaId){
     showToast('Venda excluída com sucesso.','ti-check');
     _rankVendasCache = {periodo:null,data:null,resultado:null};
 
-    // Atualiza UIs conectadas
     try{ renderDashboard(); }catch(e){}
     try{ renderRanking(); }catch(e){}
     try{ if(document.getElementById('tab-funil')?.classList.contains('active')) renderKanban(); }catch(e){}
     try{ renderMinhasVendas(); }catch(e){}
-  });
+  } catch(err){
+    showToast('Erro inesperado: '+(err?.message||err),'ti-alert-circle','#dc3545');
+    console.error('mvExcluirVenda error:', err);
+  }
 }
 window.renderMinhasVendas = renderMinhasVendas;
 
