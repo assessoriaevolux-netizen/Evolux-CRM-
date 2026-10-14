@@ -9219,7 +9219,10 @@ async function _mvExcluirVendaExec(vendaId){
 }
 
 // Invalida cache de ranking e força re-render do painel + ranking
-function _mvInvalidarCacheEAtualizar(){
+async function _mvInvalidarCacheEAtualizar(){
+  // Recarrega profiles do Supabase para pegar credito/vendas atualizados
+  try{ if(window._loadProfiles) await window._loadProfiles(); }catch(e){}
+
   // Muta o objeto em vez de reatribuir, para que window._rankVendasCache seja invalidado também
   _rankVendasCache.periodo = null;
   _rankVendasCache.data = null;
@@ -9230,7 +9233,7 @@ function _mvInvalidarCacheEAtualizar(){
     window._rankVendasCache.resultado = null;
   }
   try{ renderDashboard(); }catch(e){}
-  try{ _aplicarFiltroVendas(); }catch(e){ try{ renderRanking(); }catch(e2){} }
+  try{ await _aplicarFiltroVendas(); }catch(e){ try{ renderRanking(); }catch(e2){} }
   try{ if(document.getElementById('tab-funil')?.classList.contains('active')) renderKanban(); }catch(e){}
 }
 
