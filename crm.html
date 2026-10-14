@@ -3721,11 +3721,19 @@ function renderDashboard(){
   const credTotal=_leadsD.filter(l=>l.etapa==='Fechado / Convertido').reduce((s,l)=>s+l.credito,0);
   document.getElementById('hero-pipeline').textContent=pipVal>=1000000?'R$'+Math.round(pipVal/100000)/10+'M':pipVal>=1000?'R$'+Math.round(pipVal/1000)+'k':a;
   document.getElementById('hero-conversao').textContent=tx+'%';
-  // Total vendido = busca direto da tabela vendas (fonte da verdade, não profiles.credito)
+  // Total vendido do mês atual = mesma lógica do ranking (data_fechamento || created_at)
   const _empIdDash = window._empresaIdDireto;
   if(_empIdDash){
-    window._sb.from('vendas').select('valor_credito').eq('empresa_id',_empIdDash).then(({data})=>{
-      const rankTotal=(data||[]).reduce((s,r)=>s+(r.valor_credito||0),0);
+    window._sb.from('vendas').select('valor_credito,data_fechamento,created_at').eq('empresa_id',_empIdDash).then(({data})=>{
+      const hoje=new Date(); hoje.setHours(0,0,0,0);
+      const ini=new Date(hoje.getFullYear(),hoje.getMonth(),1);
+      const vendsMes=(data||[]).filter(r=>{
+        const ds=(r.data_fechamento||r.created_at||'').split('T')[0];
+        if(!ds) return true; // sem data: inclui
+        const d=new Date(ds+'T00:00:00');
+        return d>=ini && d<=hoje;
+      });
+      const rankTotal=vendsMes.reduce((s,r)=>s+(r.valor_credito||0),0);
       const el=document.getElementById('hero-credito');
       if(el) el.textContent=rankTotal>=1000000?'R$'+Math.round(rankTotal/100000)/10+'M':rankTotal>=1000?'R$'+Math.round(rankTotal/1000)+'k':'R$'+rankTotal;
     });
@@ -8084,30 +8092,45 @@ async function _aplicarFiltroVendas(){
   const p=rankPeriodo;
   const dc=rankDataSelecionada;
 
-  // Todos os períodos (incluindo "mes") buscam direto da tabela vendas
-  const cacheKey=p+(dc||'');
+  // Todos os períodos buscam direto da tabela vendas e filtram em JS
+  // usando data_fechamento com fallback para created_at (igual ao Minhas Vendas)
+  const cacheKey='all'; // sempre busca tudo e filtra em JS
   let rows=null;
   if(_rankVendasCache.periodo===cacheKey&&_rankVendasCache.resultado){
     rows=_rankVendasCache.resultado;
   } else {
-    renderRanking(); // mostra dados atuais enquanto carrega
+    renderRanking();
     const empresaId=await window._getEmpresaId().catch(()=>null);
     if(!empresaId||!window._sb){return;}
-    let query=window._sb.from('vendas').select('id,user_id,valor_credito').eq('empresa_id',empresaId);
-    if(p!=='todos'){
-      const range=_getRankDateRange(p,dc);
-      if(range?.de) query=query.gte('data_fechamento',range.de);
-      if(range?.ate) query=query.lte('data_fechamento',range.ate);
-    }
-    const {data,error}=await query;
+    const {data,error}=await window._sb.from('vendas')
+      .select('id,user_id,valor_credito,data_fechamento,created_at')
+      .eq('empresa_id',empresaId);
     if(error){console.warn('[RankFiltro]',error);return;}
     rows=data||[];
     _rankVendasCache={periodo:cacheKey,resultado:rows};
   }
 
+  // Filtra por período em JS usando data_fechamento || created_at como fallback
+  let rowsFiltradas=rows;
+  if(p!=='todos'){
+    const range=_getRankDateRange(p,dc);
+    if(range?.de||range?.ate){
+      const de=range.de?new Date(range.de+'T00:00:00'):null;
+      const ate=range.ate?new Date(range.ate+'T23:59:59'):null;
+      rowsFiltradas=rows.filter(r=>{
+        const dataStr=(r.data_fechamento||r.created_at||'').split('T')[0];
+        if(!dataStr) return false;
+        const d=new Date(dataStr+'T00:00:00');
+        if(de&&d<de) return false;
+        if(ate&&d>ate) return false;
+        return true;
+      });
+    }
+  }
+
   // Agrega por user_id (sb_id)
   const agg={};
-  rows.forEach(r=>{
+  rowsFiltradas.forEach(r=>{
     if(!r.user_id)return;
     if(!agg[r.user_id])agg[r.user_id]={vendas:0,credito:0};
     agg[r.user_id].vendas++;
