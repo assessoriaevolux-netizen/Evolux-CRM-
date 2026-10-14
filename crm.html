@@ -8084,29 +8084,22 @@ async function _aplicarFiltroVendas(){
   const p=rankPeriodo;
   const dc=rankDataSelecionada;
 
-  // Para "mês atual": usa acumulado dos profiles — mesma fonte do painel
-  // Assim ranking e painel sempre batem
-  if(p==='mes'){
-    _rankOverride=null; // null = renderRanking usa profiles diretamente
-    renderRanking();
-    return;
-  }
-
-  // Para outros períodos: busca na tabela vendas com filtro de data
+  // Todos os períodos (incluindo "mes") buscam direto da tabela vendas
   const cacheKey=p+(dc||'');
   let rows=null;
   if(_rankVendasCache.periodo===cacheKey&&_rankVendasCache.resultado){
     rows=_rankVendasCache.resultado;
   } else {
     renderRanking(); // mostra dados atuais enquanto carrega
-    const range=_getRankDateRange(p,dc);
     const empresaId=await window._getEmpresaId().catch(()=>null);
     if(!empresaId||!window._sb){return;}
-    const {data,error}=await window._sb.from('vendas')
-      .select('id,user_id,valor_credito')
-      .eq('empresa_id',empresaId)
-      .gte('data_fechamento',range.de)
-      .lte('data_fechamento',range.ate);
+    let query=window._sb.from('vendas').select('id,user_id,valor_credito').eq('empresa_id',empresaId);
+    if(p!=='todos'){
+      const range=_getRankDateRange(p,dc);
+      if(range?.de) query=query.gte('data_fechamento',range.de);
+      if(range?.ate) query=query.lte('data_fechamento',range.ate);
+    }
+    const {data,error}=await query;
     if(error){console.warn('[RankFiltro]',error);return;}
     rows=data||[];
     _rankVendasCache={periodo:cacheKey,resultado:rows};
