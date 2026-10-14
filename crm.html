@@ -820,11 +820,13 @@
   window._estornarVenda = async function(lead) {
     if (!lead?.sb_id) return;
     // Busca a venda antes de deletar para estornar o valor correto
-    const {data:vendaRow}=await window._sb.from('vendas').select('user_id,valor_credito').eq('lead_id',lead.sb_id).single().catch(()=>({data:null}));
+    let vendaRow = null;
+    try{ const r=await window._sb.from('vendas').select('user_id,valor_credito').eq('lead_id',lead.sb_id).single(); vendaRow=r.data; }catch(e){}
     await window._sb.from('vendas').delete().eq('lead_id', lead.sb_id);
     // Decrementa atomicamente no banco
     if(vendaRow?.user_id){
-      const {data:cur}=await window._sb.from('profiles').select('vendas,credito').eq('id',vendaRow.user_id).single().catch(()=>({data:null}));
+      let cur = null;
+      try{ const r=await window._sb.from('profiles').select('vendas,credito').eq('id',vendaRow.user_id).single(); cur=r.data; }catch(e){}
       if(cur){
         await window._sb.from('profiles').update({
           vendas:Math.max(0,(cur.vendas||0)-1),
@@ -9150,9 +9152,10 @@ async function mvSalvarEdicao(vendaId){
 
   // Atualiza crédito do vendedor no profiles
   if(v.user_id && diffValor !== 0){
-    const {data:cur} = await window._sb.from('profiles').select('credito').eq('id',v.user_id).single().catch(()=>({data:null}));
+    let cur = null;
+    try{ const r = await window._sb.from('profiles').select('credito').eq('id',v.user_id).single(); cur=r.data; }catch(e){}
     if(cur){
-      await window._sb.from('profiles').update({credito: Math.max(0,(cur.credito||0)+diffValor)}).eq('id',v.user_id).catch(()=>{});
+      try{ await window._sb.from('profiles').update({credito: Math.max(0,(cur.credito||0)+diffValor)}).eq('id',v.user_id); }catch(e){}
       const userLocal = users.find(u=>u.sb_id===v.user_id);
       if(userLocal) userLocal.credito = Math.max(0,(userLocal.credito||0)+diffValor);
     }
@@ -9187,12 +9190,13 @@ async function _mvExcluirVendaExec(vendaId){
 
     // Decrementa vendas e crédito do vendedor
     if(v.user_id){
-      const {data:cur} = await window._sb.from('profiles').select('vendas,credito').eq('id',v.user_id).single().catch(()=>({data:null}));
+      let cur = null;
+      try{ const r = await window._sb.from('profiles').select('vendas,credito').eq('id',v.user_id).single(); cur = r.data; }catch(e){}
       if(cur){
-        await window._sb.from('profiles').update({
+        try{ await window._sb.from('profiles').update({
           vendas: Math.max(0,(cur.vendas||0)-1),
           credito: Math.max(0,(cur.credito||0)-(v.valor_credito||0))
-        }).eq('id',v.user_id).catch(()=>{});
+        }).eq('id',v.user_id); }catch(e){}
       }
       const userLocal = users.find(u=>u.sb_id===v.user_id);
       if(userLocal){
