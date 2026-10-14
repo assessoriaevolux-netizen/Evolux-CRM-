@@ -9163,11 +9163,7 @@ async function mvSalvarEdicao(vendaId){
 
   document.getElementById('mv-edit-modal')?.remove();
   showToast('Venda atualizada!','ti-check');
-  _rankVendasCache = {periodo:null,data:null,resultado:null};
-
-  // Atualiza UIs conectadas
-  try{ renderDashboard(); }catch(e){}
-  try{ if(document.getElementById('tab-ranking')?.classList.contains('active')) _aplicarFiltroVendas(); }catch(e){}
+  _mvInvalidarCacheEAtualizar();
   try{ renderMinhasVendas(); }catch(e){}
 }
 
@@ -9214,17 +9210,30 @@ async function _mvExcluirVendaExec(vendaId){
 
     if(window._saveAtividade) window._saveAtividade('ti-trash','Venda de '+v._clienteNome+' excluída');
     showToast('Venda excluída com sucesso.','ti-check');
-    _rankVendasCache = {periodo:null,data:null,resultado:null};
-
-    try{ renderDashboard(); }catch(e){}
-    try{ renderRanking(); }catch(e){}
-    try{ if(document.getElementById('tab-funil')?.classList.contains('active')) renderKanban(); }catch(e){}
+    _mvInvalidarCacheEAtualizar();
     try{ renderMinhasVendas(); }catch(e){}
   } catch(err){
     showToast('Erro inesperado: '+(err?.message||err),'ti-alert-circle','#dc3545');
     console.error('mvExcluirVenda error:', err);
   }
 }
+
+// Invalida cache de ranking e força re-render do painel + ranking
+function _mvInvalidarCacheEAtualizar(){
+  // Muta o objeto em vez de reatribuir, para que window._rankVendasCache seja invalidado também
+  _rankVendasCache.periodo = null;
+  _rankVendasCache.data = null;
+  _rankVendasCache.resultado = null;
+  if(window._rankVendasCache){
+    window._rankVendasCache.periodo = null;
+    window._rankVendasCache.data = null;
+    window._rankVendasCache.resultado = null;
+  }
+  try{ renderDashboard(); }catch(e){}
+  try{ _aplicarFiltroVendas(); }catch(e){ try{ renderRanking(); }catch(e2){} }
+  try{ if(document.getElementById('tab-funil')?.classList.contains('active')) renderKanban(); }catch(e){}
+}
+
 window.renderMinhasVendas = renderMinhasVendas;
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
