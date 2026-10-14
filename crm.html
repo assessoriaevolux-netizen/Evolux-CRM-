@@ -546,16 +546,13 @@
       nome: equipe.nome || '',
       descricao: equipe.descricao || '',
       membros_sb_ids: membros,
-      foto_url: equipe.foto || null,
-      updated_at: new Date().toISOString()
+      foto_url: equipe.foto || null
     };
     console.log('[_syncEquipe] payload:', JSON.stringify(payload), '| sb_id atual:', equipe.sb_id);
     if (equipe.sb_id) {
-      payload.id = equipe.sb_id;
-      const { data, error } = await window._sb.from('equipes').upsert(payload, { onConflict: 'id' }).select().single();
-      console.log('[_syncEquipe] upsert resultado:', data, error);
+      const { data, error } = await window._sb.from('equipes').update(payload).eq('id', equipe.sb_id).select().single();
+      console.log('[_syncEquipe] update resultado:', data, error);
       if (error) { showToast('Erro ao salvar equipe: '+error.message,'ti-alert-circle','#dc3545'); return; }
-      if (data) equipe.sb_id = data.id;
     } else {
       const { data, error } = await window._sb.from('equipes').insert(payload).select().single();
       console.log('[_syncEquipe] insert resultado:', data, error);
