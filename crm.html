@@ -532,6 +532,7 @@
       nome: equipe.nome || '',
       descricao: equipe.descricao || '',
       membros_sb_ids: membros,
+      foto_url: equipe.foto || null,
       updated_at: new Date().toISOString()
     };
     if (equipe.sb_id) {
@@ -564,6 +565,7 @@
           nome: row.nome || '',
           descricao: row.descricao || '',
           membroIds,
+          foto: row.foto_url || null,
         };
         if (existing) { Object.assign(existing, mapped); }
         else { equipes.push(mapped); }
