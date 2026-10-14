@@ -567,10 +567,15 @@
       _eqQ=_eqQ.eq('empresa_id',_empIdEq); // SEMPRE filtra
       const { data, error } = await _eqQ;
       if (error || !data) return;
-      // Reconstrói o array do zero com os dados do banco (fonte da verdade)
+      // NUNCA reatribuir equipes = ... pois quebra a referência window.equipes
+      // Limpa mantendo a referência (splice) e repopula
       const sbIdsNoBanco = data.map(r => r.id);
-      // Remove locais que não existem mais no banco
-      equipes = equipes.filter(e => !e.sb_id || sbIdsNoBanco.includes(e.sb_id));
+      // Remove itens que sumiram do banco (splice in place, sem reatribuir)
+      for(let i = equipes.length - 1; i >= 0; i--){
+        if(equipes[i].sb_id && !sbIdsNoBanco.includes(equipes[i].sb_id)){
+          equipes.splice(i, 1);
+        }
+      }
       data.forEach(row => {
         const existing = equipes.find(e => e.sb_id === row.id);
         const membroIds = (row.membros_sb_ids || []).map(sbId => {
