@@ -3721,10 +3721,17 @@ function renderDashboard(){
   const credTotal=_leadsD.filter(l=>l.etapa==='Fechado / Convertido').reduce((s,l)=>s+l.credito,0);
   document.getElementById('hero-pipeline').textContent=pipVal>=1000000?'R$'+Math.round(pipVal/100000)/10+'M':pipVal>=1000?'R$'+Math.round(pipVal/1000)+'k':a;
   document.getElementById('hero-conversao').textContent=tx+'%';
-  // Total vendido = soma do credito dos users visíveis (vem do banco, sempre atualizado)
-  const _usersVisiveis=users.filter(u=>_visD.has(u.id));
-  const rankTotal=_usersVisiveis.reduce((s,u)=>s+(u.credito||0),0);
-  document.getElementById('hero-credito').textContent=rankTotal>=1000000?'R$'+Math.round(rankTotal/100000)/10+'M':rankTotal>=1000?'R$'+Math.round(rankTotal/1000)+'k':'R$'+rankTotal;
+  // Total vendido = busca direto da tabela vendas (fonte da verdade, não profiles.credito)
+  const _empIdDash = window._empresaIdDireto;
+  if(_empIdDash){
+    window._sb.from('vendas').select('valor_credito').eq('empresa_id',_empIdDash).then(({data})=>{
+      const rankTotal=(data||[]).reduce((s,r)=>s+(r.valor_credito||0),0);
+      const el=document.getElementById('hero-credito');
+      if(el) el.textContent=rankTotal>=1000000?'R$'+Math.round(rankTotal/100000)/10+'M':rankTotal>=1000?'R$'+Math.round(rankTotal/1000)+'k':'R$'+rankTotal;
+    });
+  } else {
+    document.getElementById('hero-credito').textContent='R$0';
+  }
   const spark=(color,pts)=>{const w=80,h=32;const path=pts.map((y,i)=>`${i===0?'M':'L'}${Math.round(i*(w/(pts.length-1)))},${Math.round(h-y*(h/Math.max(...pts,1)))}`).join(' ');return `<svg class="mc2-spark" viewBox="0 0 ${w} ${h}" width="80" height="32" fill="none"><path d="${path}" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;};
   document.getElementById('metrics-row').innerHTML=`
     <div class="mc2 cn"><div class="mc2-icon"><i class="ti ti-users"></i></div><div class="mc2-body"><div class="mc2-lbl">Total de leads</div><div class="mc2-val">${t}</div><div class="mc2-sub">no pipeline</div></div>${spark('#6366f1',[10,14,12,18,15,22,19,26,24])}</div>
@@ -9220,10 +9227,13 @@ async function _mvExcluirVendaExec(vendaId){
 
 // Invalida cache de ranking e força re-render do painel + ranking
 async function _mvInvalidarCacheEAtualizar(){
-  // Recarrega profiles do Supabase para pegar credito/vendas atualizados
-  try{ if(window._loadProfiles) await window._loadProfiles(); }catch(e){}
+  // Recalibra profiles a partir das vendas reais (corrige dados sujos)
+  try{ await _recalibrarProfiles(); }catch(e){
+    // fallback: só recarrega sem recalibrar
+    try{ if(window._loadProfiles) await window._loadProfiles(); }catch(e2){}
+  }
 
-  // Muta o objeto em vez de reatribuir, para que window._rankVendasCache seja invalidado também
+  // Invalida cache de ranking
   _rankVendasCache.periodo = null;
   _rankVendasCache.data = null;
   _rankVendasCache.resultado = null;
@@ -9238,6 +9248,40 @@ async function _mvInvalidarCacheEAtualizar(){
 }
 
 window.renderMinhasVendas = renderMinhasVendas;
+
+// Recalibra profiles.credito e profiles.vendas a partir das linhas reais da tabela vendas
+async function _recalibrarProfiles(){
+  const empId = window._empresaIdDireto;
+  if(!empId || !window._sb) return;
+  try{
+    // Busca todas as vendas da empresa
+    const {data:todasVendas} = await window._sb.from('vendas').select('user_id,valor_credito').eq('empresa_id',empId);
+    if(!todasVendas) return;
+
+    // Agrupa por user_id
+    const mapa = {};
+    for(const v of todasVendas){
+      if(!v.user_id) continue;
+      if(!mapa[v.user_id]) mapa[v.user_id] = {vendas:0, credito:0};
+      mapa[v.user_id].vendas++;
+      mapa[v.user_id].credito += (v.valor_credito||0);
+    }
+
+    // Busca todos os profiles da empresa
+    const {data:profs} = await window._sb.from('profiles').select('id').eq('empresa_id',empId);
+    if(!profs) return;
+
+    // Atualiza cada profile com os valores reais
+    for(const prof of profs){
+      const real = mapa[prof.id] || {vendas:0, credito:0};
+      await window._sb.from('profiles').update({vendas: real.vendas, credito: real.credito}).eq('id', prof.id);
+    }
+
+    // Recarrega profiles locais
+    if(window._loadProfiles) await window._loadProfiles();
+  } catch(e){ console.warn('[recalibrar]', e); }
+}
+window._recalibrarProfiles = _recalibrarProfiles;
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 function sendPrompt(txt){
