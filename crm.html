@@ -546,7 +546,8 @@
       empresa_id: empresaId,
       nome: equipe.nome || '',
       'descrição': equipe.descricao || '',
-      membros_sb_ids: membros
+      membros_sb_ids: membros,
+      foto_url: equipe.foto || null
     };
     if (equipe.sb_id) {
       const { data, error } = await window._sb.from('equipes').update(payload).eq('id', equipe.sb_id).select().single();
@@ -588,7 +589,7 @@
           nome: row.nome || '',
           descricao: row['descrição'] || '',
           membroIds,
-          foto: null,
+          foto: row.foto_url || null,
         };
         if (existing) { Object.assign(existing, mapped); }
         else { equipes.push(mapped); }
