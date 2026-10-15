@@ -3723,7 +3723,9 @@ function showTab(id,btn){
 // Oculta/mostra botões do nav de acordo com permissões do usuário logado
 function applyNavPermissions(){
   // Mostra itens exclusivos do superadmin
-  const isSuperAdmin=getMe()&&(getMe().role==='superadmin'||getMe().role==='master');
+  // Checa getMe() OU role direto da sessão (caso master sem empresa ainda carregada)
+  const _meRole=getMe()?.role||window._session?.user?.user_metadata?.role||'';
+  const isSuperAdmin=_meRole==='superadmin'||_meRole==='master';
   document.querySelectorAll('.sb-superadmin-only').forEach(el=>{el.style.display=isSuperAdmin?'':'none';});
   const me=_getMeRole();
   if(!me) return;
@@ -8397,8 +8399,20 @@ async function criarEmpresaConfirm(){
   const nome=document.getElementById('ne-nome')?.value.trim();
   const plano=document.getElementById('ne-plano')?.value||'basico';
   if(!nome){showToast('Informe o nome da empresa.','ti-alert-triangle','#d97706');return;}
-  const {data,error}=await window._sb.from('empresas').insert({nome,plano,ativo:true}).select().single();
-  if(error){showToast('Erro: '+error.message,'ti-alert-circle','#dc3545');return;}
+  // Usa Edge Function para contornar RLS (service_role no servidor)
+  let data=null;
+  try{
+    let _token=window._session?.access_token||'';
+    try{const {data:{session:_fs}}=await window._sb.auth.getSession();if(_fs?.access_token)_token=_fs.access_token;}catch(e){}
+    const res=await fetch(`${window._sbUrl}/functions/v1/create-empresa`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':window._sbAnon,'Authorization':`Bearer ${_token}`},
+      body:JSON.stringify({nome,plano})
+    });
+    const json=await res.json();
+    if(!res.ok||json.error){showToast('Erro: '+(json.error||`HTTP ${res.status}`),'ti-alert-circle','#dc3545');return;}
+    data=json.data;
+  }catch(err){showToast('Erro ao criar empresa: '+err.message,'ti-alert-circle','#dc3545');return;}
   // NÃO altera empresa_id do master — ele permanece na própria empresa
   // O gestor convidado ficará vinculado a esta nova empresa ao aceitar o convite
   document.getElementById('modal-nova-empresa')?.remove();
