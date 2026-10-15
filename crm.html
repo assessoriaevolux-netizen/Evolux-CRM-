@@ -4417,7 +4417,12 @@ function syncSim(){
   }
   simPopulateTabelas(a);
   const sl=document.getElementById('sLeadSel');
-  if(sl)sl.innerHTML='<option value="">Selecionar lead cadastrado...</option>'+leads.map(l=>`<option value="${l.id}">${l.nome} — ${l.tipo} · ${fmtR(l.credito)}</option>`).join('');
+  if(sl){
+    const me=getMe();
+    const isAdmin=me&&(me.role==='admin'||me.role==='gestor'||me.role==='supervisor');
+    const leadsVisiveis=isAdmin?leads:leads.filter(l=>l.responsavelId===me?.id);
+    sl.innerHTML='<option value="">Selecionar lead cadastrado...</option>'+leadsVisiveis.map(l=>`<option value="${l.id}">${l.nome} — ${l.tipo} · ${fmtR(l.credito)}</option>`).join('');
+  }
 }
 
 function simSelectAdmin(){
