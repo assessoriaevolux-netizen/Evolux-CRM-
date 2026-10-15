@@ -15,7 +15,9 @@
 (function(){
   const SB_URL='https://uekeeutycmqsswrhspwv.supabase.co';
   const SB_KEY='sb_publishable_nJ-BnFkD8sG8mv4f7Uc-Uw_v87ZOIl9';
+  const SB_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVla2VldXR5Y21xc3N3cmhzcHd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE0MDYyNDgsImV4cCI6MjEwNjk4MjI0OH0.h3YeJbSPCbWfEYF-bjV71-KA-WQ9bAf9mBxO4EWtUBs';
   window._sbUrl=SB_URL;
+  window._sbAnon=SB_ANON;
   window._sb=supabase.createClient(SB_URL,SB_KEY);
 
   // ── INATIVIDADE OBRIGATÓRIA — 30 dias sem uso → logout ────────────────────
@@ -6460,7 +6462,7 @@ async function inviteUser(){
   try{
     const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/create-user',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${_freshToken}`},
+      headers:{'Content-Type':'application/json','apikey':window._sbAnon,'Authorization':`Bearer ${_freshToken}`},
       body:JSON.stringify({email,senha,nome:nomeVal,role,meta:metaRaw,hierarquia_id:hierarquiaId,equipe_id:equipeId})
     });
     let json={};
