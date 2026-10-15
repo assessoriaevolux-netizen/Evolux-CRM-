@@ -6450,10 +6450,16 @@ async function inviteUser(){
   let errMsg='';
 
   // 1ª tentativa: Edge Function com senha definida pelo admin
+  // Garante token fresco direto do Supabase
+  let _freshToken = window._session?.access_token || '';
+  try{
+    const {data:{session:_fs}}=await window._sb.auth.getSession();
+    if(_fs?.access_token) _freshToken=_fs.access_token;
+  }catch(e){}
   try{
     const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/create-user',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${window._session?.access_token||''}`},
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${_freshToken}`},
       body:JSON.stringify({email,senha,nome:nomeVal,role,meta:metaRaw,hierarquia_id:hierarquiaId,equipe_id:equipeId})
     });
     let json={};
