@@ -4425,15 +4425,20 @@ function syncSim(){
       if(role==='master'||role==='gestor'||role==='superadmin'){
         // Gestor vê todos da empresa
         leadsVisiveis=leads;
+      } else if(role==='representante'){
+        // Representante vê leads de todos os membros de todas as suas equipes
+        const minhasEquipes=equipes.filter(e=>(e.membroIds||[]).includes(me.id));
+        const ids=new Set([me.id]);
+        minhasEquipes.forEach(e=>(e.membroIds||[]).forEach(mid=>ids.add(mid)));
+        leadsVisiveis=leads.filter(l=>ids.has(l.responsavelId));
       } else if(role==='supervisor'){
-        // Supervisor vê leads dos membros das equipes que ele pertence
-        const minhasEquipes=equipes.filter(e=>e.membroIds&&e.membroIds.includes(me.id));
-        const membrosDasMinhasEquipes=new Set();
-        minhasEquipes.forEach(e=>(e.membroIds||[]).forEach(mid=>membrosDasMinhasEquipes.add(mid)));
-        membrosDasMinhasEquipes.add(me.id);
-        leadsVisiveis=leads.filter(l=>membrosDasMinhasEquipes.has(l.responsavelId));
+        // Supervisor vê leads dos membros das equipes que ele supervisiona
+        const minhasEquipes=equipes.filter(e=>e.supervisorId===me.id);
+        const ids=new Set([me.id]);
+        minhasEquipes.forEach(e=>(e.membroIds||[]).forEach(mid=>ids.add(mid)));
+        leadsVisiveis=leads.filter(l=>ids.has(l.responsavelId));
       } else {
-        // Representante/vendedor vê só os próprios
+        // Vendedor vê só os próprios
         leadsVisiveis=leads.filter(l=>l.responsavelId===me.id);
       }
     }
