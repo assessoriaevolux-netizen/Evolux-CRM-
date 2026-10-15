@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
       .eq('id', user.id)
       .single()
 
-    const rolesPermitidos = ['master', 'superadmin', 'administrador', 'gestor', 'admin']
+    const rolesPermitidos = ['master', 'superadmin', 'administrador', 'gestor', 'admin', 'representante', 'supervisor']
     if (!callerProfile || !rolesPermitidos.includes(callerProfile.role)) {
       return new Response(JSON.stringify({ error: 'Sem permissão para cadastrar usuários' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }

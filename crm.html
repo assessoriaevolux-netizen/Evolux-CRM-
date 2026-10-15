@@ -6507,9 +6507,17 @@ async function inviteUser(){
   const _meInv=getMe();
   const newU={id:nextUserId++,nome:nomeVal,email,role,sb_id:sbUserId||null,managerId:null,vendas:0,credito:0,meta:metaRaw,hierarquiaId,equipeId,empresaId:_meInv?.empresaId||null,
     perms:{...DPERMS[role]||DPERMS.vendedor},hperms:selH?{...selH.perms}:{}};
-  if(equipeId){const eq=equipes.find(e=>e.id===equipeId);if(eq){eq.membroIds=eq.membroIds||[];if(!eq.membroIds.includes(newU.id))eq.membroIds.push(newU.id);}}
   users.push(newU);
-  if(window._syncUser) await window._syncUser(newU); // FIX bug#9: await para garantir persistência
+  if(window._syncUser) await window._syncUser(newU);
+  // Adiciona à equipe DEPOIS de ter sb_id, para que _syncEquipe consiga persistir o membro
+  if(equipeId){
+    const eq=equipes.find(e=>e.id===equipeId);
+    if(eq){
+      eq.membroIds=eq.membroIds||[];
+      if(!eq.membroIds.includes(newU.id)) eq.membroIds.push(newU.id);
+      if(window._syncEquipe) await window._syncEquipe(eq);
+    }
+  }
 
   // Envia email de boas-vindas com credenciais via Edge Function
   try{
