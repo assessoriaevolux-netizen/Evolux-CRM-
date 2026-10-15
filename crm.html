@@ -7185,7 +7185,15 @@ function cfgRenderSection(){
   sections.equipes=(()=>{
     // Verificar permissão de criar equipe
     const meEq=getMe();
-    const podeNovaEq=meEq&&(meEq.role==='admin'||meEq.role==='gestor'||meEq.role==='supervisor'||meEq.role==='administrador'||(meEq.hperms&&meEq.hperms.equipe_add));
+    const podeNovaEq=meEq&&(meEq.role==='admin'||meEq.role==='gestor'||meEq.role==='master'||meEq.role==='administrador'||(meEq.hperms&&meEq.hperms.equipe_add));
+    const podeEditarEquipe=(eq)=>{
+      if(!meEq) return false;
+      if(meEq.role==='master'||meEq.role==='admin'||meEq.role==='administrador') return true;
+      if(meEq.role==='gestor' && eq.gestorId===meEq.id) return true;
+      if(meEq.role==='representante' && eq.representanteId===meEq.id) return true;
+      if(meEq.role==='supervisor' && eq.supervisorId===meEq.id) return true;
+      return false;
+    };
     const eqAv=(eq)=>{
       if(eq.foto) return `<img src="${eq.foto}" style="width:50px;height:50px;border-radius:12px;object-fit:cover;flex-shrink:0">`;
       const ini=eq.nome.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
@@ -7209,8 +7217,8 @@ function cfgRenderSection(){
             </div>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0">
-            <button class="btn bg bsm" onclick="openEqModal(${eq.id})"><i class="ti ti-pencil"></i></button>
-            <button class="btn bd bsm" onclick="deleteEquipe(${eq.id})"><i class="ti ti-trash"></i></button>
+            ${podeEditarEquipe(eq)?`<button class="btn bg bsm" onclick="openEqModal(${eq.id})"><i class="ti ti-pencil"></i></button>`:''}
+            ${podeEditarEquipe(eq)?`<button class="btn bd bsm" onclick="deleteEquipe(${eq.id})"><i class="ti ti-trash"></i></button>`:''}
           </div>
         </div>
         ${mbs.length?`<div style="padding:0 18px 14px;border-top:1px solid var(--c1);padding-top:12px">
@@ -8774,6 +8782,14 @@ async function saveEquipe(){
   cfgShow('equipes');
 }
 function deleteEquipe(id){
+  const me=getMe();
+  const eq=equipes.find(e=>e.id===id);
+  if(!eq||!me) return;
+  const podeExcluir=me.role==='master'||me.role==='admin'||me.role==='administrador'
+    ||(me.role==='gestor'&&eq.gestorId===me.id)
+    ||(me.role==='representante'&&eq.representanteId===me.id)
+    ||(me.role==='supervisor'&&eq.supervisorId===me.id);
+  if(!podeExcluir){showToast('Sem permissão para excluir esta equipe.','ti-lock','#dc3545');return;}
   showConfirm('Excluir esta equipe? Os membros não serão removidos, apenas desvinculados.',function(){
     _deleteEquipeExec(id);
   });
