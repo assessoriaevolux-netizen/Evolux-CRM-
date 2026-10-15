@@ -542,12 +542,18 @@
       return u?.sb_id || null;
     }).filter(Boolean);
     // Colunas confirmadas: empresa_id, nome, descrição (com acento), membros_sb_ids
+    const gestorUser=users.find(u=>u.id===equipe.gestorId);
+    const repUser=users.find(u=>u.id===equipe.representanteId);
+    const supUser=users.find(u=>u.id===equipe.supervisorId);
     const payload = {
       empresa_id: empresaId,
       nome: equipe.nome || '',
       descricao: equipe.descricao || '',
       membros_sb_ids: membros,
-      foto_url: equipe.foto || null
+      foto_url: equipe.foto || null,
+      gestor_sb_id: gestorUser?.sb_id || null,
+      representante_sb_id: repUser?.sb_id || null,
+      supervisor_sb_id: supUser?.sb_id || null,
     };
     if (equipe.sb_id) {
       const { data, error } = await window._sb.from('equipes').update(payload).eq('id', equipe.sb_id).select().single();
@@ -583,6 +589,9 @@
           const u = users.find(x => x.sb_id === sbId);
           return u ? u.id : null;
         }).filter(Boolean);
+        const gestorLocal=users.find(u=>u.sb_id===row.gestor_sb_id);
+        const repLocal=users.find(u=>u.sb_id===row.representante_sb_id);
+        const supLocal=users.find(u=>u.sb_id===row.supervisor_sb_id);
         const mapped = {
           id: existing ? existing.id : (nextEquipeId++),
           sb_id: row.id,
@@ -590,6 +599,9 @@
           descricao: row.descricao || '',
           membroIds,
           foto: row.foto_url || null,
+          gestorId: gestorLocal?.id || null,
+          representanteId: repLocal?.id || null,
+          supervisorId: supLocal?.id || existing?.supervisorId || null,
         };
         if (existing) { Object.assign(existing, mapped); }
         else { equipes.push(mapped); }
@@ -4328,8 +4340,10 @@ function populateSelects(){
   const fe2=document.getElementById('fEtapa2');if(fe2)fe2.innerHTML=ETAPAS.map(e=>`<option>${e}</option>`).join('');
   const fr=document.getElementById('fResp');if(fr)fr.innerHTML=users.map(u=>`<option value="${u.id}">${u.nome} (${getHierLabel(u)})</option>`).join('');
   // vvend é populado exclusivamente por rankAtualizarSidebar() com as regras de permissão corretas — NÃO sobrescrever aqui
-  const lc=document.getElementById('lCliente');if(lc)lc.innerHTML=leads.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');
-  const sl=document.getElementById('sLeadSel');if(sl)sl.innerHTML='<option value="">Selecionar lead existente...</option>'+leads.map(l=>`<option value="${l.id}">${l.nome} — ${l.tipo} · ${fmtR(l.credito)}</option>`).join('');
+  const _visLc=getVisiveisParaMim();
+  const _leadsLc=leads.filter(l=>_visLc.has(l.responsavelId));
+  const lc=document.getElementById('lCliente');if(lc)lc.innerHTML=_leadsLc.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');
+  const sl=document.getElementById('sLeadSel');if(sl)sl.innerHTML='<option value="">Selecionar lead existente...</option>'+_leadsLc.map(l=>`<option value="${l.id}">${l.nome} — ${l.tipo} · ${fmtR(l.credito)}</option>`).join('');
   // Atualiza selects de hierarquia em todo o CRM
   const hierOpts='<option value="">Hierarquia...</option>'+hierarquias.slice().sort((a,b)=>a.ordem-b.ordem).map(h=>`<option value="${h.id}">${h.nome}</option>`).join('');
   const uHier=document.getElementById('uHierarquia');if(uHier)uHier.innerHTML=hierOpts;
@@ -8640,9 +8654,11 @@ function openEqModal(id){
   // popular selects
   const sS=document.getElementById('eq-sup');
   const sG=document.getElementById('eq-gest');
+  const sR=document.getElementById('eq-rep');
   const sM=document.getElementById('eq-mb-sel');
   if(sS) sS.innerHTML='<option value="">Nenhum</option>'+users.map(u=>`<option value="${u.id}">${u.nome} (${RL[u.role]||u.role})</option>`).join('');
-  if(sG) sG.innerHTML='<option value="">Nenhum</option>'+users.filter(u=>u.role==='gestor'||u.role==='administrador').map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+  if(sG) sG.innerHTML='<option value="">Selecionar gestor...</option>'+users.filter(u=>u.role==='gestor'||u.role==='administrador'||u.role==='master').map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+  if(sR) sR.innerHTML='<option value="">Nenhum</option>'+users.filter(u=>u.role==='representante').map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
   if(sM) sM.innerHTML='<option value="">+ Adicionar membro...</option>'+users.map(u=>`<option value="${u.id}">${u.nome} (${RL[u.role]||u.role})</option>`).join('');
 
   document.getElementById('eq-modal-tit').textContent = id ? 'Editar equipe' : 'Nova equipe';
@@ -8653,7 +8669,7 @@ function openEqModal(id){
   document.getElementById('eq-status').value = 'ativa';
   if(document.getElementById('eq-meta')) document.getElementById('eq-meta').value='';
   if(document.getElementById('eq-periodo')) document.getElementById('eq-periodo').value='mensal';
-  if(sS) sS.value=''; if(sG) sG.value='';
+  if(sS) sS.value=''; if(sG) sG.value=''; if(sR) sR.value='';
   // reset foto preview
   const fp=document.getElementById('eq-foto-prev');
   if(fp) fp.innerHTML='<i class="ti ti-camera" style="font-size:22px;color:#fff"></i>';
@@ -8666,6 +8682,7 @@ function openEqModal(id){
     document.getElementById('eq-status').value=eq.status||'ativa';
     if(sS) sS.value=eq.supervisorId||'';
     if(sG) sG.value=eq.gestorId||'';
+    if(sR) sR.value=eq.representanteId||'';
     document.getElementById('eq-foto-data').value=eq.foto||'';
     if(eq.foto&&fp) fp.innerHTML=`<img src="${eq.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:12px">`;
     if(document.getElementById('eq-meta')&&eq.meta) document.getElementById('eq-meta').value=fmtMetaVal(eq.meta);
@@ -8724,12 +8741,15 @@ function renderEqMbList(){
 async function saveEquipe(){
   const nome=document.getElementById('eq-nome').value.trim();
   if(!nome){showToast('Informe o nome da equipe.','ti-alert-triangle','#d97706');return;}
+  const gestorVal=parseInt(document.getElementById('eq-gest').value)||null;
+  if(!gestorVal){showToast('Selecione um gestor responsável.','ti-alert-triangle','#d97706');return;}
   const editId=parseInt(document.getElementById('eq-edit-id').value)||null;
   const obj={
     nome,
     descricao:document.getElementById('eq-desc').value.trim(),
     supervisorId:parseInt(document.getElementById('eq-sup').value)||null,
-    gestorId:parseInt(document.getElementById('eq-gest').value)||null,
+    gestorId:gestorVal,
+    representanteId:parseInt(document.getElementById('eq-rep')?.value)||null,
     status:document.getElementById('eq-status').value,
     membroIds:[..._eqMbTmp],
     foto:document.getElementById('eq-foto-data').value||null,
@@ -8823,9 +8843,23 @@ function getVisiveisParaMim(){
   // usuários da mesma empresa
   const usersEmpresa=users.filter(u=>u.empresaId===me.empresaId);
   const meuNivel=getNivelHier(me);
-  // Gestor/Admin (nível 1 ou role admin) vê TODOS da empresa
-  if(meuNivel===1||me.role==='admin') return new Set(usersEmpresa.map(u=>u.id));
-  // Todos os demais (representantes, supervisores, etc.) só veem os próprios leads
+  // Gestor/Admin (nível 1 ou role admin/gestor) vê TODOS da empresa
+  if(meuNivel===1||me.role==='admin'||me.role==='gestor') return new Set(usersEmpresa.map(u=>u.id));
+  // Representante: vê leads de todos os membros das equipes que ele é responsável ou membro
+  if(me.role==='representante'){
+    const minhasEquipes=(window.equipes||[]).filter(e=>e.representanteId===me.id||(e.membroIds||[]).includes(me.id));
+    const ids=new Set([me.id]);
+    minhasEquipes.forEach(e=>(e.membroIds||[]).forEach(mid=>ids.add(mid)));
+    return ids;
+  }
+  // Supervisor: vê leads dos membros das equipes que ele supervisiona
+  if(me.role==='supervisor'){
+    const minhasEquipes=(window.equipes||[]).filter(e=>e.supervisorId===me.id);
+    const ids=new Set([me.id]);
+    minhasEquipes.forEach(e=>(e.membroIds||[]).forEach(mid=>ids.add(mid)));
+    return ids;
+  }
+  // Vendedor/consultor: só os próprios
   return new Set([me.id]);
 }
 
@@ -10062,7 +10096,8 @@ function _renderProtocoloPDF(proto,lead,consultor,dataFmt,horaIni,horaFim,obs){
       <div class="field" style="grid-column:1/-1"><label>Nome da equipe *</label><input type="text" id="eq-nome" class="fi" placeholder="Ex: Equipe Alpha"></div>
       <div class="field" style="grid-column:1/-1"><label>Descrição</label><textarea id="eq-desc" class="ha" placeholder="Objetivo desta equipe..."></textarea></div>
       <div class="field"><label>Supervisor responsável</label><select id="eq-sup" class="fi"><option value="">Nenhum</option></select></div>
-      <div class="field"><label>Gestor responsável</label><select id="eq-gest" class="fi"><option value="">Nenhum</option></select></div>
+      <div class="field"><label>Gestor responsável <span style="color:var(--r)">*</span></label><select id="eq-gest" class="fi"><option value="">Selecionar gestor...</option></select></div>
+      <div class="field"><label>Representante responsável <span style="font-size:11px;color:var(--tm)">(opcional)</span></label><select id="eq-rep" class="fi"><option value="">Nenhum</option></select></div>
       <div class="field" style="grid-column:1/-1">
         <label>Membros</label>
         <select id="eq-mb-sel" class="fi" onchange="addMembroEq()"><option value="">+ Adicionar membro...</option></select>
