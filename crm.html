@@ -7670,10 +7670,12 @@ function renderWhatsapp(){
       <span style="font-size:11.5px;color:var(--tm)">Visível para: <strong style="color:var(--g)">Representante+</strong></span>
     </div>`;
   }).join('') || '<p style="font-size:12px;color:var(--tm)">Nenhum número para configurar.</p>';
-  // grid de leads
+  // grid de leads — filtra pelos visíveis para o usuário logado
   waSelected=new Set();
+  const _waVisiveis=getVisiveisParaMim();
+  const _waLeads=leads.filter(l=>_waVisiveis.has(l.responsavelId));
   const gr=document.getElementById('wa-leads-grid');
-  gr.innerHTML=leads.map(l=>`
+  gr.innerHTML=_waLeads.map(l=>`
     <div class="wa-lead-item" id="wai-${l.id}" onclick="waToggle(${l.id})">
       <input type="checkbox" id="wac-${l.id}" onchange="waToggle(${l.id})">
       <div>
@@ -7683,6 +7685,7 @@ function renderWhatsapp(){
     </div>`).join('');
   waUpdateBar();
 }
+function _waLeadsVisiveis(){const v=getVisiveisParaMim();return leads.filter(l=>v.has(l.responsavelId));}
 function waToggle(id){
   if(waSelected.has(id)) waSelected.delete(id);
   else waSelected.add(id);
@@ -7692,10 +7695,10 @@ function waToggle(id){
   if(cb) cb.checked=waSelected.has(id);
   waUpdateBar();waPreview();
 }
-function waSelectAll(){leads.forEach(l=>waSelected.add(l.id));renderWaGrid();}
+function waSelectAll(){_waLeadsVisiveis().forEach(l=>waSelected.add(l.id));renderWaGrid();}
 function waSelectNone(){waSelected.clear();renderWaGrid();}
 function renderWaGrid(){
-  leads.forEach(l=>{
+  _waLeadsVisiveis().forEach(l=>{
     const el=document.getElementById('wai-'+l.id);
     const cb=document.getElementById('wac-'+l.id);
     if(el) el.classList.toggle('sel',waSelected.has(l.id));
@@ -7722,7 +7725,8 @@ function waPreview(){
   const pv=document.getElementById('wa-preview');
   if(!msg.trim()){pv.textContent='Escreva a mensagem acima para ver a prévia aqui com os dados do primeiro lead selecionado.';return;}
   const ids=[...waSelected];
-  const lead=ids.length?leads.find(l=>l.id===ids[0]):leads[0];
+  const _wlv=_waLeadsVisiveis();
+  const lead=ids.length?leads.find(l=>l.id===ids[0]):_wlv[0];
   if(!lead){pv.textContent=msg;return;}
   const txt=msg
     .replace(/\{\{nome\}\}/gi,lead.nome)
