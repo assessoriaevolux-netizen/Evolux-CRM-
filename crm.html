@@ -6456,14 +6456,29 @@ async function inviteUser(){
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${window._session?.access_token||''}`},
       body:JSON.stringify({email,senha,nome:nomeVal,role,meta:metaRaw,hierarquia_id:hierarquiaId,equipe_id:equipeId})
     });
-    const json=await res.json();
+    let json={};
+    try{json=await res.json();}catch(e){console.warn('Edge Function retornou resposta não-JSON, status:',res.status);}
+    console.log('[create-user] status:',res.status,'json:',json);
     if(json.id){sbUserId=json.id;criado=true;}
     else if(json.error) errMsg=json.error;
-    if(!res.ok&&!criado) throw new Error(json.error||'Edge Function retornou erro');
+    if(!res.ok&&!criado) throw new Error(json.error||json.message||`HTTP ${res.status}`);
   }catch(err){
-    console.warn('Edge Function indisponível:',err.message);
-    // NÃO usar signUp aqui — causaria troca de sessão, expulsando o admin
-    errMsg = 'Serviço de cadastro indisponível. Verifique sua conexão e tente novamente.';
+    console.warn('Edge Function create-user falhou:',err.message);
+    // 2ª tentativa: admin API direto via SDK (só funciona com service_role key configurada)
+    try{
+      const {data:adm,error:admErr}=await window._sb.auth.admin.createUser({
+        email,password:senha,email_confirm:true,
+        user_metadata:{nome:nomeVal,role}
+      });
+      if(admErr) throw new Error(admErr.message);
+      if(adm?.user?.id){sbUserId=adm.user.id;criado=true;console.log('[create-user] criado via admin API:',sbUserId);}
+      else throw new Error('admin.createUser não retornou ID');
+    }catch(err2){
+      console.warn('admin.createUser também falhou:',err2.message);
+      errMsg = err2.message.includes('not allowed')||err2.message.includes('service_role')
+        ? 'A Edge Function de cadastro está indisponível. Verifique o deploy no Supabase Dashboard → Edge Functions → create-user.'
+        : (err2.message||'Serviço de cadastro indisponível. Verifique sua conexão e tente novamente.');
+    }
   }
 
   if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-user-plus"></i>Cadastrar usuário';}
