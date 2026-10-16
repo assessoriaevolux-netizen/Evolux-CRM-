@@ -561,14 +561,27 @@
       gestor_sb_id: gestorUser?.sb_id || null,
       representante_sb_id: repUser?.sb_id || null,
       supervisor_sb_id: supUser?.sb_id || null,
+      meta: equipe.meta || 0,
+      periodo: equipe.periodo || 'mensal',
+      status: equipe.status || 'ativa',
     };
     if (equipe.sb_id) {
       const { data, error } = await window._sb.from('equipes').update(payload).eq('id', equipe.sb_id).select().single();
-      if (error) { showToast('Erro ao salvar equipe: '+error.message,'ti-alert-circle','#dc3545'); return; }
+      if (error) {
+        console.error('[_syncEquipe] update error:', error);
+        showToast('Erro ao salvar equipe: '+error.message,'ti-alert-circle','#dc3545');
+        return;
+      }
+      console.log('[_syncEquipe] updated ok:', data);
     } else {
       const { data, error } = await window._sb.from('equipes').insert(payload).select().single();
-      if (error) { showToast('Erro ao criar equipe: '+error.message,'ti-alert-circle','#dc3545'); return; }
+      if (error) {
+        console.error('[_syncEquipe] insert error:', error);
+        showToast('Erro ao criar equipe: '+error.message,'ti-alert-circle','#dc3545');
+        return;
+      }
       if (data) equipe.sb_id = data.id;
+      console.log('[_syncEquipe] inserted ok:', data);
     }
   };
 
@@ -609,6 +622,9 @@
           gestorId: gestorLocal?.id || null,
           representanteId: repLocal?.id || null,
           supervisorId: supLocal?.id || existing?.supervisorId || null,
+          meta: parseFloat(row.meta) || 0,
+          periodo: row.periodo || 'mensal',
+          status: row.status || 'ativa',
         };
         if (existing) { Object.assign(existing, mapped); }
         else { equipes.push(mapped); }
