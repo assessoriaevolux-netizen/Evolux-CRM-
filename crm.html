@@ -420,6 +420,8 @@
       obs: lead.obs || '',
       // Bug #11: administradora vinculada ao lead agora persistida no banco
       administradora: lead.admin || null,
+      // ID do Meta Ads — usado para deduplicação em importações futuras
+      meta_id: lead.metaId || null,
       data_criacao: lead.data ? lead.data.split('/').reverse().join('-') : new Date().toISOString().split('T')[0],
       updated_at: new Date().toISOString()
     };
@@ -465,6 +467,8 @@
           obs: row.obs || '',
           // Bug #11: restaura administradora salva no banco
           admin: row.administradora || null,
+          // ID do Meta Ads para deduplicação em re-importações
+          metaId: row.meta_id || null,
           data: row.data_criacao ? row.data_criacao.split('-').reverse().join('/') : '',
           responsavelId: resp ? resp.id : null,
         };
@@ -4220,7 +4224,9 @@ function importarLeadsCSV(input){
       }
       const credito=parseCreditoBR(creditoRaw);
 
-      // Telefone — aceita "telefone", "tel", "fone", "celular", "whatsapp"
+      // Telefone — aceita variações de coluna do Meta Ads e outros formatos
+      // "telefone" (maioria dos forms), "número_de_telefone" (FORMS INVESTIMENTOS | G),
+      // "phone_number" (forms internacionais), "tel", "fone", "celular", "whatsapp"
       // Também lida com notação científica do Excel (ex: 5.51197E+12 → "55 11 970958949")
       function normalizaTel(raw){
         if(!raw)return '';
@@ -4231,7 +4237,9 @@ function importarLeadsCSV(input){
         }
         return s;
       }
-      const tel=normalizaTel(obj['telefone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'');
+      // Cadeia de fallback: telefone → numero_de_telefone → phone_number → phone → tel/fone/celular/whatsapp
+      const telRaw=obj['telefone']||obj['numero_de_telefone']||obj['phone_number']||obj['phone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'';
+      const tel=normalizaTel(telRaw);
 
       // Tipo — aceita campo do Meta Ads "o_que_voce_pretende_comprar"
       // Normaliza: "Carro" → "Automóvel", "Moto" → "Moto", "Caminhão" → "Caminhão", "Imóvel" → "Imóvel"
@@ -4262,20 +4270,24 @@ function importarLeadsCSV(input){
       const obsExtra=[cidade&&estado?`${cidade}/${estado}`:cidade||estado, parcela?`Parcela: ${parcela}`:'', entrada?`Entrada: ${entrada}`:'', prazo?`Prazo: ${prazo}`:''].filter(Boolean).join(' | ');
       const obs=obsBase||(obsExtra)||'';
 
-      // Checagem de duplicata: mesmo nome (case-insensitive) OU mesmo telefone (se preenchido)
+      // Checagem de duplicata:
+      // 1) Pelo id do Meta Ads (campo "id" da exportação) — mais confiável
+      // 2) Pelo telefone limpo (apenas dígitos) — fallback
+      const metaId=obj['id']||'';
       const nomeLower=nome.trim().toLowerCase();
       const telLimpo=tel.replace(/\D/g,'');
-      const isDuplicado=telLimpo?leads.some(l=>{
-        const lTel=(l.tel||'').replace(/\D/g,'');
-        return lTel&&telLimpo===lTel;
-      }):false;
+      const isDuplicado=(metaId&&leads.some(l=>l.metaId&&l.metaId===metaId))
+        ||(telLimpo&&telLimpo.length>=8&&leads.some(l=>{
+            const lTel=(l.tel||'').replace(/\D/g,'');
+            return lTel&&telLimpo===lTel;
+          }));
       if(isDuplicado){
         duplicados++;
         duplicadosNomes.push(nome);
         continue;
       }
 
-      const _il={id:nextLeadId++,nome,tel,tipo,credito,etapa:etapaValida,
+      const _il={id:nextLeadId++,metaId:metaId||undefined,nome,tel,tipo,credito,etapa:etapaValida,
         origem,
         responsavelId:resp?resp.id:(users[0]?.id||1),
         atendimento:obj['atendimento']||'',
