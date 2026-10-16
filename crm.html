@@ -3770,15 +3770,22 @@ function renderDashboard(){
   const credTotal=_leadsD.filter(l=>l.etapa==='Fechado / Convertido').reduce((s,l)=>s+l.credito,0);
   document.getElementById('hero-pipeline').textContent=pipVal>=1000000?'R$'+Math.round(pipVal/100000)/10+'M':pipVal>=1000?'R$'+Math.round(pipVal/1000)+'k':a;
   document.getElementById('hero-conversao').textContent=tx+'%';
-  // Total vendido do mês atual = mesma lógica do ranking (data_fechamento || created_at)
+  // Total vendido do mês atual — filtra por usuário exceto para gestor/master que vê tudo
   const _empIdDash = window._empresaIdDireto;
+  const _meDash = getMe();
+  const _isGestorDash = _meDash && ['master','superadmin','admin','gestor'].includes(_meDash.role);
   if(_empIdDash){
-    window._sb.from('vendas').select('valor_credito,data_fechamento,created_at').eq('empresa_id',_empIdDash).then(({data})=>{
+    let _qVendas = window._sb.from('vendas').select('valor_credito,data_fechamento,created_at,user_id').eq('empresa_id',_empIdDash);
+    // Representante/supervisor/vendedor: filtra somente suas próprias vendas
+    if(!_isGestorDash && _meDash?.sb_id){
+      _qVendas = _qVendas.eq('user_id', _meDash.sb_id);
+    }
+    _qVendas.then(({data})=>{
       const hoje=new Date(); hoje.setHours(0,0,0,0);
       const ini=new Date(hoje.getFullYear(),hoje.getMonth(),1);
       const vendsMes=(data||[]).filter(r=>{
         const ds=(r.data_fechamento||r.created_at||'').split('T')[0];
-        if(!ds) return true; // sem data: inclui
+        if(!ds) return true;
         const d=new Date(ds+'T00:00:00');
         return d>=ini && d<=hoje;
       });
@@ -7236,10 +7243,12 @@ function cfgRenderSection(){
     const podeNovaEq=meEq&&(meEq.role==='admin'||meEq.role==='gestor'||meEq.role==='master'||meEq.role==='administrador'||(meEq.hperms&&meEq.hperms.equipe_add));
     const podeEditarEquipe=(eq)=>{
       if(!meEq) return false;
-      if(meEq.role==='master'||meEq.role==='admin'||meEq.role==='administrador') return true;
-      if(meEq.role==='gestor' && eq.gestorId===meEq.id) return true;
-      if(meEq.role==='representante' && eq.representanteId===meEq.id) return true;
+      // master, superadmin, admin e gestor podem editar qualquer equipe da empresa
+      if(meEq.role==='master'||meEq.role==='superadmin'||meEq.role==='admin'||meEq.role==='administrador'||meEq.role==='gestor') return true;
+      // supervisor pode editar sua própria equipe
       if(meEq.role==='supervisor' && eq.supervisorId===meEq.id) return true;
+      // representante pode editar equipe onde é representante
+      if(meEq.role==='representante' && eq.representanteId===meEq.id) return true;
       return false;
     };
     const eqAv=(eq)=>{
