@@ -8858,10 +8858,9 @@ function deleteEquipe(id){
   const me=getMe();
   const eq=equipes.find(e=>e.id===id);
   if(!eq||!me) return;
-  const podeExcluir=me.role==='master'||me.role==='admin'||me.role==='administrador'
-    ||(me.role==='gestor'&&eq.gestorId===me.id)
-    ||(me.role==='representante'&&eq.representanteId===me.id)
-    ||(me.role==='supervisor'&&eq.supervisorId===me.id);
+  const podeExcluir=me.role==='master'||me.role==='superadmin'||me.role==='admin'||me.role==='administrador'||me.role==='gestor'
+    ||(me.role==='supervisor'&&eq.supervisorId===me.id)
+    ||(me.role==='representante'&&eq.representanteId===me.id);
   if(!podeExcluir){showToast('Sem permissão para excluir esta equipe.','ti-lock','#dc3545');return;}
   showConfirm('Excluir esta equipe? Os membros não serão removidos, apenas desvinculados.',function(){
     _deleteEquipeExec(id);
