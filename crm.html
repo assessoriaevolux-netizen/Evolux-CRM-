@@ -565,23 +565,47 @@
       periodo: equipe.periodo || 'mensal',
       status: equipe.status || 'ativa',
     };
+    // Payload mínimo garantido (colunas que sempre existem)
+    const payloadBase = {
+      empresa_id: empresaId,
+      nome: equipe.nome || '',
+      descricao: equipe.descricao || '',
+      membros_sb_ids: membros,
+      foto_url: equipe.foto || null,
+    };
     if (equipe.sb_id) {
-      const { data, error } = await window._sb.from('equipes').update(payload).eq('id', equipe.sb_id).select().single();
+      // Tenta com payload completo primeiro
+      let { data, error } = await window._sb.from('equipes').update(payload).eq('id', equipe.sb_id).select().single();
       if (error) {
-        console.error('[_syncEquipe] update error:', error);
-        showToast('Erro ao salvar equipe: '+error.message,'ti-alert-circle','#dc3545');
-        return;
+        console.warn('[_syncEquipe] update completo falhou, tentando payload base:', error.message);
+        // Fallback: só campos base
+        const r2 = await window._sb.from('equipes').update(payloadBase).eq('id', equipe.sb_id).select().single();
+        if (r2.error) {
+          console.error('[_syncEquipe] update base também falhou:', r2.error);
+          showToast('Erro ao salvar equipe: '+r2.error.message,'ti-alert-circle','#dc3545');
+          return;
+        }
+        console.log('[_syncEquipe] updated (base) ok:', r2.data);
+        showToast('Equipe salva (execute o SQL no Supabase para salvar meta/período/gestor).','ti-alert-triangle','#d97706');
+      } else {
+        console.log('[_syncEquipe] updated ok:', data);
       }
-      console.log('[_syncEquipe] updated ok:', data);
     } else {
-      const { data, error } = await window._sb.from('equipes').insert(payload).select().single();
+      let { data, error } = await window._sb.from('equipes').insert(payload).select().single();
       if (error) {
-        console.error('[_syncEquipe] insert error:', error);
-        showToast('Erro ao criar equipe: '+error.message,'ti-alert-circle','#dc3545');
-        return;
+        console.warn('[_syncEquipe] insert completo falhou, tentando payload base:', error.message);
+        const r2 = await window._sb.from('equipes').insert(payloadBase).select().single();
+        if (r2.error) {
+          console.error('[_syncEquipe] insert base também falhou:', r2.error);
+          showToast('Erro ao criar equipe: '+r2.error.message,'ti-alert-circle','#dc3545');
+          return;
+        }
+        if (r2.data) equipe.sb_id = r2.data.id;
+        console.log('[_syncEquipe] inserted (base) ok:', r2.data);
+      } else {
+        if (data) equipe.sb_id = data.id;
+        console.log('[_syncEquipe] inserted ok:', data);
       }
-      if (data) equipe.sb_id = data.id;
-      console.log('[_syncEquipe] inserted ok:', data);
     }
   };
 
