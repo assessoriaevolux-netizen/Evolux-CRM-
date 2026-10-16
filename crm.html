@@ -3351,6 +3351,8 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
 <script>
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
 const ETAPAS=['Novo lead','Primeiro contato','Aguardando resposta','Proposta enviada','Negociação','Fechado / Convertido','Perdido'];
+// Labels visuais das etapas (mesmo índice que ETAPAS) — não altera as chaves do banco
+const ETAPAS_LABEL={'Negociação':'Negociação/Agendamento'};
 const EC=['#1a6e3c','#c8870a','#5b3db0','#1e3a6e','#a06010','#22954f','#c0392b'];
 const ES=['s0','s1','s2','s3','s4','s5','s6'];
 const TMAP={Imóvel:'ti',Automóvel:'ta',Moto:'tm3','Serviço':'ts3'};
@@ -3806,7 +3808,7 @@ function renderDashboard(){
   }).join(''):'<p style="color:var(--tm);font-size:12.5px;padding:12px 0">Nenhuma atividade ainda.</p>';
 
   const max=Math.max(...ETAPAS.map(e=>_leadsD.filter(l=>l.etapa===e).length),1);
-  document.getElementById('dash-etapas').innerHTML=ETAPAS.map((e,i)=>{const c=_leadsD.filter(l=>l.etapa===e).length;return `<div class="br"><span class="brl">${e}</span><div class="brt"><div class="brf" style="width:${Math.round(c/max*100)}%;background:${EC[i]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
+  document.getElementById('dash-etapas').innerHTML=ETAPAS.map((e,i)=>{const c=_leadsD.filter(l=>l.etapa===e).length;return `<div class="br"><span class="brl">${ETAPAS_LABEL[e]||e}</span><div class="brt"><div class="brf" style="width:${Math.round(c/max*100)}%;background:${EC[i]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
 }
 
 // ─── FUNIL SELECAO ────────────────────────────────────────────────────────────
@@ -4001,7 +4003,7 @@ function renderKanban(){
     const allColSel=cards.length>0&&cards.every(l=>funilSelected.has(l.id));
     return `<div class="col" ondragover="onDragOver(event,this)" ondragleave="onDragLeave(event,this)" ondrop="onDrop(event,'${etapa.replace(/'/g,"\\'")}')">
       <div class="col-hdr">
-        <span class="cn2"><span class="cdot" style="background:${EC[i]}"></span>${etapa}</span>
+        <span class="cn2"><span class="cdot" style="background:${EC[i]}"></span>${ETAPAS_LABEL[etapa]||etapa}</span>
         <div style="display:flex;align-items:center;gap:6px">
           <span class="ccnt">${cards.length}</span>
           ${funilSelMode?`<input type="checkbox" title="Selecionar coluna" ${allColSel?'checked':''} onclick="event.stopPropagation();toggleSelectColuna('${etapa.replace(/'/g,"\\'")}');renderKanban()" style="accent-color:var(--b);cursor:pointer">`:''}
@@ -4070,7 +4072,7 @@ function openLeadDetalhe(id){
   document.getElementById('ld-tipo').value=l.tipo;
   document.getElementById('ld-credito').value=l.credito?l.credito.toLocaleString('pt-BR'):'';
   const ldEtapa=document.getElementById('ld-etapa');
-  ldEtapa.innerHTML=ETAPAS.map(e=>`<option${e===l.etapa?' selected':''}>${e}</option>`).join('');
+  ldEtapa.innerHTML=ETAPAS.map(e=>`<option value="${e}"${e===l.etapa?' selected':''}>${ETAPAS_LABEL[e]||e}</option>`).join('');
   document.getElementById('ld-origem').value=l.origem||'';
   const ldResp=document.getElementById('ld-resp');
   // Popula com usuários visíveis (quem pode ser responsável)
@@ -4341,8 +4343,8 @@ function onDrop(e,etapa){
 
 // ─── TABELA ───────────────────────────────────────────────────────────────────
 function populateSelects(){
-  const fe=document.getElementById('fEtapa');if(fe)fe.innerHTML='<option value="">Todas as etapas</option>'+ETAPAS.map(e=>`<option>${e}</option>`).join('');
-  const fe2=document.getElementById('fEtapa2');if(fe2)fe2.innerHTML=ETAPAS.map(e=>`<option>${e}</option>`).join('');
+  const fe=document.getElementById('fEtapa');if(fe)fe.innerHTML='<option value="">Todas as etapas</option>'+ETAPAS.map(e=>`<option value="${e}">${ETAPAS_LABEL[e]||e}</option>`).join('');
+  const fe2=document.getElementById('fEtapa2');if(fe2)fe2.innerHTML=ETAPAS.map(e=>`<option value="${e}">${ETAPAS_LABEL[e]||e}</option>`).join('');
   const fr=document.getElementById('fResp');if(fr)fr.innerHTML=users.map(u=>`<option value="${u.id}">${u.nome} (${getHierLabel(u)})</option>`).join('');
   // vvend é populado exclusivamente por rankAtualizarSidebar() com as regras de permissão corretas — NÃO sobrescrever aqui
   const _visLc=getVisiveisParaMim();
