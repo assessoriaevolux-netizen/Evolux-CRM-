@@ -4268,8 +4268,8 @@ function importarLeadsCSV(input){
       const nome=obj['nome']||obj['nome_completo']||obj['name']||obj['cliente']||obj['lead']||'';
       if(!nome){skipped++;continue;}
 
-      // Responsável
-      const respNome=(obj['responsavel']||obj['vendedor']||obj['representante']||'').toLowerCase();
+      // Responsável — aceita "proprietario" (coluna do HubSpot/RD Station) além dos campos padrão
+      const respNome=(obj['responsavel']||obj['vendedor']||obj['representante']||obj['proprietario']||'').toLowerCase();
       const resp=users.find(u=>u.nome.toLowerCase()===respNome)||users[0];
 
       // Etapa
@@ -4341,7 +4341,7 @@ function importarLeadsCSV(input){
       // Origem — aceita "Fonte" e "Formulário" (colunas do LEADS_IMOVEIS.csv) além do Meta Ads
       const origem=obj['origem']||obj['formulario']||obj['fonte']||obj['platform']||obj['campaign_name']||obj['source']||'';
 
-      // Observações — agrega dados extras do Meta Ads
+      // Observações — agrega todos os campos extras disponíveis no CSV
       const cidade=obj['cidade']||obj['city']||'';
       const estado=obj['estado']||obj['state']||'';
       const parcela=obj['qual_parcela_mensal_cabe_no_seu_orcamento?']||obj['qual_parcela_mensal_cabe_no_seu_orçamento?']
@@ -4350,7 +4350,23 @@ function importarLeadsCSV(input){
         ||obj['quanto_voce_tem_disponivel_para_dar_de_entrada?']||obj['quanto_você_tem_disponível_para_dar_de_entrada?']||'';
       const prazo=obj['quando_voce_pretende_comprar_seu_veiculo?_🔥']||obj['quando_você_pretende_comprar_seu_veículo?_🔥']||'';
       const obsBase=obj['obs']||obj['observacoes']||obj['observacao']||'';
-      const obsExtra=[cidade&&estado?`${cidade}/${estado}`:cidade||estado, parcela?`Parcela: ${parcela}`:'', entrada?`Entrada: ${entrada}`:'', prazo?`Prazo: ${prazo}`:''].filter(Boolean).join(' | ');
+      // Campos do HubSpot/RD Station: formulario, canal, email, rotulos, criado em
+      const _formularioObs=obj['formulario']||'';
+      const _canalObs=obj['canal']||'';
+      const _emailObs=obj['email']||'';
+      const _rotulosObs=obj['rotulos']||'';
+      const _criadoObs=obj['criado em']||'';
+      const obsExtra=[
+        cidade&&estado?`${cidade}/${estado}`:cidade||estado,
+        parcela?`Parcela: ${parcela}`:'',
+        entrada?`Entrada: ${entrada}`:'',
+        prazo?`Prazo: ${prazo}`:'',
+        _formularioObs?`Formulário: ${_formularioObs}`:'',
+        _canalObs?`Canal: ${_canalObs}`:'',
+        _emailObs?`Email: ${_emailObs}`:'',
+        _rotulosObs?`Rótulos: ${_rotulosObs}`:'',
+        _criadoObs?`Captado em: ${_criadoObs}`:''
+      ].filter(Boolean).join(' | ');
       const obs=obsBase||(obsExtra)||'';
 
       // Checagem de duplicata:
