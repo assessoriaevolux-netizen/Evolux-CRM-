@@ -4513,20 +4513,20 @@ function importarLeadsCSV(input){
       imported++;
     }
     input.value='';
-    if(imported===0&&duplicados===0){
-      showToast(`Nenhum lead importado. Verifique se o CSV tem coluna "nome".`,'ti-alert-triangle','#d97706');
-    } else if(imported>0&&duplicados===0){
-      showToast(`${imported} lead${imported!==1?'s':''} importado${imported!==1?'s':''} com sucesso!`,'ti-check','#1db954');
-    } else if(imported===0&&duplicados>0){
+    renderKanban();renderDashboard();renderTable();renderNotifPanel();
+    if(imported>0){
+      // Navega para o Funil e mostra toast
+      const btnFunil=document.querySelector('.nb[onclick*="funil"]');
+      showTab('funil',btnFunil);
+      const msg=duplicados>0
+        ?`${imported} importado${imported!==1?'s':''} · ${duplicados} duplicado${duplicados!==1?'s':''} ignorado${duplicados!==1?'s':''}`
+        :`${imported} lead${imported!==1?'s':''} importado${imported!==1?'s':''} com sucesso!`;
+      setTimeout(()=>showToast(msg,'ti-check','#1db954'),300);
+    } else if(duplicados>0){
       showToast(`Nenhum lead novo — ${duplicados} já cadastrado${duplicados!==1?'s':''} no sistema.`,'ti-copy-off','#d97706');
     } else {
-      setTimeout(()=>{
-        showToast(`${imported} importado${imported!==1?'s':''} · ${duplicados} duplicado${duplicados!==1?'s':''} ignorado${duplicados!==1?'s':''}`,'ti-copy-off','#d97706');
-      },100);
+      showToast(`Nenhum lead importado. Verifique se o CSV tem coluna "nome".`,'ti-alert-triangle','#d97706');
     }
-    renderKanban();renderDashboard();renderTable();renderNotifPanel();
-    // Navega para o Funil automaticamente para o usuário ver os leads
-    if(imported>0) setTimeout(()=>navTo('funil'),200);
     // Sincroniza com o banco em lote (50 por vez) para evitar rate limit
     if(window._syncLead&&imported>0){
       const novos=leads.slice(-imported);
