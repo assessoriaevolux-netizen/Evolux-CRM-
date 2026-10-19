@@ -4300,106 +4300,155 @@ function importarLeadsCSV(input){
     const headers=parseCSVLine(lines[0],sep).map(h=>h.replace(/"/g,'').replace(/^\uFEFF/,'').trim().toLowerCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g,''));// remove acentos do header
 
-    // Funções auxiliares de parsing
-    function parseCreditoBR(s){
-      if(!s)return 0;
-      let norm=s.replace(/_/g,' ').replace(/\s+/g,' ').trim();
-      const faixaMatch=norm.match(/([\d.,]+)\s*mil\s+a\s+([\d.,]+)\s*mil/i);
-      if(faixaMatch){const n=parseFloat(faixaMatch[1].replace('.','').replace(',','.'));return isNaN(n)?0:n*1000;}
-      const acimaMatch=norm.match(/acima[^0-9]*([\d.,]+)\s*mil/i);
-      if(acimaMatch){const n=parseFloat(acimaMatch[1].replace('.','').replace(',','.'));return isNaN(n)?0:n*1000;}
-      const milMatch=norm.match(/([\d.,]+)\s*mil/i);
-      if(milMatch){const n=parseFloat(milMatch[1].replace('.','').replace(',','.'));return isNaN(n)?0:n*1000;}
-      const nums=norm.replace(/[^\d.,]/g,'');if(!nums)return 0;
-      if(nums.includes(',')&&nums.includes('.'))return parseFloat(nums.replace('.','').replace(',','.'))||0;
-      if(nums.includes(','))return parseFloat(nums.replace(',','.'))||0;
-      return parseFloat(nums)||0;
-    }
-    function normalizaTel(raw){
-      if(!raw)return '';let s=String(raw).trim();
-      if(s.startsWith('p:'))s=s.slice(2);
-      if(/^\d[\d.]*[eE][+\-]\d+$/.test(s))s=Number(s).toFixed(0);
-      return s.replace(/\s/g,'');
-    }
-    function normalizaTipo(t){
-      const tl=t.toLowerCase();
-      if(tl.includes('carro')||tl.includes('automovel')||tl.includes('automóvel')||tl.includes('veiculo')||tl.includes('veículo'))return 'Automóvel';
-      if(tl.includes('moto'))return 'Moto';
-      if(tl.includes('caminhao')||tl.includes('caminhão'))return 'Caminhão';
-      if(tl.includes('imovel')||tl.includes('imóvel')||tl.includes('casa')||tl.includes('apto')||tl.includes('apartamento'))return 'Imóvel';
-      if(tl.includes('servico')||tl.includes('serviço'))return 'Serviço';
-      return t||'';
-    }
-
-    // --- Pré-carrega índice de duplicatas do banco (1 query só, não 1 por lead) ---
-    const _metaIdsExistentes=new Set();
-    const _telsExistentes=new Set();
-    // Monta índices a partir dos leads já em memória
-    leads.forEach(l=>{
-      if(l.metaId)_metaIdsExistentes.add(l.metaId);
-      const lt=(l.tel||'').replace(/\D/g,'');if(lt.length>=8)_telsExistentes.add(lt.slice(-8));
-    });
-    // Busca do banco leads não carregados (1 query)
-    if(window._sb){
-      try{
-        const empresaId=await window._getEmpresaId();
-        if(empresaId){
-          const {data:dbLeads}=await window._sb.from('leads').select('meta_id,tel').eq('empresa_id',empresaId);
-          (dbLeads||[]).forEach(l=>{
-            if(l.meta_id)_metaIdsExistentes.add(l.meta_id);
-            const lt=(l.tel||'').replace(/\D/g,'');if(lt.length>=8)_telsExistentes.add(lt.slice(-8));
-          });
-        }
-      }catch(e){console.warn('[importCSV] pré-carga banco:',e);}
-    }
+    console.log('[CSV Import] sep='+JSON.stringify(sep)+' headers='+JSON.stringify(headers));
+    console.log('[CSV Import] lines[0] hex:', [...lines[0].slice(0,40)].map(c=>c.charCodeAt(0).toString(16)).join(' '));
 
     let imported=0,skipped=0,duplicados=0;
+    const duplicadosNomes=[];
     for(let i=1;i<lines.length;i++){
       if(!lines[i].trim())continue;
       const vals=parseCSVLine(lines[i],sep);
       const obj={};
       headers.forEach((h,idx)=>obj[h]=(vals[idx]||'').replace(/^"|"$/g,'').replace(/""/g,'"').trim());
 
+      // Aceita "nome", "nome_completo" (Meta Ads), "name", "cliente", "lead"
       const nome=obj['nome']||obj['nome_completo']||obj['name']||obj['cliente']||obj['lead']||'';
+      if(i===1) console.log('[CSV Import] row1 obj keys='+JSON.stringify(Object.keys(obj))+' nome='+JSON.stringify(nome));
       if(!nome){skipped++;continue;}
 
+      // Responsável — aceita "proprietario" (coluna do HubSpot/RD Station) além dos campos padrão
       const respNome=(obj['responsavel']||obj['vendedor']||obj['representante']||obj['proprietario']||'').toLowerCase();
       const resp=users.find(u=>u.nome.toLowerCase()===respNome)||users[0];
-      const etapaCSV=obj['etapa']||obj['estagio']||obj['status']||'';
+
+      // Etapa
+      const etapaCSV=obj['etapa']||obj['estagio']||obj['status']||''; // "estagio" = coluna "Estágio" após normalização
       const etapaValida=ETAPAS.find(e=>e.toLowerCase()===etapaCSV.toLowerCase())||ETAPAS[0];
 
+      // Crédito — cobre ambos os formulários Meta Ads:
+      // CSV1 (META FORMS JEFFESON): "qual_faixa_de_valor_esta_buscando?" → ex: "de_r$_300_mil_a_r$_500_mil"
+      // CSV2 (CONSULTOR 2.0):       "qual_valor_de_credito_voce_pretende_buscar?" → ex: "r$_200_mil_a_r$_300_mil"
+      // Converte "R$ 300 mil a R$ 500 mil" → 300000 (usa o menor valor da faixa)
       const creditoRaw=obj['credito']||obj['crédito']||obj['valor']||obj['credito r$']||
         obj['qual_faixa_de_valor_esta_buscando?']||obj['qual_faixa_de_valor_você_esta_buscando?']||
         obj['qual_valor_de_credito_voce_pretende_buscar?']||obj['qual_valor_de_crédito_você_pretende_buscar?']||
         obj['qual_valor_de_credito_voce_precisa?']||obj['qual_valor_de_crédito_você_precisa?']||'0';
+      function parseCreditoBR(s){
+        if(!s)return 0;
+        // Normaliza underscores vindos do Meta Ads: "r$_200_mil_a_r$_300_mil" → "r$ 200 mil a r$ 300 mil"
+        let norm=s.replace(/_/g,' ').replace(/\s+/g,' ').trim();
+        // Faixa com "a": "R$ 200 mil a R$ 300 mil" → pega o PRIMEIRO valor (menor)
+        // Também cobre: "de R$ 300 mil a R$ 500 mil", "r$ 200 mil a r$ 300 mil"
+        const faixaMatch=norm.match(/([\d.,]+)\s*mil\s+a\s+([\d.,]+)\s*mil/i);
+        if(faixaMatch){
+          const n=parseFloat(faixaMatch[1].replace('.','').replace(',','.'));
+          return isNaN(n)?0:n*1000;
+        }
+        // "acima de R$ 800 mil" → 800000
+        const acimaMatch=norm.match(/acima[^0-9]*([\d.,]+)\s*mil/i);
+        if(acimaMatch){
+          const n=parseFloat(acimaMatch[1].replace('.','').replace(',','.'));
+          return isNaN(n)?0:n*1000;
+        }
+        // "até R$ 200 mil" / "mais de R$ 500 mil" / "R$ 50 mil"
+        const milMatch=norm.match(/([\d.,]+)\s*mil/i);
+        if(milMatch){
+          const n=parseFloat(milMatch[1].replace('.','').replace(',','.'));
+          return isNaN(n)?0:n*1000;
+        }
+        // "R$ 1.200" / "1200" / "1.200,00"
+        const nums=norm.replace(/[^\d.,]/g,'');
+        if(!nums)return 0;
+        if(nums.includes(',')&&nums.includes('.')){
+          return parseFloat(nums.replace('.','').replace(',','.'))||0;
+        }
+        if(nums.includes(','))return parseFloat(nums.replace(',','.'))||0;
+        return parseFloat(nums)||0;
+      }
       const credito=parseCreditoBR(creditoRaw);
 
-      const telRaw=obj['numero do whatsapp']||obj['numero_do_whatsapp']||obj['telefone']||obj['numero de telefone secundario']||obj['numero_de_telefone']||obj['phone_number']||obj['phone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'';
+      // Telefone — aceita variações de coluna do Meta Ads e outros formatos
+      // "telefone" (maioria dos forms), "número_de_telefone" (FORMS INVESTIMENTOS | G),
+      // "phone_number" (forms internacionais), "tel", "fone", "celular", "whatsapp"
+      // Também lida com notação científica do Excel (ex: 5.51197E+12 → "55 11 970958949")
+      function normalizaTel(raw){
+        if(!raw)return '';
+        let s=String(raw).trim();
+        // Remove prefixo "p:" do CSV1 do Meta Ads: "p:+5511977122835" → "+5511977122835"
+        if(s.startsWith('p:'))s=s.slice(2);
+        // Notação científica do Excel: 5.51197E+12
+        if(/^\d[\d.]*[eE][+\-]\d+$/.test(s)){
+          s=Number(s).toFixed(0); // converte para string de dígitos
+        }
+        s=s.replace(/\s/g,''); // remove espaços internos ex: "(19) 98459-3558" → "(19)98459-3558"
+        return s;
+      }
+      // Cadeia de fallback cobre ambos os CSVs:
+      // CSV1: coluna "telefone" (com prefixo "p:" como p:+5511977122835)
+      // CSV2: coluna "numero do whatsapp" (ex: +5519989367759)
+      const telRaw=obj['numero do whatsapp']||obj['telefone']||obj['numero de telefone secundario']||obj['numero_de_telefone']||obj['phone_number']||obj['phone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'';
       const tel=normalizaTel(telRaw);
 
+      // Tipo — cobre ambos os CSVs:
+      // CSV2 tem "qual_tipo_de_imovel_voce_pretende_adquirir?" (casa/apartamento/terreno+construção)
+      // CSV1/outros têm "o_que_voce_pretende_comprar?" (carro/moto/imóvel)
       const _tipoImovelCSV2=obj['qual_tipo_de_imovel_voce_pretende_adquirir?']||obj['qual_tipo_de_imóvel_você_pretende_adquirir?']||'';
       const tipoRaw=(obj['tipo']||obj['o_que_voce_pretende_comprar?']||obj['o_que_você_pretende_comprar?']||_tipoImovelCSV2).trim();
+      // Detecta formulário de imóvel: pelo nome da campanha/formulário OU pela presença da coluna de tipo de imóvel
       const _formularioNome=(obj['formulario']||obj['formulário']||obj['fonte']||obj['form_name']||obj['campaign_name']||'').toLowerCase();
-      const _ehImovel=!!_tipoImovelCSV2||_formularioNome.includes('imovel')||_formularioNome.includes('imóvel');
+      const _ehImovel=!!_tipoImovelCSV2||_formularioNome.includes('imovel')||_formularioNome.includes('imóvel')||_formularioNome.includes('imoveis');
+      function normalizaTipo(t){
+        const tl=t.toLowerCase();
+        if(tl.includes('carro')||tl.includes('automovel')||tl.includes('automóvel')||tl.includes('veiculo')||tl.includes('veículo'))return 'Automóvel';
+        if(tl.includes('moto'))return 'Moto';
+        if(tl.includes('caminhao')||tl.includes('caminhão'))return 'Caminhão';
+        if(tl.includes('imovel')||tl.includes('imóvel')||tl.includes('casa')||tl.includes('apto')||tl.includes('apartamento'))return 'Imóvel';
+        if(tl.includes('servico')||tl.includes('serviço'))return 'Serviço';
+        return t||''; // retorna vazio se não reconhecer — deixa decidir abaixo
+      }
+      // Se não há tipo definido: se formulário indica imóvel → 'Imóvel', senão → 'Automóvel' (padrão Meta Ads)
       const _tipoNorm=normalizaTipo(tipoRaw);
       const tipo=_tipoNorm||(_ehImovel?'Imóvel':'Automóvel');
 
+      // Origem — aceita "Fonte" e "Formulário" (colunas do LEADS_IMOVEIS.csv) além do Meta Ads
       const origem=obj['origem']||obj['formulario']||obj['fonte']||obj['platform']||obj['campaign_name']||obj['source']||'';
 
+      // Observações — agrega todos os campos extras disponíveis no CSV
       const cidade=obj['cidade']||obj['city']||'';
       const estado=obj['estado']||obj['state']||'';
-      const parcela=obj['qual_parcela_cabe_no_seu_bolso?']||obj['qual_a_sua_preferencia_de_parcela?']||obj['qual_parcela_mensal_cabe_no_seu_orcamento?']||'';
-      const entrada=obj['quanto_voce_possui_disponivel_para_ofertar_como_lance?']||obj['quanto_possui_de_entrada?_(sem_contar_o_fgts)']||obj['voce_possui_algum_valor_para_dar_de_entrada?']||'';
-      const prazo=obj['em_quanto_tempo_voce_pretende_adquirir_o_imovel?']||obj['qual_e_o_prazo_que_necessita?']||obj['quando_voce_pretende_comprar_seu_veiculo?_🔥']||'';
+      // Parcela — CSV1: "qual_a_sua_preferencia_de_parcela?" | CSV2: "qual_parcela_cabe_no_seu_bolso?"
+      const parcela=obj['qual_parcela_cabe_no_seu_bolso?']||obj['qual_a_sua_preferencia_de_parcela?']
+        ||obj['qual_parcela_mensal_cabe_no_seu_orcamento?']||obj['qual_parcela_mensal_cabe_no_seu_orçamento?']
+        ||obj['qual_valor_de_parcela_voce_pretende_pagar?']||obj['qual_valor_de_parcela_você_pretende_pagar?']||'';
+      // Entrada/lance — CSV1: "quanto_possui_de_entrada?" | CSV2: "quanto_voce_possui_disponivel_para_ofertar_como_lance?"
+      const entrada=obj['quanto_voce_possui_disponivel_para_ofertar_como_lance?']||obj['quanto_possui_de_entrada?_(sem_contar_o_fgts)']
+        ||obj['voce_possui_algum_valor_para_dar_de_entrada?']||obj['você_possui_algum_valor_para_dar_de_entrada?']
+        ||obj['quanto_voce_tem_disponivel_para_dar_de_entrada?']||obj['quanto_você_tem_disponível_para_dar_de_entrada?']||'';
+      // Prazo — CSV1: "qual_e_o_prazo_que_necessita?" | CSV2: "em_quanto_tempo_voce_pretende_adquirir_o_imovel?"
+      const prazo=obj['em_quanto_tempo_voce_pretende_adquirir_o_imovel?']||obj['qual_e_o_prazo_que_necessita?']
+        ||obj['quando_voce_pretende_comprar_seu_veiculo?_🔥']||obj['quando_você_pretende_comprar_seu_veículo?_🔥']||'';
+      // FGTS — exclusivo CSV2
       const fgts=obj['voce_possui_fgts_para_utilizar_na_aquisicao?']||obj['você_possui_fgts_para_utilizar_na_aquisição?']||'';
+      // Renda — CSV1: "qual_sua_renda_bruta_total/familiar?" | CSV2: "qual_e_a_sua_renda_bruta_familiar_mensal?"
       const renda=obj['qual_e_a_sua_renda_bruta_familiar_mensal?']||obj['qual_sua_renda_bruta_total/familiar?']||'';
+      // Objetivo — CSV2: "qual_e_o_seu_objetivo_na_utilizacao_do_credito?"
       const objetivo=obj['qual_e_o_seu_objetivo_na_utilizacao_do_credito?']||obj['qual_seu_objetivo?']||'';
+      // Horário — CSV2: "qual_e_o_melhor_horario_para_conversarmos?" | CSV1: "em_qual_horario_voce_prefere_ser_contatado?"
       const horario=obj['qual_e_o_melhor_horario_para_conversarmos?']||obj['em_qual_horario_voce_prefere_ser_contatado?']||'';
+      // Prioridade — CSV2: "10._o_que_e_prioridade_para_voce?"
       const prioridade=obj['10._o_que_e_prioridade_para_voce?']||'';
+      // Origem/plataforma
+      const plataforma=obj['platform']||'';
+      const campanha=obj['campaign_name']||'';
+      const obsBase=obj['obs']||obj['observacoes']||obj['observacao']||'';
+      // Campos do HubSpot/RD Station: formulario, canal, email, rotulos, criado em
+      const _formularioObs=obj['formulario']||'';
+      const _canalObs=obj['canal']||'';
+      const _emailObs=obj['email']||'';
+      const _rotulosObs=obj['rotulos']||'';
       const _criadoObs=obj['criado em']||obj['created_time']||'';
+      // Formata data de captação legível: "2026-10-19T12:42:23-03:00" → "19/10/2026"
       let criadoFormatado='';
       if(_criadoObs){try{const d=new Date(_criadoObs);if(!isNaN(d))criadoFormatado=d.toLocaleDateString('pt-BR');}catch(e){criadoFormatado=_criadoObs;}}
-      const obsBase=obj['obs']||obj['observacoes']||obj['observacao']||'';
       const obsExtra=[
         cidade&&estado?`${cidade}/${estado}`:cidade||estado,
         objetivo?`Objetivo: ${objetivo.replace(/_/g,' ')}`:'',
@@ -4410,55 +4459,87 @@ function importarLeadsCSV(input){
         renda?`Renda: ${renda.replace(/_/g,' ')}`:'',
         horario?`Horário: ${horario.replace(/_/g,' ')}`:'',
         prioridade?`Prioridade: ${prioridade.replace(/_/g,' ')}`:'',
-        obj['platform']?`Plataforma: ${obj['platform']}`:'',
-        obj['campaign_name']?`Campanha: ${obj['campaign_name']}`:'',
-        obj['email']?`Email: ${obj['email']}`:'',
+        plataforma?`Plataforma: ${plataforma}`:'',
+        campanha?`Campanha: ${campanha}`:'',
+        _formularioObs?`Formulário: ${_formularioObs}`:'',
+        _canalObs?`Canal: ${_canalObs}`:'',
+        _emailObs?`Email: ${_emailObs}`:'',
+        _rotulosObs?`Rótulos: ${_rotulosObs}`:'',
         criadoFormatado?`Captado em: ${criadoFormatado}`:''
       ].filter(Boolean).join(' | ');
-      const obs=obsBase||obsExtra||'';
+      const obs=obsBase||(obsExtra)||'';
 
-      // Checagem de duplicata usando índices pré-carregados (sem await no loop)
+      // Checagem de duplicata:
+      // 1) Pelo id do Meta Ads (campo "id" da exportação) — mais confiável
+      // 2) Pelo telefone limpo (apenas dígitos) — fallback (memória + banco)
       const metaId=obj['id']||'';
+      const nomeLower=nome.trim().toLowerCase();
       const telLimpo=tel.replace(/\D/g,'');
-      const isDuplicado=(metaId&&_metaIdsExistentes.has(metaId))
-        ||(telLimpo&&telLimpo.length>=8&&_telsExistentes.has(telLimpo.slice(-8)));
 
-      if(isDuplicado){duplicados++;continue;}
+      // Verifica em memória primeiro (rápido)
+      // Compara pelos últimos 8 dígitos do telefone para evitar falsos negativos (com/sem +55)
+      let isDuplicado=(metaId&&leads.some(l=>l.metaId&&l.metaId===metaId))
+        ||(telLimpo&&telLimpo.length>=8&&leads.some(l=>{
+            const lTel=(l.tel||'').replace(/\D/g,'');
+            return lTel&&lTel.length>=8&&telLimpo.slice(-8)===lTel.slice(-8);
+          }));
 
-      // Marca no índice para evitar duplicata entre linhas do próprio CSV
-      if(metaId)_metaIdsExistentes.add(metaId);
-      if(telLimpo&&telLimpo.length>=8)_telsExistentes.add(telLimpo.slice(-8));
+      // Se não achou em memória, verifica no banco (pega leads não carregados na sessão)
+      if(!isDuplicado&&window._sb){
+        const empresaId=await window._getEmpresaId();
+        if(empresaId){
+          try{
+            let query=window._sb.from('leads').select('id').eq('empresa_id',empresaId).limit(1);
+            if(metaId) query=window._sb.from('leads').select('id').eq('empresa_id',empresaId).eq('meta_id',metaId).limit(1);
+            else if(telLimpo&&telLimpo.length>=8) query=window._sb.from('leads').select('id').eq('empresa_id',empresaId).ilike('tel','%'+telLimpo.slice(-8)+'%').limit(1);
+            else query=null;
+            if(query){
+              const {data:dbCheck}=await query;
+              if(dbCheck&&dbCheck.length>0) isDuplicado=true;
+            }
+          }catch(e){console.warn('[importCSV] check banco:',e);}
+        }
+      }
+
+      if(isDuplicado){
+        duplicados++;
+        duplicadosNomes.push(nome);
+        continue;
+      }
 
       const _il={id:nextLeadId++,metaId:metaId||undefined,nome,tel,tipo,credito,etapa:etapaValida,
-        origem,responsavelId:resp?resp.id:(users[0]?.id||1),
-        atendimento:obj['atendimento']||'',data:obj['data']||toDate(),obs};
+        origem,
+        responsavelId:resp?resp.id:(users[0]?.id||1),
+        atendimento:obj['atendimento']||'',
+        data:obj['data']||toDate(),
+        obs
+      };
       leads.push(_il);
       imported++;
     }
     input.value='';
     if(imported===0&&duplicados===0){
-      showToast(`Nenhum lead importado. Verifique se o CSV tem coluna "nome".`,'ti-alert-triangle','#d97706');
+      const colsFound=headers.slice(0,6).join(', ');
+      showToast(`Nenhum lead importado. Colunas: ${colsFound} | sep:${sep==='\\t'?'TAB':sep}`,'ti-alert-triangle','#d97706');
     } else if(imported>0&&duplicados===0){
       showToast(`${imported} lead${imported!==1?'s':''} importado${imported!==1?'s':''} com sucesso!`,'ti-check','#1db954');
     } else if(imported===0&&duplicados>0){
       showToast(`Nenhum lead novo — ${duplicados} já cadastrado${duplicados!==1?'s':''} no sistema.`,'ti-copy-off','#d97706');
     } else {
-      showToast(`${imported} importado${imported!==1?'s':''} · ${duplicados} duplicado${duplicados!==1?'s':''} ignorado${duplicados!==1?'s':''}`,'ti-check','#1db954');
+      setTimeout(()=>{
+        showToast(`${imported} importado${imported!==1?'s':''} · ${duplicados} duplicado${duplicados!==1?'s':''} ignorado${duplicados!==1?'s':''}`,'ti-copy-off','#d97706');
+      },100);
     }
     renderKanban();renderDashboard();renderTable();renderNotifPanel();
-    // Sincroniza com o banco em background (não bloqueia a UI)
+    // Sincroniza com o banco em lote (50 por vez) para evitar rate limit
     if(window._syncLead&&imported>0){
       const novos=leads.slice(-imported);
       const BATCH=50;
-      async function syncBackground(){
-        for(let b=0;b<novos.length;b+=BATCH){
-          const lote=novos.slice(b,b+BATCH);
-          await Promise.all(lote.map(l=>window._syncLead(l).catch(e=>console.warn('[importCSV sync]',e))));
-          if(b+BATCH<novos.length) await new Promise(r=>setTimeout(r,300));
-        }
-        if(imported>5) showToast('Sincronização com banco concluída.','ti-cloud-upload','#1db954');
+      for(let b=0;b<novos.length;b+=BATCH){
+        const lote=novos.slice(b,b+BATCH);
+        await Promise.all(lote.map(l=>window._syncLead(l).catch(e=>console.warn('[importCSV sync]',e))));
+        if(b+BATCH<novos.length) await new Promise(r=>setTimeout(r,500)); // pausa entre lotes
       }
-      syncBackground(); // sem await — roda em background
     }
   };
   // Lê primeiro como ArrayBuffer para detectar BOM e encoding correto
