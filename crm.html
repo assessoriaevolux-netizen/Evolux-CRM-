@@ -299,6 +299,19 @@
 
 
   // ── 3. Salva/atualiza um user no Supabase ─────────────────────────────────
+  // Hierarquia de roles — índice menor = maior privilégio
+  // Nunca permite que um role de menor privilégio sobrescreva um de maior
+  window._ROLES_PRIORITY=['master','superadmin','gestor','admin','administrador','supervisor','representante','vendedor'];
+  window._roleSeguro=function(rolePretendido, roleAtualNoBanco){
+    if(!rolePretendido) return roleAtualNoBanco||'vendedor';
+    if(!roleAtualNoBanco) return rolePretendido;
+    const idxPretendido=window._ROLES_PRIORITY.indexOf(rolePretendido);
+    const idxAtual=window._ROLES_PRIORITY.indexOf(roleAtualNoBanco);
+    // Se o role pretendido tiver menor índice (maior privilégio) ou igual, aceita
+    // Se for rebaixamento, mantém o atual
+    return (idxPretendido<=idxAtual||idxPretendido===-1) ? rolePretendido : roleAtualNoBanco;
+  };
+
   window._syncUser=async function(u){
     if(!u||!u.email)return;
     // Garante que sb_id está correto — usa o auth UID se for o usuário atual
@@ -319,10 +332,14 @@
         // Resolve UUID da hierarquia — hierarquiaId pode ser ID local numérico ou UUID direto
         const _hierLocal2=window.hierarquias&&window.hierarquias.find(h=>h.sb_id===u.hierarquiaId||String(h.id)===String(u.hierarquiaId));
         const _hierUUID2=_hierLocal2?.sb_id||(typeof u.hierarquiaId==='string'&&u.hierarquiaId.length>10?u.hierarquiaId:null);
+        // Proteção anti-rebaixamento de role via Edge Function
+        let _roleAtualDbEF=null;
+        try{const _rrEF=await window._sb.from('profiles').select('role').eq('id',u.sb_id).single();_roleAtualDbEF=_rrEF.data?.role||null;}catch(e){}
+        const _roleFinalEF=window._roleSeguro?window._roleSeguro(u.role||'vendedor',_roleAtualDbEF):(u.role||'vendedor');
         const body={
           target_id:u.sb_id,
           nome:u.nome,
-          role:u.role||'vendedor',
+          role:_roleFinalEF,
           foto_url:u.foto||null,
           whatsapp:u.whatsapp||null,
           instagram:u.instagram||null,
@@ -350,11 +367,15 @@
     // Resolve UUID real da hierarquia (hierarquiaId pode ser ID local numérico OU UUID do banco)
     const _hierLocal=window.hierarquias&&window.hierarquias.find(h=>h.id===u.hierarquiaId||h.sb_id===u.hierarquiaId);
     const _hierUUID=_hierLocal?.sb_id||(typeof u.hierarquiaId==='string'&&u.hierarquiaId.length>10?u.hierarquiaId:null);
+    // Busca role atual no banco antes de sobrescrever (proteção anti-rebaixamento)
+    let _roleAtualDb=null;
+    try{const _rr=await window._sb.from('profiles').select('role').eq('id',u.sb_id).single();_roleAtualDb=_rr.data?.role||null;}catch(e){}
+    const _roleFinal=window._roleSeguro?window._roleSeguro(u.role||'vendedor',_roleAtualDb):(u.role||'vendedor');
     const payload={
       id: u.sb_id, // SEMPRE inclui o UUID correto
       email:u.email,
       nome:u.nome,
-      role:u.role||'vendedor',
+      role:_roleFinal,
       // Bug #7: só inclui hierarquia_id se temos UUID real — null sobrescreveria dado correto
       ...(_hierUUID?{hierarquia_id:_hierUUID}:{}),
       equipe_id:u.equipeId||null,
@@ -6845,7 +6866,11 @@ async function salvarEdicaoUsuario(uid){
     };
     if(h&&h.sb_id){
       updates.hierarquia_id=h.sb_id;
-      updates.role=slugToRole(h);
+      const _novoRole=slugToRole(h);
+      // Proteção: nunca rebaixa role de maior privilégio
+      let _roleDbAtual=u.role||null;
+      try{const _rr=await window._sb.from('profiles').select('role').eq('id',u.sb_id).single();_roleDbAtual=_rr.data?.role||_roleDbAtual;}catch(e){}
+      updates.role=window._roleSeguro?window._roleSeguro(_novoRole,_roleDbAtual):_novoRole;
     }
     // Salva no banco
     if(u.sb_id){
