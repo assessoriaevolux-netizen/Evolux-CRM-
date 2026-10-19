@@ -4229,7 +4229,7 @@ function importarLeadsCSV(input){
   const file=input.files[0];if(!file)return;
   const reader=new FileReader();
   reader.onload=async function(e){
-    const raw=e.target.result.replace(/^﻿/,'').replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+    const raw=e.target.result.replace(/^﻿/,'').replace(/\r\n/g,'\n').replace(/\r/g,'\n'); // remove BOM UTF-8
     const allLines=raw.split('\n');
     const lines=allLines.filter(l=>l.trim());
     if(lines.length<2){showToast('CSV vazio ou inválido.','ti-alert-triangle','#d97706');return;}
@@ -4253,8 +4253,8 @@ function importarLeadsCSV(input){
       return result;
     }
 
-    const headers=parseCSVLine(lines[0],sep).map(h=>h.replace(/"/g,'').trim().toLowerCase()
-      .normalize('NFD').replace(/[̀-ͯ]/g,''));// remove acentos do header
+    const headers=parseCSVLine(lines[0],sep).map(h=>h.replace(/"/g,'').replace(/^﻿/,'').trim().toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g,''));// remove acentos do header (range unicode explícito)
 
     let imported=0,skipped=0,duplicados=0;
     const duplicadosNomes=[];
