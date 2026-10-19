@@ -6893,8 +6893,8 @@ function renderUserList(){
             ${(()=>{
               // Gestor/master/superadmin: pode remover qualquer um
               if(isGestorUL||(_meUL&&(_meUL.role==='master'||_meUL.role==='superadmin'))) return `<button class="btn bd bsm ulist-remove-btn" data-uid="${u.id}" title="Remover usuário"><i class="ti ti-trash"></i></button>`;
-              // Supervisor: pode remover representantes e vendedores (nível abaixo)
-              if(_meUL&&_meUL.role==='supervisor'&&(u.role==='representante'||u.role==='vendedor')) return `<button class="btn bd bsm ulist-remove-btn" data-uid="${u.id}" title="Remover usuário"><i class="ti ti-trash"></i></button>`;
+              // Supervisor: pode remover apenas vendedores (nível abaixo dele)
+              if(_meUL&&_meUL.role==='supervisor'&&u.role==='vendedor') return `<button class="btn bd bsm ulist-remove-btn" data-uid="${u.id}" title="Remover usuário"><i class="ti ti-trash"></i></button>`;
               return '';
             })()}
           </div>
