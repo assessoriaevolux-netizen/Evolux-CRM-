@@ -6890,7 +6890,7 @@ function renderUserList(){
             </select>
             <button class="ulist-hier-save-btn" data-uid="${u.id}" title="Salvar hierarquia" style="padding:4px 10px;font-size:12px;border-radius:6px;border:none;background:#016b3c;color:#fff;cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:600"><i class="ti ti-check"></i> Salvar</button>
             <button class="btn bd bsm ulist-edit-btn" data-uid="${u.id}" title="Editar usuário" style="color:var(--g);border-color:var(--g)"><i class="ti ti-pencil"></i></button>
-            <button class="btn bd bsm ulist-remove-btn" data-uid="${u.id}" title="Remover usuário"><i class="ti ti-trash"></i></button>
+            ${(isGestorUL||(_meUL&&(_meUL.role==='master'||_meUL.role==='superadmin')))?`<button class="btn bd bsm ulist-remove-btn" data-uid="${u.id}" title="Remover usuário"><i class="ti ti-trash"></i></button>`:''}
           </div>
         `:`<span class="rbadge rg">Administrador</span>`}
       </div>
@@ -7118,7 +7118,9 @@ function removeUser(id){
   const u=users.find(x=>x.id===id);
   if(!u)return;
   showConfirm(`Remover o usuário "${u.nome}"?\n\nEsta ação revogará o acesso ao CRM permanentemente.`,async function(){
-    // Tentar remover do Supabase (via Edge Function ou admin API)
+    showToast('Removendo usuário...','ti-loader','#6366f1');
+    let removidoAuth=false;
+    // Tentar remover do Supabase via Edge Function
     if(u.sb_id){
       try{
         const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/delete-user',{
@@ -7126,21 +7128,26 @@ function removeUser(id){
           headers:{'Content-Type':'application/json','Authorization':`Bearer ${window._session?.access_token||''}`},
           body:JSON.stringify({userId:u.sb_id})
         });
-        if(!res.ok){
+        if(res.ok) removidoAuth=true;
+        else{
           const j=await res.json().catch(()=>({}));
           console.warn('delete-user Edge Function falhou:',j.error||res.status);
-          try{await window._sb.auth.admin.deleteUser(u.sb_id);}catch(e2){console.warn('admin.deleteUser falhou:',e2.message);}
+          showToast(`Erro ao remover: ${j.error||'sem permissão'}`,'ti-alert-triangle','#dc2626');
+          return; // aborta — não remove localmente se o banco falhou
         }
       }catch(err){
-        try{await window._sb.auth.admin.deleteUser(u.sb_id);}catch(e2){console.warn('Não foi possível remover do Supabase (normal sem service_role):',e2.message);}
+        console.warn('delete-user erro de rede:',err.message);
+        showToast('Erro de conexão ao remover usuário.','ti-alert-triangle','#dc2626');
+        return;
       }
     }
+    // Remove do profiles
     if(u.sb_id&&window._sb){
       await window._sb.from('profiles').delete().eq('id',u.sb_id).catch(()=>{});
     }
     users=users.filter(x=>x.id!==id);
     equipes.forEach(eq=>{eq.membroIds=(eq.membroIds||[]).filter(mid=>mid!==id);});
-    showToast(`Usuário "${u.nome}" removido.`,'ti-user-x');
+    showToast(`Usuário "${u.nome}" removido com sucesso.`,'ti-user-x','#dc2626');
     renderUserList();populateSelects();
   });
 }
