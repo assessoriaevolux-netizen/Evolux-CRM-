@@ -4228,7 +4228,7 @@ function exportarLeadsCSV(){
 function importarLeadsCSV(input){
   const file=input.files[0];if(!file)return;
   const reader=new FileReader();
-  reader.onload=function(e){
+  reader.onload=async function(e){
     const raw=e.target.result.replace(/^﻿/,'').replace(/\r\n/g,'\n').replace(/\r/g,'\n');
     const allLines=raw.split('\n');
     const lines=allLines.filter(l=>l.trim());
@@ -4349,15 +4349,35 @@ function importarLeadsCSV(input){
 
       // Checagem de duplicata:
       // 1) Pelo id do Meta Ads (campo "id" da exportação) — mais confiável
-      // 2) Pelo telefone limpo (apenas dígitos) — fallback
+      // 2) Pelo telefone limpo (apenas dígitos) — fallback (memória + banco)
       const metaId=obj['id']||'';
       const nomeLower=nome.trim().toLowerCase();
       const telLimpo=tel.replace(/\D/g,'');
-      const isDuplicado=(metaId&&leads.some(l=>l.metaId&&l.metaId===metaId))
+
+      // Verifica em memória primeiro (rápido)
+      let isDuplicado=(metaId&&leads.some(l=>l.metaId&&l.metaId===metaId))
         ||(telLimpo&&telLimpo.length>=8&&leads.some(l=>{
             const lTel=(l.tel||'').replace(/\D/g,'');
             return lTel&&telLimpo===lTel;
           }));
+
+      // Se não achou em memória, verifica no banco (pega leads não carregados na sessão)
+      if(!isDuplicado&&window._sb){
+        const empresaId=await window._getEmpresaId();
+        if(empresaId){
+          try{
+            let query=window._sb.from('leads').select('id').eq('empresa_id',empresaId).limit(1);
+            if(metaId) query=window._sb.from('leads').select('id').eq('empresa_id',empresaId).eq('meta_id',metaId).limit(1);
+            else if(telLimpo&&telLimpo.length>=8) query=window._sb.from('leads').select('id').eq('empresa_id',empresaId).ilike('tel','%'+telLimpo.slice(-8)+'%').limit(1);
+            else query=null;
+            if(query){
+              const {data:dbCheck}=await query;
+              if(dbCheck&&dbCheck.length>0) isDuplicado=true;
+            }
+          }catch(e){console.warn('[importCSV] check banco:',e);}
+        }
+      }
+
       if(isDuplicado){
         duplicados++;
         duplicadosNomes.push(nome);
