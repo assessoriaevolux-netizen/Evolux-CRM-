@@ -4299,33 +4299,8 @@ function importarLeadsCSV(input){
     const headers=parseCSVLine(lines[0],sep).map(h=>h.replace(/"/g,'').replace(/^\uFEFF/,'').trim().toLowerCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g,''));// remove acentos do header
 
-    // Pré-carrega IDs Meta e telefones já existentes no banco (1 query só, evita travamento e duplicatas)
-    let dbMetaIds=new Set();
-    let dbTels=new Set(); // últimos 8 dígitos
-    if(window._sb){
-      const empresaId=await window._getEmpresaId().catch(()=>null);
-      if(empresaId){
-        try{
-          // Busca em páginas de 1000 até esgotar
-          let from=0,pageSize=1000,hasMore=true;
-          while(hasMore){
-            const {data:rows,error}=await window._sb.from('leads')
-              .select('meta_id,tel')
-              .eq('empresa_id',empresaId)
-              .range(from,from+pageSize-1);
-            if(error||!rows||rows.length===0){hasMore=false;break;}
-            rows.forEach(r=>{
-              if(r.meta_id) dbMetaIds.add(String(r.meta_id));
-              const t=(r.tel||'').replace(/\D/g,'');
-              if(t.length>=8) dbTels.add(t.slice(-8));
-            });
-            if(rows.length<pageSize) hasMore=false;
-            else from+=pageSize;
-          }
-        }catch(e){console.warn('[importCSV] pré-carga banco:',e);}
-      }
-    }
-    // Também coleta os leads já em memória
+    // Monta Sets a partir dos leads JÁ CARREGADOS em memória (instantâneo, sem query extra)
+    // Os leads são carregados todos na abertura da sessão, então memória = banco
     const memMetaIds=new Set(leads.filter(l=>l.metaId).map(l=>String(l.metaId)));
     const memTels=new Set(leads.map(l=>{const t=(l.tel||'').replace(/\D/g,'');return t.length>=8?t.slice(-8):null;}).filter(Boolean));
 
@@ -4494,19 +4469,19 @@ function importarLeadsCSV(input){
       ].filter(Boolean).join(' | ');
       const obs=obsBase||(obsExtra)||'';
 
-      // Checagem de duplicata usando os Sets pré-carregados (sem query por lead — não trava a UI)
+      // Checagem de duplicata (sem query extra — usa os leads já em memória)
       const metaId=obj['id']||'';
       const telLimpo=tel.replace(/\D/g,'');
       const tel8=telLimpo.length>=8?telLimpo.slice(-8):null;
 
       const isDuplicado=
-        (metaId&&(memMetaIds.has(String(metaId))||dbMetaIds.has(String(metaId))))
-        ||(tel8&&(memTels.has(tel8)||dbTels.has(tel8)));
+        (metaId&&memMetaIds.has(String(metaId)))
+        ||(tel8&&memTels.has(tel8));
 
-      // Registra nos Sets em memória para evitar duplicata DENTRO do próprio lote importado
+      // Adiciona nos Sets para bloquear duplicata DENTRO do mesmo lote
       if(!isDuplicado){
-        if(metaId){memMetaIds.add(String(metaId));dbMetaIds.add(String(metaId));}
-        if(tel8){memTels.add(tel8);dbTels.add(tel8);}
+        if(metaId) memMetaIds.add(String(metaId));
+        if(tel8) memTels.add(tel8);
       }
 
       if(isDuplicado){
