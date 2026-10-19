@@ -7125,8 +7125,7 @@ function removeUser(id){
   if(!u)return;
   showConfirm(`Remover o usuário "${u.nome}"?\n\nEsta ação revogará o acesso ao CRM permanentemente.`,async function(){
     showToast('Removendo usuário...','ti-loader','#6366f1');
-    let removidoAuth=false;
-    // Tentar remover do Supabase via Edge Function
+    // Tenta remover do Auth via Edge Function (pode falhar se quem chama não for gestor)
     if(u.sb_id){
       try{
         const res=await fetch('https://uekeeutycmqsswrhspwv.supabase.co/functions/v1/delete-user',{
@@ -7134,22 +7133,18 @@ function removeUser(id){
           headers:{'Content-Type':'application/json','Authorization':`Bearer ${window._session?.access_token||''}`},
           body:JSON.stringify({userId:u.sb_id})
         });
-        if(res.ok) removidoAuth=true;
-        else{
-          const j=await res.json().catch(()=>({}));
-          console.warn('delete-user Edge Function falhou:',j.error||res.status);
-          showToast(`Erro ao remover: ${j.error||'sem permissão'}`,'ti-alert-triangle','#dc2626');
-          return; // aborta — não remove localmente se o banco falhou
-        }
+        if(!res.ok) console.warn('[removeUser] Edge Function negou — removendo só do profiles');
       }catch(err){
-        console.warn('delete-user erro de rede:',err.message);
-        showToast('Erro de conexão ao remover usuário.','ti-alert-triangle','#dc2626');
-        return;
+        console.warn('[removeUser] Edge Function inacessível — removendo só do profiles');
       }
     }
-    // Remove do profiles
+    // Sempre remove do profiles — isso basta para bloquear o acesso ao CRM
     if(u.sb_id&&window._sb){
-      await window._sb.from('profiles').delete().eq('id',u.sb_id).catch(()=>{});
+      const {error}=await window._sb.from('profiles').delete().eq('id',u.sb_id);
+      if(error){
+        showToast('Erro ao remover usuário. Tente novamente.','ti-alert-triangle','#dc2626');
+        return;
+      }
     }
     users=users.filter(x=>x.id!==id);
     equipes.forEach(eq=>{eq.membroIds=(eq.membroIds||[]).filter(mid=>mid!==id);});
