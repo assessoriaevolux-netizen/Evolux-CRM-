@@ -4265,13 +4265,21 @@ function importarLeadsCSV(input){
   const file=input.files[0];if(!file)return;
   const reader=new FileReader();
   reader.onload=async function(e){
-    const raw=e.target.result.replace(/^\uFEFF/,'').replace(/\r\n/g,'\n').replace(/\r/g,'\n'); // remove BOM UTF-8
+    // Suporta UTF-16 LE (BOM + chars espaçados com \x00) exportado pelo Meta Ads
+    // e UTF-8 (BOM \uFEFF) exportado por outros sistemas
+    let raw=e.target.result;
+    raw=raw.replace(/^\uFEFF/,'').replace(/^\uFFFE/,'');
+    // Detecta UTF-16: char real seguido de \x00 (nulo) em toda a string
+    if(raw.length>10 && raw.charCodeAt(1)===0){
+      raw=raw.replace(/\x00/g,''); // remove nulos intercalados do UTF-16
+    }
+    raw=raw.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
     const allLines=raw.split('\n');
     const lines=allLines.filter(l=>l.trim());
     if(lines.length<2){showToast('CSV vazio ou inválido.','ti-alert-triangle','#d97706');return;}
 
-    // Detecta separador automaticamente (vírgula ou ponto-e-vírgula)
-    const sep=lines[0].includes(';')?';':',';
+    // Detecta separador: TAB (Meta Ads UTF-16), ponto-e-vírgula ou vírgula
+    const sep=lines[0].includes('\t')?'\t':lines[0].includes(';')?';':',';
 
     // Parser robusto que respeita campos com aspas
     function parseCSVLine(line,sep){
@@ -4529,7 +4537,24 @@ function importarLeadsCSV(input){
       }
     }
   };
-  reader.readAsText(file,'UTF-8');
+  // Lê primeiro como ArrayBuffer para detectar BOM e encoding correto
+  const reader2=new FileReader();
+  reader2.onload=function(ev2){
+    const buf=ev2.target.result;
+    const bytes=new Uint8Array(buf);
+    let encoding='UTF-8';
+    // BOM UTF-16 LE: FF FE
+    if(bytes[0]===0xFF&&bytes[1]===0xFE) encoding='UTF-16LE';
+    // BOM UTF-16 BE: FE FF
+    else if(bytes[0]===0xFE&&bytes[1]===0xFF) encoding='UTF-16BE';
+    // Sem BOM mas chars espaçados com 0x00 → provavelmente UTF-16 LE sem BOM
+    else if(bytes.length>4&&bytes[1]===0x00&&bytes[3]===0x00) encoding='UTF-16LE';
+    const decoded=new TextDecoder(encoding).decode(buf);
+    // Dispara o onload do reader principal com o texto decodificado
+    const syntheticEvt={target:{result:decoded}};
+    reader.onload(syntheticEvt);
+  };
+  reader2.readAsArrayBuffer(file);
 }
 
 function onDragStart(e,id){dragId=id;e.dataTransfer.effectAllowed='move';setTimeout(()=>document.querySelector(`[data-id="${id}"]`)?.classList.add('dragging'),0);}
