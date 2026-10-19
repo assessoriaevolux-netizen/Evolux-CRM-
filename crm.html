@@ -4312,26 +4312,43 @@ function importarLeadsCSV(input){
       const etapaCSV=obj['etapa']||obj['estagio']||obj['status']||''; // "estagio" = coluna "Estágio" após normalização
       const etapaValida=ETAPAS.find(e=>e.toLowerCase()===etapaCSV.toLowerCase())||ETAPAS[0];
 
-      // Crédito — aceita campo direto ou campo do Meta Ads "qual_valor_de_credito_voce_precisa"
-      // Converte "Até R$ 30 mil" → 30000, "R$ 50 mil" → 50000, "R$ 1.200" → 1200
+      // Crédito — cobre ambos os formulários Meta Ads:
+      // CSV1 (META FORMS JEFFESON): "qual_faixa_de_valor_esta_buscando?" → ex: "de_r$_300_mil_a_r$_500_mil"
+      // CSV2 (CONSULTOR 2.0):       "qual_valor_de_credito_voce_pretende_buscar?" → ex: "r$_200_mil_a_r$_300_mil"
+      // Converte "R$ 300 mil a R$ 500 mil" → 300000 (usa o menor valor da faixa)
       const creditoRaw=obj['credito']||obj['crédito']||obj['valor']||obj['credito r$']||
+        obj['qual_faixa_de_valor_esta_buscando?']||obj['qual_faixa_de_valor_você_esta_buscando?']||
+        obj['qual_valor_de_credito_voce_pretende_buscar?']||obj['qual_valor_de_crédito_você_pretende_buscar?']||
         obj['qual_valor_de_credito_voce_precisa?']||obj['qual_valor_de_crédito_você_precisa?']||'0';
       function parseCreditoBR(s){
         if(!s)return 0;
-        // "Até R$ 30 mil" / "R$ 50 mil" / "Acima de R$ 100 mil"
-        const milMatch=s.match(/([\d.,]+)\s*mil/i);
+        // Normaliza underscores vindos do Meta Ads: "r$_200_mil_a_r$_300_mil" → "r$ 200 mil a r$ 300 mil"
+        let norm=s.replace(/_/g,' ').replace(/\s+/g,' ').trim();
+        // Faixa com "a": "R$ 200 mil a R$ 300 mil" → pega o PRIMEIRO valor (menor)
+        // Também cobre: "de R$ 300 mil a R$ 500 mil", "r$ 200 mil a r$ 300 mil"
+        const faixaMatch=norm.match(/([\d.,]+)\s*mil\s+a\s+([\d.,]+)\s*mil/i);
+        if(faixaMatch){
+          const n=parseFloat(faixaMatch[1].replace('.','').replace(',','.'));
+          return isNaN(n)?0:n*1000;
+        }
+        // "acima de R$ 800 mil" → 800000
+        const acimaMatch=norm.match(/acima[^0-9]*([\d.,]+)\s*mil/i);
+        if(acimaMatch){
+          const n=parseFloat(acimaMatch[1].replace('.','').replace(',','.'));
+          return isNaN(n)?0:n*1000;
+        }
+        // "até R$ 200 mil" / "mais de R$ 500 mil" / "R$ 50 mil"
+        const milMatch=norm.match(/([\d.,]+)\s*mil/i);
         if(milMatch){
           const n=parseFloat(milMatch[1].replace('.','').replace(',','.'));
           return isNaN(n)?0:n*1000;
         }
         // "R$ 1.200" / "1200" / "1.200,00"
-        const nums=s.replace(/[^\d.,]/g,'');
+        const nums=norm.replace(/[^\d.,]/g,'');
         if(!nums)return 0;
-        // Se tem ponto E vírgula, formato BR: 1.200,50
         if(nums.includes(',')&&nums.includes('.')){
           return parseFloat(nums.replace('.','').replace(',','.'))||0;
         }
-        // Só vírgula: "1200,50" → 1200.50
         if(nums.includes(','))return parseFloat(nums.replace(',','.'))||0;
         return parseFloat(nums)||0;
       }
@@ -4344,6 +4361,8 @@ function importarLeadsCSV(input){
       function normalizaTel(raw){
         if(!raw)return '';
         let s=String(raw).trim();
+        // Remove prefixo "p:" do CSV1 do Meta Ads: "p:+5511977122835" → "+5511977122835"
+        if(s.startsWith('p:'))s=s.slice(2);
         // Notação científica do Excel: 5.51197E+12
         if(/^\d[\d.]*[eE][+\-]\d+$/.test(s)){
           s=Number(s).toFixed(0); // converte para string de dígitos
@@ -4351,16 +4370,20 @@ function importarLeadsCSV(input){
         s=s.replace(/\s/g,''); // remove espaços internos ex: "(19) 98459-3558" → "(19)98459-3558"
         return s;
       }
-      // Cadeia de fallback: telefone → numero do whatsapp → numero de telefone secundario → numero_de_telefone → phone_number → phone → tel/fone/celular/whatsapp
-      const telRaw=obj['telefone']||obj['numero do whatsapp']||obj['numero de telefone secundario']||obj['numero_de_telefone']||obj['phone_number']||obj['phone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'';
+      // Cadeia de fallback cobre ambos os CSVs:
+      // CSV1: coluna "telefone" (com prefixo "p:" como p:+5511977122835)
+      // CSV2: coluna "numero do whatsapp" (ex: +5519989367759)
+      const telRaw=obj['numero do whatsapp']||obj['telefone']||obj['numero de telefone secundario']||obj['numero_de_telefone']||obj['phone_number']||obj['phone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'';
       const tel=normalizaTel(telRaw);
 
-      // Tipo — aceita campo do Meta Ads "o_que_voce_pretende_comprar"
-      // Normaliza: "Carro" → "Automóvel", "Moto" → "Moto", "Caminhão" → "Caminhão", "Imóvel" → "Imóvel"
-      const tipoRaw=(obj['tipo']||obj['o_que_voce_pretende_comprar?']||obj['o_que_você_pretende_comprar?']||'').trim();
-      // Detecta se é formulário de imóvel pelo nome do formulário/fonte
-      const _formularioNome=(obj['formulario']||obj['formulário']||obj['fonte']||'').toLowerCase();
-      const _ehImovel=_formularioNome.includes('imovel')||_formularioNome.includes('imóvel')||_formularioNome.includes('IMOVEL');
+      // Tipo — cobre ambos os CSVs:
+      // CSV2 tem "qual_tipo_de_imovel_voce_pretende_adquirir?" (casa/apartamento/terreno+construção)
+      // CSV1/outros têm "o_que_voce_pretende_comprar?" (carro/moto/imóvel)
+      const _tipoImovelCSV2=obj['qual_tipo_de_imovel_voce_pretende_adquirir?']||obj['qual_tipo_de_imóvel_você_pretende_adquirir?']||'';
+      const tipoRaw=(obj['tipo']||obj['o_que_voce_pretende_comprar?']||obj['o_que_você_pretende_comprar?']||_tipoImovelCSV2).trim();
+      // Detecta formulário de imóvel: pelo nome da campanha/formulário OU pela presença da coluna de tipo de imóvel
+      const _formularioNome=(obj['formulario']||obj['formulário']||obj['fonte']||obj['form_name']||obj['campaign_name']||'').toLowerCase();
+      const _ehImovel=!!_tipoImovelCSV2||_formularioNome.includes('imovel')||_formularioNome.includes('imóvel')||_formularioNome.includes('imoveis');
       function normalizaTipo(t){
         const tl=t.toLowerCase();
         if(tl.includes('carro')||tl.includes('automovel')||tl.includes('automóvel')||tl.includes('veiculo')||tl.includes('veículo'))return 'Automóvel';
@@ -4380,28 +4403,57 @@ function importarLeadsCSV(input){
       // Observações — agrega todos os campos extras disponíveis no CSV
       const cidade=obj['cidade']||obj['city']||'';
       const estado=obj['estado']||obj['state']||'';
-      const parcela=obj['qual_parcela_mensal_cabe_no_seu_orcamento?']||obj['qual_parcela_mensal_cabe_no_seu_orçamento?']
+      // Parcela — CSV1: "qual_a_sua_preferencia_de_parcela?" | CSV2: "qual_parcela_cabe_no_seu_bolso?"
+      const parcela=obj['qual_parcela_cabe_no_seu_bolso?']||obj['qual_a_sua_preferencia_de_parcela?']
+        ||obj['qual_parcela_mensal_cabe_no_seu_orcamento?']||obj['qual_parcela_mensal_cabe_no_seu_orçamento?']
         ||obj['qual_valor_de_parcela_voce_pretende_pagar?']||obj['qual_valor_de_parcela_você_pretende_pagar?']||'';
-      const entrada=obj['voce_possui_algum_valor_para_dar_de_entrada?']||obj['você_possui_algum_valor_para_dar_de_entrada?']
+      // Entrada/lance — CSV1: "quanto_possui_de_entrada?" | CSV2: "quanto_voce_possui_disponivel_para_ofertar_como_lance?"
+      const entrada=obj['quanto_voce_possui_disponivel_para_ofertar_como_lance?']||obj['quanto_possui_de_entrada?_(sem_contar_o_fgts)']
+        ||obj['voce_possui_algum_valor_para_dar_de_entrada?']||obj['você_possui_algum_valor_para_dar_de_entrada?']
         ||obj['quanto_voce_tem_disponivel_para_dar_de_entrada?']||obj['quanto_você_tem_disponível_para_dar_de_entrada?']||'';
-      const prazo=obj['quando_voce_pretende_comprar_seu_veiculo?_🔥']||obj['quando_você_pretende_comprar_seu_veículo?_🔥']||'';
+      // Prazo — CSV1: "qual_e_o_prazo_que_necessita?" | CSV2: "em_quanto_tempo_voce_pretende_adquirir_o_imovel?"
+      const prazo=obj['em_quanto_tempo_voce_pretende_adquirir_o_imovel?']||obj['qual_e_o_prazo_que_necessita?']
+        ||obj['quando_voce_pretende_comprar_seu_veiculo?_🔥']||obj['quando_você_pretende_comprar_seu_veículo?_🔥']||'';
+      // FGTS — exclusivo CSV2
+      const fgts=obj['voce_possui_fgts_para_utilizar_na_aquisicao?']||obj['você_possui_fgts_para_utilizar_na_aquisição?']||'';
+      // Renda — CSV1: "qual_sua_renda_bruta_total/familiar?" | CSV2: "qual_e_a_sua_renda_bruta_familiar_mensal?"
+      const renda=obj['qual_e_a_sua_renda_bruta_familiar_mensal?']||obj['qual_sua_renda_bruta_total/familiar?']||'';
+      // Objetivo — CSV2: "qual_e_o_seu_objetivo_na_utilizacao_do_credito?"
+      const objetivo=obj['qual_e_o_seu_objetivo_na_utilizacao_do_credito?']||obj['qual_seu_objetivo?']||'';
+      // Horário — CSV2: "qual_e_o_melhor_horario_para_conversarmos?" | CSV1: "em_qual_horario_voce_prefere_ser_contatado?"
+      const horario=obj['qual_e_o_melhor_horario_para_conversarmos?']||obj['em_qual_horario_voce_prefere_ser_contatado?']||'';
+      // Prioridade — CSV2: "10._o_que_e_prioridade_para_voce?"
+      const prioridade=obj['10._o_que_e_prioridade_para_voce?']||'';
+      // Origem/plataforma
+      const plataforma=obj['platform']||'';
+      const campanha=obj['campaign_name']||'';
       const obsBase=obj['obs']||obj['observacoes']||obj['observacao']||'';
       // Campos do HubSpot/RD Station: formulario, canal, email, rotulos, criado em
       const _formularioObs=obj['formulario']||'';
       const _canalObs=obj['canal']||'';
       const _emailObs=obj['email']||'';
       const _rotulosObs=obj['rotulos']||'';
-      const _criadoObs=obj['criado em']||'';
+      const _criadoObs=obj['criado em']||obj['created_time']||'';
+      // Formata data de captação legível: "2026-10-19T12:42:23-03:00" → "19/10/2026"
+      let criadoFormatado='';
+      if(_criadoObs){try{const d=new Date(_criadoObs);if(!isNaN(d))criadoFormatado=d.toLocaleDateString('pt-BR');}catch(e){criadoFormatado=_criadoObs;}}
       const obsExtra=[
         cidade&&estado?`${cidade}/${estado}`:cidade||estado,
-        parcela?`Parcela: ${parcela}`:'',
-        entrada?`Entrada: ${entrada}`:'',
-        prazo?`Prazo: ${prazo}`:'',
+        objetivo?`Objetivo: ${objetivo.replace(/_/g,' ')}`:'',
+        parcela?`Parcela: ${parcela.replace(/_/g,' ')}`:'',
+        entrada?`Lance/Entrada: ${entrada.replace(/_/g,' ')}`:'',
+        fgts?`FGTS: ${fgts}`:'',
+        prazo?`Prazo: ${prazo.replace(/_/g,' ')}`:'',
+        renda?`Renda: ${renda.replace(/_/g,' ')}`:'',
+        horario?`Horário: ${horario.replace(/_/g,' ')}`:'',
+        prioridade?`Prioridade: ${prioridade.replace(/_/g,' ')}`:'',
+        plataforma?`Plataforma: ${plataforma}`:'',
+        campanha?`Campanha: ${campanha}`:'',
         _formularioObs?`Formulário: ${_formularioObs}`:'',
         _canalObs?`Canal: ${_canalObs}`:'',
         _emailObs?`Email: ${_emailObs}`:'',
         _rotulosObs?`Rótulos: ${_rotulosObs}`:'',
-        _criadoObs?`Captado em: ${_criadoObs}`:''
+        criadoFormatado?`Captado em: ${criadoFormatado}`:''
       ].filter(Boolean).join(' | ');
       const obs=obsBase||(obsExtra)||'';
 
