@@ -4273,7 +4273,7 @@ function importarLeadsCSV(input){
       const resp=users.find(u=>u.nome.toLowerCase()===respNome)||users[0];
 
       // Etapa
-      const etapaCSV=obj['etapa']||obj['status']||'';
+      const etapaCSV=obj['etapa']||obj['estagio']||obj['status']||''; // "estagio" = coluna "Estágio" após normalização
       const etapaValida=ETAPAS.find(e=>e.toLowerCase()===etapaCSV.toLowerCase())||ETAPAS[0];
 
       // Crédito — aceita campo direto ou campo do Meta Ads "qual_valor_de_credito_voce_precisa"
@@ -4312,15 +4312,19 @@ function importarLeadsCSV(input){
         if(/^\d[\d.]*[eE][+\-]\d+$/.test(s)){
           s=Number(s).toFixed(0); // converte para string de dígitos
         }
+        s=s.replace(/\s/g,''); // remove espaços internos ex: "(19) 98459-3558" → "(19)98459-3558"
         return s;
       }
-      // Cadeia de fallback: telefone → numero_de_telefone → phone_number → phone → tel/fone/celular/whatsapp
-      const telRaw=obj['telefone']||obj['numero_de_telefone']||obj['phone_number']||obj['phone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'';
+      // Cadeia de fallback: telefone → numero do whatsapp → numero de telefone secundario → numero_de_telefone → phone_number → phone → tel/fone/celular/whatsapp
+      const telRaw=obj['telefone']||obj['numero do whatsapp']||obj['numero de telefone secundario']||obj['numero_de_telefone']||obj['phone_number']||obj['phone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'';
       const tel=normalizaTel(telRaw);
 
       // Tipo — aceita campo do Meta Ads "o_que_voce_pretende_comprar"
       // Normaliza: "Carro" → "Automóvel", "Moto" → "Moto", "Caminhão" → "Caminhão", "Imóvel" → "Imóvel"
       const tipoRaw=(obj['tipo']||obj['o_que_voce_pretende_comprar?']||obj['o_que_você_pretende_comprar?']||'').trim();
+      // Detecta se é formulário de imóvel pelo nome do formulário/fonte
+      const _formularioNome=(obj['formulario']||obj['formulário']||obj['fonte']||'').toLowerCase();
+      const _ehImovel=_formularioNome.includes('imovel')||_formularioNome.includes('imóvel')||_formularioNome.includes('IMOVEL');
       function normalizaTipo(t){
         const tl=t.toLowerCase();
         if(tl.includes('carro')||tl.includes('automovel')||tl.includes('automóvel')||tl.includes('veiculo')||tl.includes('veículo'))return 'Automóvel';
@@ -4328,12 +4332,14 @@ function importarLeadsCSV(input){
         if(tl.includes('caminhao')||tl.includes('caminhão'))return 'Caminhão';
         if(tl.includes('imovel')||tl.includes('imóvel')||tl.includes('casa')||tl.includes('apto')||tl.includes('apartamento'))return 'Imóvel';
         if(tl.includes('servico')||tl.includes('serviço'))return 'Serviço';
-        return t||'Automóvel';
+        return t||''; // retorna vazio se não reconhecer — deixa decidir abaixo
       }
-      const tipo=normalizaTipo(tipoRaw);
+      // Se não há tipo definido: se formulário indica imóvel → 'Imóvel', senão → 'Automóvel' (padrão Meta Ads)
+      const _tipoNorm=normalizaTipo(tipoRaw);
+      const tipo=_tipoNorm||(_ehImovel?'Imóvel':'Automóvel');
 
-      // Origem — usa plataforma do Meta Ads (fb/ig) ou campaign_name
-      const origem=obj['origem']||obj['platform']||obj['campaign_name']||obj['source']||'';
+      // Origem — aceita "Fonte" e "Formulário" (colunas do LEADS_IMOVEIS.csv) além do Meta Ads
+      const origem=obj['origem']||obj['formulario']||obj['fonte']||obj['platform']||obj['campaign_name']||obj['source']||'';
 
       // Observações — agrega dados extras do Meta Ads
       const cidade=obj['cidade']||obj['city']||'';
