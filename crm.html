@@ -6890,7 +6890,16 @@ function renderUserList(){
             </select>
             <button class="ulist-hier-save-btn" data-uid="${u.id}" title="Salvar hierarquia" style="padding:4px 10px;font-size:12px;border-radius:6px;border:none;background:#016b3c;color:#fff;cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:600"><i class="ti ti-check"></i> Salvar</button>
             <button class="btn bd bsm ulist-edit-btn" data-uid="${u.id}" title="Editar usuário" style="color:var(--g);border-color:var(--g)"><i class="ti ti-pencil"></i></button>
-            ${(isGestorUL||(_meUL&&(_meUL.role==='master'||_meUL.role==='superadmin')))?`<button class="btn bd bsm ulist-remove-btn" data-uid="${u.id}" title="Remover usuário"><i class="ti ti-trash"></i></button>`:''}
+            ${(()=>{
+              // Gestor/master/superadmin: pode remover qualquer um
+              if(isGestorUL||(_meUL&&(_meUL.role==='master'||_meUL.role==='superadmin'))) return `<button class="btn bd bsm ulist-remove-btn" data-uid="${u.id}" title="Remover usuário"><i class="ti ti-trash"></i></button>`;
+              // Supervisor: pode remover só membros da própria equipe
+              if(_meUL&&_meUL.role==='supervisor'){
+                const minhaEq=equipes.find(e=>e.supervisorId===_meUL.id);
+                if(minhaEq&&(minhaEq.membroIds||[]).includes(u.id)) return `<button class="btn bd bsm ulist-remove-btn" data-uid="${u.id}" title="Remover da equipe"><i class="ti ti-trash"></i></button>`;
+              }
+              return '';
+            })()}
           </div>
         `:`<span class="rbadge rg">Administrador</span>`}
       </div>
