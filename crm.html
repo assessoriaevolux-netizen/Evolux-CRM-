@@ -1182,21 +1182,35 @@
       .subscribe();
 
       // Realtime leads (filtrado por empresa) → atualiza dashboard, funil e tabela
+      // Debounce: agrupa eventos em rajada (ex: importação em lote) em uma única recarga
+      let _leadsRealtimeTimer=null;
+      let _leadsRealtimeDeletes=[];
+      const _flushLeadsRealtime=async function(){
+        _leadsRealtimeTimer=null;
+        if(_leadsRealtimeDeletes.length>0){
+          _leadsRealtimeDeletes.forEach(function(sid){
+            const idx=leads.findIndex(function(l){return l.sb_id===sid;});
+            if(idx!==-1) leads.splice(idx,1);
+          });
+          _leadsRealtimeDeletes=[];
+        } else {
+          await window._loadLeads();
+        }
+        try{window.renderDashboard&&window.renderDashboard();}catch(e){}
+        try{window.renderKanban&&window.renderKanban();}catch(e){}
+        try{window.renderTable&&window.renderTable();}catch(e){}
+        try{window.renderRanking&&window.renderRanking();}catch(e){}
+      };
       const _leadsChanOpts={event:'*',schema:'public',table:'leads'};
       if(_profFilter) _leadsChanOpts.filter=_profFilter;
       window._sb.channel('leads-sync')
-        .on('postgres_changes',_leadsChanOpts,async function(payload){
-          // Bug #20: DELETE via realtime — remover do array local sem recarregar tudo
+        .on('postgres_changes',_leadsChanOpts,function(payload){
           if(payload.eventType==='DELETE'&&payload.old?.id){
-            const _delIdx=leads.findIndex(l=>l.sb_id===payload.old.id);
-            if(_delIdx!==-1) leads.splice(_delIdx,1);
-          } else {
-            await window._loadLeads();
+            _leadsRealtimeDeletes.push(payload.old.id);
           }
-          try{window.renderDashboard&&window.renderDashboard();}catch(e){}
-          try{window.renderKanban&&window.renderKanban();}catch(e){}
-          try{window.renderTable&&window.renderTable();}catch(e){}
-          try{window.renderRanking&&window.renderRanking();}catch(e){}
+          // Debounce de 1.5s — espera a rajada de INSERTs terminar antes de recarregar
+          if(_leadsRealtimeTimer) clearTimeout(_leadsRealtimeTimer);
+          _leadsRealtimeTimer=setTimeout(_flushLeadsRealtime,1500);
         })
         .subscribe();
 
@@ -4073,44 +4087,66 @@ function applyFunilFilter(l,f,vis){
 }
 
 // ─── KANBAN + DRAG ────────────────────────────────────────────────────────────
+// Paginação por coluna: quantos cards mostrar por etapa
+const KANBAN_PAGE_SIZE=20;
+let kanbanColPage={}; // { etapa: número de cards visíveis }
+
+function renderKanbanColuna(etapa,i,f,vis){
+  const atdLabel={aguardando:'⏳ Aguardando',em_andamento:'🔵 Em andamento',finalizado:'✅ Finalizado'};
+  const todosCards=leads.filter(l=>l.etapa===etapa&&applyFunilFilter(l,f,vis));
+  const limite=kanbanColPage[etapa]||KANBAN_PAGE_SIZE;
+  const cards=todosCards.slice(0,limite);
+  const allColSel=cards.length>0&&cards.every(l=>funilSelected.has(l.id));
+  const temMais=todosCards.length>limite;
+  const etapaEsc=etapa.replace(/'/g,"\\'");
+  return `<div class="col" ondragover="onDragOver(event,this)" ondragleave="onDragLeave(event,this)" ondrop="onDrop(event,'${etapaEsc}')">
+    <div class="col-hdr">
+      <span class="cn2"><span class="cdot" style="background:${EC[i]}"></span>${ETAPAS_LABEL[etapa]||etapa}</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="ccnt">${todosCards.length}</span>
+        ${funilSelMode?`<input type="checkbox" title="Selecionar coluna" ${allColSel?'checked':''} onclick="event.stopPropagation();toggleSelectColuna('${etapaEsc}');renderKanban()" style="accent-color:var(--b);cursor:pointer">`:''}
+      </div>
+    </div>
+    ${cards.map(l=>{
+      const isSel=funilSelected.has(l.id);
+      const resp=users.find(u=>u.id===l.responsavelId);
+      const podeEditar=podeEditarLead(l);
+      const podeDrag=podeEditar&&!funilSelMode;
+      return `<div class="kcard${isSel?' kcard-sel':''}${!podeEditar?' kcard-readonly':''}" draggable="${podeDrag}" data-id="${l.id}"
+        ondragstart="${podeDrag?`onDragStart(event,${l.id})`:'return false'}"
+        onclick="${podeEditar?`funilSelMode?toggleFunilCard(${l.id}):openLeadDetalhe(${l.id})`:`openLeadDetalhe(${l.id})`}">
+        ${funilSelMode&&podeEditar?`<input type="checkbox" ${isSel?'checked':''} onclick="event.stopPropagation();toggleFunilCard(${l.id})" style="accent-color:var(--b);float:right;margin-left:4px;cursor:pointer">`:''}
+        <div class="kcard-n">${l.nome}</div>
+        <div class="kcard-i">${l.tel||'—'}${resp?` · <span style="color:var(--b)">${resp.nome.split(' ')[0]}</span>`:''}</div>
+        ${l.atendimento?`<div style="font-size:10px;color:var(--tm);margin-bottom:4px">${atdLabel[l.atendimento]||''}</div>`:''}
+        <div class="kcard-b"><span class="tag ${TMAP[l.tipo]||'ts3'}">${l.tipo}</span><span class="kcard-v">${fmtR(l.credito)}</span></div>
+      </div>`;
+    }).join('')}
+    ${temMais?`<button class="add-col-btn" style="flex:1;margin-top:4px;color:var(--b);border-color:var(--b)" onclick="kanbanVerMais('${etapaEsc}')"><i class="ti ti-chevron-down"></i> Ver mais (${todosCards.length-limite} restantes)</button>`:''}
+    <div style="display:flex;gap:4px;margin-top:4px">
+      <button class="add-col-btn" style="flex:1" onclick="openModal()"><i class="ti ti-plus"></i>Adicionar</button>
+      ${funilSelMode?`<button class="add-col-btn" style="flex:0 0 auto;padding:6px 8px" title="Selecionar todos nesta coluna" onclick="toggleSelectColuna('${etapaEsc}')"><i class="ti ti-select-all"></i></button>`:''}
+    </div>
+  </div>`;
+}
+
+function kanbanVerMais(etapa){
+  kanbanColPage[etapa]=(kanbanColPage[etapa]||KANBAN_PAGE_SIZE)+KANBAN_PAGE_SIZE;
+  renderKanban();
+}
+
+// Debounce para evitar múltiplos renders em cascata
+let _rkTimer=null;
 function renderKanban(){
+  if(_rkTimer)clearTimeout(_rkTimer);
+  _rkTimer=setTimeout(_renderKanbanImediato,16);
+}
+function _renderKanbanImediato(){
   const f=getFunilFiltros();
-  const vis=getVisiveisParaMim(); // cache once for all cards
+  const vis=getVisiveisParaMim();
   const totalFiltrado=leads.filter(l=>applyFunilFilter(l,f,vis)).length;
   document.getElementById('funil-total').textContent=totalFiltrado;
-  const atdLabel={aguardando:'⏳ Aguardando',em_andamento:'🔵 Em andamento',finalizado:'✅ Finalizado'};
-  document.getElementById('kanban').innerHTML=ETAPAS.map((etapa,i)=>{
-    const cards=leads.filter(l=>l.etapa===etapa&&applyFunilFilter(l,f,vis));
-    const allColSel=cards.length>0&&cards.every(l=>funilSelected.has(l.id));
-    return `<div class="col" ondragover="onDragOver(event,this)" ondragleave="onDragLeave(event,this)" ondrop="onDrop(event,'${etapa.replace(/'/g,"\\'")}')">
-      <div class="col-hdr">
-        <span class="cn2"><span class="cdot" style="background:${EC[i]}"></span>${ETAPAS_LABEL[etapa]||etapa}</span>
-        <div style="display:flex;align-items:center;gap:6px">
-          <span class="ccnt">${cards.length}</span>
-          ${funilSelMode?`<input type="checkbox" title="Selecionar coluna" ${allColSel?'checked':''} onclick="event.stopPropagation();toggleSelectColuna('${etapa.replace(/'/g,"\\'")}');renderKanban()" style="accent-color:var(--b);cursor:pointer">`:''}
-        </div>
-      </div>
-      ${cards.map(l=>{
-        const isSel=funilSelected.has(l.id);
-        const resp=users.find(u=>u.id===l.responsavelId);
-        const podeEditar=podeEditarLead(l);
-        const podeDrag=podeEditar&&!funilSelMode;
-        return `<div class="kcard${isSel?' kcard-sel':''}${!podeEditar?' kcard-readonly':''}" draggable="${podeDrag}" data-id="${l.id}"
-          ondragstart="${podeDrag?`onDragStart(event,${l.id})`:'return false'}"
-          onclick="${podeEditar?`funilSelMode?toggleFunilCard(${l.id}):openLeadDetalhe(${l.id})`:`openLeadDetalhe(${l.id})`}">
-          ${funilSelMode&&podeEditar?`<input type="checkbox" ${isSel?'checked':''} onclick="event.stopPropagation();toggleFunilCard(${l.id})" style="accent-color:var(--b);float:right;margin-left:4px;cursor:pointer">`:''}
-          <div class="kcard-n">${l.nome}</div>
-          <div class="kcard-i">${l.tel||'—'}${resp?` · <span style="color:var(--b)">${resp.nome.split(' ')[0]}</span>`:''}</div>
-          ${l.atendimento?`<div style="font-size:10px;color:var(--tm);margin-bottom:4px">${atdLabel[l.atendimento]||''}</div>`:''}
-          <div class="kcard-b"><span class="tag ${TMAP[l.tipo]||'ts3'}">${l.tipo}</span><span class="kcard-v">${fmtR(l.credito)}</span></div>
-        </div>`;
-      }).join('')}
-      <div style="display:flex;gap:4px;margin-top:4px">
-        <button class="add-col-btn" style="flex:1" onclick="openModal()"><i class="ti ti-plus"></i>Adicionar</button>
-        ${funilSelMode?`<button class="add-col-btn" style="flex:0 0 auto;padding:6px 8px" title="Selecionar todos nesta coluna" onclick="toggleSelectColuna('${etapa.replace(/'/g,"\\'")}')"><i class="ti ti-select-all"></i></button>`:''}
-      </div>
-    </div>`;
-  }).join('');
+  document.getElementById('kanban').innerHTML=ETAPAS.map((etapa,i)=>renderKanbanColuna(etapa,i,f,vis)).join('');
 }
 // ─── EDITAR FUNIL ─────────────────────────────────────────────────────────────
 function openEditarFunil(){
@@ -4501,14 +4537,29 @@ function populateSelects(){
     sel.innerHTML='<option value="">Hierarquia...</option>'+hierarquias.slice().sort((a,b)=>a.ordem-b.ordem).map(h=>`<option value="${h.id}"${u&&(u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id)?' selected':''}>${h.nome}</option>`).join('');
   });
 }
+// Paginação da tabela de leads
+const TABLE_PAGE_SIZE=50;
+let tableCurrentPage=0;
+let _rtTimer=null;
+
 function renderTable(){
+  tableCurrentPage=0; // reset ao filtrar
+  if(_rtTimer)clearTimeout(_rtTimer);
+  _rtTimer=setTimeout(_renderTableImediato,16);
+}
+function _renderTableImediato(){
   const q=(document.getElementById('srch').value||'').toLowerCase();
   const ft=document.getElementById('fTipo').value,fe=document.getElementById('fEtapa').value,fo=document.getElementById('fOrigem').value;
   const vis=getVisiveisParaMim();
   const fl=leads.filter(l=>vis.has(l.responsavelId)&&(!q||l.nome.toLowerCase().includes(q)||l.tel.includes(q))&&(!ft||l.tipo===ft)&&(!fe||l.etapa===fe)&&(!fo||l.origem===fo));
   const tbody=document.getElementById('leads-body');
-  if(!fl.length){tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:22px;color:var(--tm)">Nenhum lead encontrado.</td></tr>`;return;}
-  tbody.innerHTML=fl.map(l=>{
+  if(!fl.length){tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:22px;color:var(--tm)">Nenhum lead encontrado.</td></tr>`;
+    const pag=document.getElementById('table-paginacao');if(pag)pag.style.display='none';
+    return;
+  }
+  const inicio=tableCurrentPage*TABLE_PAGE_SIZE;
+  const pagina=fl.slice(inicio,inicio+TABLE_PAGE_SIZE);
+  tbody.innerHTML=pagina.map(l=>{
     const si=ETAPAS.indexOf(l.etapa);
     const resp=users.find(u=>u.id===l.responsavelId);
     const isSel=selectedLeads.has(l.id);
@@ -4526,6 +4577,25 @@ function renderTable(){
         <button class="btn bg bsm" onclick="simFromLead(${l.id})" title="Simular"><i class="ti ti-calculator"></i></button>
         <button class="btn bd bsm" onclick="removeLead(${l.id})" title="Remover"><i class="ti ti-trash"></i></button>
       </td></tr>`;}).join('');
+  // Paginação
+  const totalPags=Math.ceil(fl.length/TABLE_PAGE_SIZE);
+  let pag=document.getElementById('table-paginacao');
+  if(!pag){
+    pag=document.createElement('div');pag.id='table-paginacao';
+    pag.style.cssText='display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;font-size:13px;color:var(--tm)';
+    tbody.closest('table')?.after(pag);
+  }
+  if(totalPags<=1){pag.style.display='none';return;}
+  pag.style.display='flex';
+  pag.innerHTML=`
+    <button class="btn bsm" style="background:var(--c2);color:var(--tx);border:1px solid var(--c3)" ${tableCurrentPage===0?'disabled':''} onclick="tableIrPagina(${tableCurrentPage-1})"><i class="ti ti-chevron-left"></i></button>
+    <span>Página ${tableCurrentPage+1} de ${totalPags} · ${fl.length} leads</span>
+    <button class="btn bsm" style="background:var(--c2);color:var(--tx);border:1px solid var(--c3)" ${tableCurrentPage>=totalPags-1?'disabled':''} onclick="tableIrPagina(${tableCurrentPage+1})"><i class="ti ti-chevron-right"></i></button>`;
+}
+function tableIrPagina(p){
+  tableCurrentPage=p;
+  _renderTableImediato();
+  document.querySelector('.tab-content[data-tab="lista"]')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 // ─── MODAL LEAD ───────────────────────────────────────────────────────────────
