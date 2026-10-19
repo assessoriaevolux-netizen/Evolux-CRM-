@@ -4254,7 +4254,7 @@ function importarLeadsCSV(input){
     }
 
     const headers=parseCSVLine(lines[0],sep).map(h=>h.replace(/"/g,'').replace(/^﻿/,'').trim().toLowerCase()
-      .normalize('NFD').replace(/[̀-ͯ]/g,''));// remove acentos do header (range unicode explícito)
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,''));// remove acentos do header
 
     let imported=0,skipped=0,duplicados=0;
     const duplicadosNomes=[];
