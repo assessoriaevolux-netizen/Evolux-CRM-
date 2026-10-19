@@ -4300,9 +4300,6 @@ function importarLeadsCSV(input){
     const headers=parseCSVLine(lines[0],sep).map(h=>h.replace(/"/g,'').replace(/^\uFEFF/,'').trim().toLowerCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g,''));// remove acentos do header
 
-    console.log('[CSV Import] sep='+JSON.stringify(sep)+' headers='+JSON.stringify(headers));
-    console.log('[CSV Import] lines[0] hex:', [...lines[0].slice(0,40)].map(c=>c.charCodeAt(0).toString(16)).join(' '));
-
     let imported=0,skipped=0,duplicados=0;
     const duplicadosNomes=[];
     for(let i=1;i<lines.length;i++){
@@ -4313,7 +4310,6 @@ function importarLeadsCSV(input){
 
       // Aceita "nome", "nome_completo" (Meta Ads), "name", "cliente", "lead"
       const nome=obj['nome']||obj['nome_completo']||obj['name']||obj['cliente']||obj['lead']||'';
-      if(i===1) console.log('[CSV Import] row1 obj keys='+JSON.stringify(Object.keys(obj))+' nome='+JSON.stringify(nome));
       if(!nome){skipped++;continue;}
 
       // Responsável — aceita "proprietario" (coluna do HubSpot/RD Station) além dos campos padrão
@@ -4519,8 +4515,7 @@ function importarLeadsCSV(input){
     }
     input.value='';
     if(imported===0&&duplicados===0){
-      const colsFound=headers.slice(0,6).join(', ');
-      showToast(`Nenhum lead importado. Colunas: ${colsFound} | sep:${sep==='\\t'?'TAB':sep}`,'ti-alert-triangle','#d97706');
+      showToast(`Nenhum lead importado. Verifique se o CSV tem coluna "nome".`,'ti-alert-triangle','#d97706');
     } else if(imported>0&&duplicados===0){
       showToast(`${imported} lead${imported!==1?'s':''} importado${imported!==1?'s':''} com sucesso!`,'ti-check','#1db954');
     } else if(imported===0&&duplicados>0){
