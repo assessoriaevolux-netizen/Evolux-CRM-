@@ -53,8 +53,30 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json()
-    const { nome, plano } = body
+    const { action, nome, plano, empresa_id, ativo } = body
 
+    // Ação: ativar/desativar empresa
+    if (action === 'toggle_ativo') {
+      if (!empresa_id) {
+        return new Response(JSON.stringify({ error: 'empresa_id é obrigatório' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+      const { error } = await supabaseAdmin
+        .from('empresas')
+        .update({ ativo: ativo === true })
+        .eq('id', empresa_id)
+      if (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Ação padrão: criar empresa
     if (!nome) {
       return new Response(JSON.stringify({ error: 'Nome da empresa é obrigatório' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }

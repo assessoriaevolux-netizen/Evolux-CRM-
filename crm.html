@@ -8534,8 +8534,39 @@ async function criarEmpresaConfirm(){
   document.body.insertAdjacentHTML('beforeend',html2);
 }
 async function toggleEmpresaAtivo(id,atual){
-  await window._sb.from('empresas').update({ativo:!atual}).eq('id',id);
-  renderEmpresas();
+  const novoStatus=!atual;
+  const me=getMe();
+  if(!me||!['master','superadmin'].includes(me.role)){
+    showToast('Sem permissão para alterar status de empresa.','ti-ban',4000);
+    return;
+  }
+  showToast((novoStatus?'Ativando':'Desativando')+' empresa...','ti-loader-2',2000);
+  // Tenta via Edge Function (tem service_role, bypassa RLS)
+  let ok=false;
+  try{
+    let _token=window._session?.access_token||'';
+    try{const {data:{session:_fs}}=await window._sb.auth.getSession();if(_fs?.access_token)_token=_fs.access_token;}catch(e){}
+    const res=await fetch(`${window._sbUrl}/functions/v1/create-empresa`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':window._sbAnon,'Authorization':`Bearer ${_token}`},
+      body:JSON.stringify({action:'toggle_ativo',empresa_id:id,ativo:novoStatus})
+    });
+    if(res.ok){ok=true;}
+    else{
+      // Fallback: tenta direto no banco
+      const {error}=await window._sb.from('empresas').update({ativo:novoStatus}).eq('id',id);
+      if(!error) ok=true;
+      else{ console.error('[toggleEmpresaAtivo] RLS bloqueou:',error); showToast('Erro: '+error.message+'. Execute o SQL de policy no Supabase.','ti-alert-circle',6000); return; }
+    }
+  }catch(e){
+    const {error}=await window._sb.from('empresas').update({ativo:novoStatus}).eq('id',id);
+    if(!error) ok=true;
+    else{ console.error('[toggleEmpresaAtivo] erro:',e,error); showToast('Erro ao alterar status da empresa.','ti-alert-circle',5000); return; }
+  }
+  if(ok){
+    showToast('Empresa '+(novoStatus?'ativada':'desativada')+' com sucesso!','ti-check',3000);
+    renderEmpresas();
+  }
 }
 
 function updateSbUser(){
