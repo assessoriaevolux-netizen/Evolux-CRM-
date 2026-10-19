@@ -4088,7 +4088,7 @@ function applyFunilFilter(l,f,vis){
 
 // ─── KANBAN + DRAG ────────────────────────────────────────────────────────────
 // Paginação por coluna: quantos cards mostrar por etapa
-const KANBAN_PAGE_SIZE=20;
+const KANBAN_PAGE_SIZE=99999; // sem paginação — mostra todos os leads rolando
 let kanbanColPage={}; // { etapa: número de cards visíveis }
 
 function renderKanbanColuna(etapa,i,f,vis){
@@ -4122,7 +4122,6 @@ function renderKanbanColuna(etapa,i,f,vis){
         <div class="kcard-b"><span class="tag ${TMAP[l.tipo]||'ts3'}">${l.tipo}</span><span class="kcard-v">${fmtR(l.credito)}</span></div>
       </div>`;
     }).join('')}
-    ${temMais?`<button class="add-col-btn" style="flex:1;margin-top:4px;color:var(--b);border-color:var(--b)" onclick="kanbanVerMais('${etapaEsc}')"><i class="ti ti-chevron-down"></i> Ver mais (${todosCards.length-limite} restantes)</button>`:''}
     <div style="display:flex;gap:4px;margin-top:4px">
       <button class="add-col-btn" style="flex:1" onclick="openModal()"><i class="ti ti-plus"></i>Adicionar</button>
       ${funilSelMode?`<button class="add-col-btn" style="flex:0 0 auto;padding:6px 8px" title="Selecionar todos nesta coluna" onclick="toggleSelectColuna('${etapaEsc}')"><i class="ti ti-select-all"></i></button>`:''}
@@ -4526,6 +4525,8 @@ function importarLeadsCSV(input){
       },100);
     }
     renderKanban();renderDashboard();renderTable();renderNotifPanel();
+    // Navega para o Funil automaticamente para o usuário ver os leads
+    if(imported>0) setTimeout(()=>navTo('funil'),200);
     // Sincroniza com o banco em lote (50 por vez) para evitar rate limit
     if(window._syncLead&&imported>0){
       const novos=leads.slice(-imported);
