@@ -2652,6 +2652,7 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
       <button class="btn bg bsm" onclick="openEditarFunil()"><i class="ti ti-pencil"></i>Editar funil</button>
       <button class="btn bg bsm" onclick="exportarLeadsCSV()"><i class="ti ti-download"></i>Exportar</button>
       <label class="btn bg bsm" style="cursor:pointer;margin:0"><i class="ti ti-upload"></i>Importar<input type="file" accept=".csv" style="display:none" onchange="importarLeadsCSV(this)"></label>
+      <button class="btn bsm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5" onclick="limparTodosLeads()"><i class="ti ti-trash"></i>Limpar leads</button>
       <button class="btn bg bsm" onclick="toggleFunilSelMode()" id="btn-funil-sel"><i class="ti ti-checkboxes"></i>Selecionar</button>
       <button class="btn bp bsm" onclick="openModal()"><i class="ti ti-plus"></i>Novo lead</button>
     </div>
@@ -4544,6 +4545,27 @@ function importarLeadsCSV(input){
     reader.onload(syntheticEvt);
   };
   reader2.readAsArrayBuffer(file);
+}
+
+async function limparTodosLeads(){
+  if(!confirm(`Apagar TODOS os ${leads.length} leads? Esta ação não pode ser desfeita.`)) return;
+  showToast('Apagando leads...','ti-loader','#6366f1');
+  try{
+    if(window._sb){
+      const empresaId=await window._getEmpresaId();
+      if(empresaId){
+        const {error}=await window._sb.from('leads').delete().eq('empresa_id',empresaId);
+        if(error) throw error;
+      }
+    }
+    leads.length=0;
+    window.nextLeadId=1;
+    renderKanban();renderDashboard();renderTable();renderNotifPanel();
+    showToast('Todos os leads apagados. Pode importar agora.','ti-trash','#dc2626');
+  }catch(e){
+    console.error('[limparLeads]',e);
+    showToast('Erro ao apagar leads: '+e.message,'ti-alert-triangle','#dc2626');
+  }
 }
 
 function onDragStart(e,id){dragId=id;e.dataTransfer.effectAllowed='move';setTimeout(()=>document.querySelector(`[data-id="${id}"]`)?.classList.add('dragging'),0);}
