@@ -179,9 +179,19 @@
       const empresaIdExistente = existing?.empresa_id
         || session.user.user_metadata?.empresa_id
         || null;
-      const roleCorreto = existing?.role
-        || session.user.user_metadata?.role
-        || 'vendedor';
+      // Roles com maior privilégio nunca são sobrescritos por metadados
+      const ROLES_PRIORITY = ['master','superadmin','gestor','admin','administrador','supervisor','representante','vendedor'];
+      const _roleDb = existing?.role || null;
+      const _roleMeta = session.user.user_metadata?.role || null;
+      // Se já tem role no banco, usa ele — a menos que seja vendedor e o metadado diga diferente
+      const roleCorreto = (()=>{
+        if(!_roleDb) return _roleMeta || 'vendedor';
+        if(!_roleMeta) return _roleDb;
+        // Nunca rebaixa um role de privilégio alto por causa dos metadados
+        const dbIdx = ROLES_PRIORITY.indexOf(_roleDb);
+        const metaIdx = ROLES_PRIORITY.indexOf(_roleMeta);
+        return (dbIdx <= metaIdx) ? _roleDb : _roleMeta; // menor índice = maior privilégio
+      })();
 
       if(!existing){
         // Cria profile completo com empresa_id e role corretos
@@ -196,15 +206,14 @@
           empresa_id: empresaIdExistente || null
         },{onConflict:'id'});
       } else if(!existing.empresa_id && empresaIdExistente) {
-        // Profile existe mas sem empresa_id — corrige agora
+        // Profile existe mas sem empresa_id — corrige agora (sem alterar role)
         await window._sb.from('profiles').update({
-          empresa_id: empresaIdExistente,
-          role: roleCorreto
+          empresa_id: empresaIdExistente
         }).eq('id', session.user.id);
-      } else if(existing.role === 'vendedor' && session.user.user_metadata?.role && session.user.user_metadata.role !== 'vendedor') {
-        // Role no banco está como vendedor mas metadados dizem diferente — corrige
+      } else if(existing.role !== roleCorreto) {
+        // Só atualiza role se o roleCorreto for de maior ou igual privilégio
         await window._sb.from('profiles').update({
-          role: session.user.user_metadata.role
+          role: roleCorreto
         }).eq('id', session.user.id);
       }
 
