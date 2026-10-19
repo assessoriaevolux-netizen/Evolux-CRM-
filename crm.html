@@ -8544,8 +8544,10 @@ async function toggleEmpresaAtivo(id,atual){
   // Tenta via Edge Function (tem service_role, bypassa RLS)
   let ok=false;
   try{
-    let _token=window._session?.access_token||'';
-    try{const {data:{session:_fs}}=await window._sb.auth.getSession();if(_fs?.access_token)_token=_fs.access_token;}catch(e){}
+    // Sempre busca sessão fresca para garantir token válido
+    let _token='';
+    try{const {data:{session:_fs}}=await window._sb.auth.getSession();_token=_fs?.access_token||'';}catch(e){}
+    if(!_token) _token=window._session?.access_token||'';
     const res=await fetch(`${window._sbUrl}/functions/v1/create-empresa`,{
       method:'POST',
       headers:{'Content-Type':'application/json','apikey':window._sbAnon,'Authorization':`Bearer ${_token}`},
