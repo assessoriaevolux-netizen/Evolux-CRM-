@@ -8687,7 +8687,10 @@ async function renderEmpresas(){
           <button onclick="navigator.clipboard.writeText('${link}').then(()=>showToast('Link copiado!','ti-check'))" style="border:none;background:var(--g);color:#fff;border-radius:5px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0"><i class="ti ti-copy"></i> Copiar</button>
         </div>
       </div>
-      <button class="btn bd bsm" onclick="toggleEmpresaAtivo('${e.id}',${e.ativo})" style="flex-shrink:0">${e.ativo?'Desativar':'Ativar'}</button>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <button class="btn bd bsm" onclick="openEditarEmpresaModal('${e.id}')" title="Editar empresa"><i class="ti ti-pencil"></i></button>
+        <button class="btn bd bsm" onclick="toggleEmpresaAtivo('${e.id}',${e.ativo})" style="flex-shrink:0">${e.ativo?'Desativar':'Ativar'}</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -8784,6 +8787,60 @@ async function toggleEmpresaAtivo(id,atual){
   if(ok){
     showToast('Empresa '+(novoStatus?'ativada':'desativada')+' com sucesso!','ti-check',3000);
     renderEmpresas();
+  }
+}
+
+async function openEditarEmpresaModal(id){
+  const e=_empresasCache.find(x=>x.id===id);
+  if(!e)return;
+  const html=`<div id="modal-editar-empresa" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">
+    <div style="background:var(--w);border-radius:16px;padding:28px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="font-size:17px;font-weight:800;margin-bottom:4px">Editar empresa</div>
+      <div style="font-size:13px;color:var(--tm);margin-bottom:20px">Altere os dados da empresa</div>
+      <div class="field" style="margin-bottom:12px"><label>Nome da empresa</label><input type="text" id="ee-nome" class="fi" value="${e.nome.replace(/"/g,'&quot;')}"></div>
+      <div class="field" style="margin-bottom:12px"><label>Plano</label>
+        <select id="ee-plano" class="fi">
+          <option value="basico" ${(e.plano||'basico')==='basico'?'selected':''}>Básico</option>
+          <option value="pro" ${e.plano==='pro'?'selected':''}>Pro</option>
+          <option value="master" ${e.plano==='master'?'selected':''}>Master</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:20px"><label>Observações internas</label><textarea id="ee-obs" class="fi" rows="2" placeholder="Anotações sobre este cliente...">${e.obs||''}</textarea></div>
+      <div style="display:flex;gap:10px">
+        <button onclick="document.getElementById('modal-editar-empresa').remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+        <button onclick="salvarEdicaoEmpresa('${id}')" style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-device-floppy"></i> Salvar</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(()=>document.getElementById('ee-nome')?.focus(),100);
+}
+async function salvarEdicaoEmpresa(id){
+  const nome=document.getElementById('ee-nome')?.value.trim();
+  const plano=document.getElementById('ee-plano')?.value||'basico';
+  const obs=document.getElementById('ee-obs')?.value.trim()||null;
+  if(!nome){showToast('Informe o nome da empresa.','ti-alert-triangle','#d97706');return;}
+  showToast('Salvando...','ti-loader-2',2000);
+  try{
+    let _token='';
+    try{const {data:{session:_fs}}=await window._sb.auth.getSession();_token=_fs?.access_token||'';}catch(e){}
+    if(!_token) _token=window._session?.access_token||'';
+    // Tenta via Edge Function primeiro
+    const res=await fetch(`${window._sbUrl}/functions/v1/create-empresa`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':window._sbAnon,'Authorization':`Bearer ${_token}`},
+      body:JSON.stringify({action:'editar',empresa_id:id,nome,plano,obs})
+    });
+    if(!res.ok){
+      // Fallback direto no banco
+      const {error}=await window._sb.from('empresas').update({nome,plano,obs}).eq('id',id);
+      if(error){showToast('Erro ao salvar: '+error.message,'ti-alert-circle','#dc2626');return;}
+    }
+    document.getElementById('modal-editar-empresa')?.remove();
+    showToast('Empresa atualizada!','ti-check','#16a34a');
+    renderEmpresas();
+  }catch(err){
+    showToast('Erro: '+err.message,'ti-alert-circle','#dc2626');
   }
 }
 
