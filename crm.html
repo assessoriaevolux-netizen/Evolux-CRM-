@@ -4295,7 +4295,7 @@ function abrirModalImportar(){
         </div>
       </div>
       <div style="display:flex;gap:10px">
-        <button onclick="document.getElementById('modal-importar-tipo').remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+        <button onclick="document.getElementById('modal-importar-tipo')?.remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
         <label style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer;text-align:center">
           <i class="ti ti-file-upload"></i> Escolher arquivo
           <input type="file" accept=".csv" style="display:none" onchange="document.getElementById('modal-importar-tipo')?.remove();importarLeadsCSV(this)">
@@ -7106,7 +7106,7 @@ function abrirModalEditarUsuario(uid){
     <div style="background:var(--w,#1a1a2e);border-radius:16px;padding:28px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,.4)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
         <div style="font-size:17px;font-weight:800;color:var(--tx)"><i class="ti ti-user-edit" style="color:var(--g)"></i> Editar usuário</div>
-        <button onclick="document.getElementById('modal-edit-user').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--tm)"><i class="ti ti-x"></i></button>
+        <button onclick="document.getElementById('modal-edit-user')?.remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--tm)"><i class="ti ti-x"></i></button>
       </div>
       <div style="display:flex;flex-direction:column;gap:12px">
         <div>
@@ -7133,7 +7133,7 @@ function abrirModalEditarUsuario(uid){
       </div>
       <div style="display:flex;gap:10px;margin-top:20px">
         <button id="eu-salvar-btn" onclick="salvarEdicaoUsuario(${uid})" style="flex:2;padding:12px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:14px;font-weight:700;cursor:pointer"><i class="ti ti-check"></i> Salvar alterações</button>
-        <button onclick="document.getElementById('modal-edit-user').remove()" style="flex:1;padding:12px;border:1px solid var(--c2);border-radius:8px;background:transparent;color:var(--tx);font-size:14px;cursor:pointer">Cancelar</button>
+        <button onclick="document.getElementById('modal-edit-user')?.remove()" style="flex:1;padding:12px;border:1px solid var(--c2);border-radius:8px;background:transparent;color:var(--tx);font-size:14px;cursor:pointer">Cancelar</button>
       </div>
     </div>
   </div>`;
@@ -8784,7 +8784,7 @@ async function openNovaEmpresaModal(){
       <div class="field" style="margin-bottom:12px"><label>Nome da empresa</label><input type="text" id="ne-nome" class="fi" placeholder="Ex: Corretor Silva Consórcios" autofocus></div>
       <div class="field" style="margin-bottom:20px"><label>Plano</label><select id="ne-plano" class="fi"><option value="basico">Básico</option><option value="pro">Pro</option><option value="master">Master</option></select></div>
       <div style="display:flex;gap:10px">
-        <button onclick="document.getElementById('modal-nova-empresa').remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+        <button onclick="document.getElementById('modal-nova-empresa')?.remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
         <button onclick="criarEmpresaConfirm()" style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-building-plus"></i> Criar empresa</button>
       </div>
     </div>
@@ -8826,8 +8826,8 @@ async function criarEmpresaConfirm(){
       </div>
       <div style="background:var(--c0);border:1px solid var(--c2);border-radius:10px;padding:12px 14px;font-size:12px;word-break:break-all;color:var(--tx);margin-bottom:14px;font-family:monospace">${link}</div>
       <div style="display:flex;gap:10px">
-        <button onclick="navigator.clipboard.writeText('${link}').then(()=>showToast('Link copiado!','ti-check'));document.getElementById('modal-convite').remove();renderEmpresas();" style="flex:2;padding:11px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-copy"></i> Copiar link</button>
-        <button onclick="document.getElementById('modal-convite').remove();renderEmpresas();" style="flex:1;padding:11px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Fechar</button>
+        <button onclick="navigator.clipboard.writeText('${link}').then(()=>showToast('Link copiado!','ti-check'));document.getElementById('modal-convite')?.remove();renderEmpresas();" style="flex:2;padding:11px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-copy"></i> Copiar link</button>
+        <button onclick="document.getElementById('modal-convite')?.remove();renderEmpresas();" style="flex:1;padding:11px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Fechar</button>
       </div>
     </div>
   </div>`;
@@ -8888,7 +8888,7 @@ async function openEditarEmpresaModal(id){
       </div>
       <div class="field" style="margin-bottom:20px"><label>Observações internas</label><textarea id="ee-obs" class="fi" rows="2" placeholder="Anotações sobre este cliente...">${e.obs||''}</textarea></div>
       <div style="display:flex;gap:10px">
-        <button onclick="document.getElementById('modal-editar-empresa').remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+        <button onclick="document.getElementById('modal-editar-empresa')?.remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
         <button onclick="salvarEdicaoEmpresa('${id}')" style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-device-floppy"></i> Salvar</button>
       </div>
     </div>
@@ -9761,7 +9761,7 @@ function mvEditarVenda(vendaId){
         <input type="date" id="mve-data" class="fi" value="${dataAtual}">
       </div>
       <div style="display:flex;gap:10px">
-        <button onclick="document.getElementById('mv-edit-modal').remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+        <button onclick="document.getElementById('mv-edit-modal')?.remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
         <button onclick="mvSalvarEdicao('${v.id}')" style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-check"></i> Salvar alterações</button>
       </div>
     </div>
