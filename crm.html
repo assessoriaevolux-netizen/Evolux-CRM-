@@ -2651,7 +2651,7 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
       <button class="btn bg bsm" onclick="toggleFunilFiltros()" id="btn-funil-filtros"><i class="ti ti-filter"></i>Filtros</button>
       <button class="btn bg bsm" onclick="openEditarFunil()"><i class="ti ti-pencil"></i>Editar funil</button>
       <button class="btn bg bsm" onclick="exportarLeadsCSV()"><i class="ti ti-download"></i>Exportar</button>
-      <label class="btn bg bsm" style="cursor:pointer;margin:0"><i class="ti ti-upload"></i>Importar<input type="file" accept=".csv" style="display:none" onchange="importarLeadsCSV(this)"></label>
+      <button class="btn bg bsm" onclick="abrirModalImportar()"><i class="ti ti-upload"></i>Importar</button>
       <button class="btn bg bsm" onclick="toggleFunilSelMode()" id="btn-funil-sel"><i class="ti ti-checkboxes"></i>Selecionar</button>
       <button class="btn bp bsm" onclick="openModal()"><i class="ti ti-plus"></i>Novo lead</button>
     </div>
@@ -4261,6 +4261,57 @@ function exportarLeadsCSV(){
   const a=document.createElement('a');a.href=url;a.download=`leads_evolux_${toDate().replace(/\//g,'-')}.csv`;a.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+function abrirModalImportar(){
+  const html=`<div id="modal-importar-tipo" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">
+    <div style="background:var(--w);border-radius:16px;padding:28px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="font-size:17px;font-weight:800;margin-bottom:4px"><i class="ti ti-upload" style="color:var(--g)"></i> Importar leads CSV</div>
+      <div style="font-size:13px;color:var(--tm);margin-bottom:20px">Selecione o tipo de bem deste arquivo antes de importar</div>
+      <div class="field" style="margin-bottom:20px">
+        <label>Tipo de bem</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+          <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;border:2px solid var(--c2);border-radius:10px;cursor:pointer;transition:.15s" onclick="selecionarTipoImport(this,'Imóvel')">
+            <input type="radio" name="tipo-import" value="Imóvel" style="accent-color:var(--g)">
+            <span style="font-size:18px">🏠</span><span style="font-weight:600;font-size:13px">Imóvel</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;border:2px solid var(--c2);border-radius:10px;cursor:pointer;transition:.15s" onclick="selecionarTipoImport(this,'Automóvel')">
+            <input type="radio" name="tipo-import" value="Automóvel" style="accent-color:var(--g)">
+            <span style="font-size:18px">🚗</span><span style="font-weight:600;font-size:13px">Automóvel</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;border:2px solid var(--c2);border-radius:10px;cursor:pointer;transition:.15s" onclick="selecionarTipoImport(this,'Moto')">
+            <input type="radio" name="tipo-import" value="Moto" style="accent-color:var(--g)">
+            <span style="font-size:18px">🏍️</span><span style="font-weight:600;font-size:13px">Moto</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;border:2px solid var(--c2);border-radius:10px;cursor:pointer;transition:.15s" onclick="selecionarTipoImport(this,'Serviço')">
+            <input type="radio" name="tipo-import" value="Serviço" style="accent-color:var(--g)">
+            <span style="font-size:18px">🔧</span><span style="font-weight:600;font-size:13px">Serviço</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;border:2px solid var(--c2);border-radius:10px;cursor:pointer;grid-column:1/-1;transition:.15s" onclick="selecionarTipoImport(this,'auto')">
+            <input type="radio" name="tipo-import" value="auto" checked style="accent-color:var(--g)">
+            <span style="font-size:18px">🔍</span><span style="font-weight:600;font-size:13px">Detectar automaticamente pelo CSV</span>
+          </label>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button onclick="document.getElementById('modal-importar-tipo').remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+        <label style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer;text-align:center">
+          <i class="ti ti-file-upload"></i> Escolher arquivo
+          <input type="file" accept=".csv" style="display:none" onchange="document.getElementById('modal-importar-tipo').remove();importarLeadsCSV(this)">
+        </label>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function selecionarTipoImport(label,valor){
+  document.querySelectorAll('[onclick^="selecionarTipoImport"]').forEach(l=>{
+    l.style.borderColor='var(--c2)';l.style.background='';
+  });
+  label.style.borderColor='var(--g)';label.style.background='rgba(29,185,84,.07)';
+  window._importTipoForcado=valor==='auto'?null:valor;
+}
+// Expõe globalmente para o onchange do input dentro do modal poder chamar
+window._importTipoForcado=null;
+
 function importarLeadsCSV(input){
   const file=input.files[0];if(!file)return;
   const reader=new FileReader();
@@ -4408,7 +4459,8 @@ function importarLeadsCSV(input){
       }
       // Se não há tipo definido: se formulário indica imóvel → 'Imóvel', senão → 'Automóvel' (padrão Meta Ads)
       const _tipoNorm=normalizaTipo(tipoRaw);
-      const tipo=_tipoNorm||(_ehImovel?'Imóvel':'Automóvel');
+      // Se o usuário forçou um tipo no modal de importação, usa ele (exceto se o CSV já define explicitamente)
+      const tipo=window._importTipoForcado||_tipoNorm||(_ehImovel?'Imóvel':'Automóvel');
 
       // Origem — aceita "Fonte" e "Formulário" (colunas do LEADS_IMOVEIS.csv) além do Meta Ads
       const origem=obj['origem']||obj['formulario']||obj['fonte']||obj['platform']||obj['campaign_name']||obj['source']||'';
