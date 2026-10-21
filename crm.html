@@ -4706,7 +4706,7 @@ function _renderTableImediato(){
   const ft=document.getElementById('fTipo').value,fe=document.getElementById('fEtapa').value,fo=document.getElementById('fOrigem').value;
   const fc=document.getElementById('fConsultor')?.value||'';
   const vis=getVisiveisParaMim();
-  const fl=leads.filter(l=>vis.has(l.responsavelId)&&(!q||l.nome.toLowerCase().includes(q)||l.tel.includes(q))&&(!ft||l.tipo===ft)&&(!fe||l.etapa===fe)&&(!fo||l.origem===fo)&&(!fc||l.responsavelId===fc));
+  const fl=leads.filter(l=>vis.has(l.responsavelId)&&(!q||l.nome.toLowerCase().includes(q)||(l.tel||'').includes(q))&&(!ft||l.tipo===ft)&&(!fe||l.etapa===fe)&&(!fo||l.origem===fo)&&(!fc||l.responsavelId===fc));
   const tbody=document.getElementById('leads-body');
   if(!fl.length){tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:22px;color:var(--tm)">Nenhum lead encontrado.</td></tr>`;
     const pag=document.getElementById('table-paginacao');if(pag)pag.style.display='none';
