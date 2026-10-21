@@ -2734,6 +2734,7 @@ html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{backgr
     <select id="fTipo" class="tfield" onchange="renderTable()"><option value="">Todos os tipos</option><option>Imóvel</option><option>Automóvel</option><option>Moto</option><option>Serviço</option></select>
     <select id="fEtapa" class="tfield" onchange="renderTable()"><option value="">Todas as etapas</option></select>
     <select id="fOrigem" class="tfield" onchange="renderTable()"><option value="">Todas as origens</option><option>Meta Ads</option><option>Indicação</option><option>Orgânico</option></select>
+    <select id="fConsultor" class="tfield" style="display:none" onchange="renderTable()"><option value="">Todos os consultores</option></select>
     <button class="btn bp" onclick="openModal()"><i class="ti ti-plus"></i>Novo lead</button>
     <button class="btn bg" id="btn-distrib" onclick="toggleDistrib()"><i class="ti ti-arrows-exchange"></i>Distribuir leads</button>
   </div>
@@ -4609,6 +4610,20 @@ function populateSelects(){
   const fe=document.getElementById('fEtapa');if(fe)fe.innerHTML='<option value="">Todas as etapas</option>'+ETAPAS.map(e=>`<option value="${e}">${ETAPAS_LABEL[e]||e}</option>`).join('');
   const fe2=document.getElementById('fEtapa2');if(fe2)fe2.innerHTML=ETAPAS.map(e=>`<option value="${e}">${ETAPAS_LABEL[e]||e}</option>`).join('');
   const fr=document.getElementById('fResp');if(fr)fr.innerHTML=users.map(u=>`<option value="${u.id}">${u.nome} (${getHierLabel(u)})</option>`).join('');
+  // Filtro por consultor — visível apenas para gestor, representante, master e superadmin
+  const fConsSel=document.getElementById('fConsultor');
+  if(fConsSel){
+    const me=getMe();
+    const rolesComAcesso=['gestor','master','superadmin','admin','representante'];
+    if(me&&rolesComAcesso.includes(me.role)){
+      const vis=getVisiveisParaMim();
+      const consultores=users.filter(u=>vis.has(u.id)&&['vendedor','supervisor','representante'].includes(u.role));
+      fConsSel.innerHTML='<option value="">Todos os consultores</option>'+consultores.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+      fConsSel.style.display='';
+    } else {
+      fConsSel.style.display='none';
+    }
+  }
   // vvend é populado exclusivamente por rankAtualizarSidebar() com as regras de permissão corretas — NÃO sobrescrever aqui
   const _visLc=getVisiveisParaMim();
   const _leadsLc=leads.filter(l=>_visLc.has(l.responsavelId));
@@ -4637,8 +4652,9 @@ function renderTable(){
 function _renderTableImediato(){
   const q=(document.getElementById('srch').value||'').toLowerCase();
   const ft=document.getElementById('fTipo').value,fe=document.getElementById('fEtapa').value,fo=document.getElementById('fOrigem').value;
+  const fc=document.getElementById('fConsultor')?.value||'';
   const vis=getVisiveisParaMim();
-  const fl=leads.filter(l=>vis.has(l.responsavelId)&&(!q||l.nome.toLowerCase().includes(q)||l.tel.includes(q))&&(!ft||l.tipo===ft)&&(!fe||l.etapa===fe)&&(!fo||l.origem===fo));
+  const fl=leads.filter(l=>vis.has(l.responsavelId)&&(!q||l.nome.toLowerCase().includes(q)||l.tel.includes(q))&&(!ft||l.tipo===ft)&&(!fe||l.etapa===fe)&&(!fo||l.origem===fo)&&(!fc||l.responsavelId===fc));
   const tbody=document.getElementById('leads-body');
   if(!fl.length){tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:22px;color:var(--tm)">Nenhum lead encontrado.</td></tr>`;
     const pag=document.getElementById('table-paginacao');if(pag)pag.style.display='none';
