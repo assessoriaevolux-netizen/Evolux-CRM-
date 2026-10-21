@@ -4440,7 +4440,17 @@ function importarLeadsCSV(input){
       // Cadeia de fallback cobre ambos os CSVs:
       // CSV1: coluna "telefone" (com prefixo "p:" como p:+5511977122835)
       // CSV2: coluna "numero do whatsapp" (ex: +5519989367759)
-      const telRaw=obj['numero do whatsapp']||obj['telefone']||obj['numero de telefone secundario']||obj['numero_de_telefone']||obj['phone_number']||obj['phone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']||'';
+      // Normalização dos headers remove acentos mas mantém espaços — cobre ambos espaço e underscore
+      const telRaw=obj['numero do whatsapp']||obj['numero_do_whatsapp']
+        ||obj['telefone']||obj['tel']||obj['fone']||obj['celular']||obj['whatsapp']
+        ||obj['numero de telefone']||obj['numero_de_telefone']
+        ||obj['numero de telefone secundario']||obj['numero_de_telefone_secundario']
+        ||obj['phone number']||obj['phone_number']||obj['phone']
+        ||obj['numero']||obj['numero do contato']||obj['numero_do_contato']
+        ||obj['contato']||obj['mobile']||obj['mobile number']||obj['mobile_number']
+        // fallback genérico: procura qualquer chave que contenha "tel" ou "phone" ou "whatsapp" ou "fone" ou "celular"
+        ||(()=>{const k=Object.keys(obj).find(k=>/(tel|phone|whatsapp|fone|celular|numero|contato)/i.test(k)&&obj[k]);return k?obj[k]:'';})()
+        ||'';
       const tel=normalizaTel(telRaw);
 
       // Tipo — cobre ambos os CSVs:
