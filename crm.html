@@ -4010,7 +4010,10 @@ function toggleFunilCard(id){
   renderKanban();
 }
 function toggleSelectColuna(etapa){
-  const col=leads.filter(l=>l.etapa===etapa);
+  // Respeita o filtro de período e demais filtros ativos
+  const f=getFunilFiltros();
+  const vis=getVisiveisParaMim();
+  const col=leads.filter(l=>l.etapa===etapa&&applyFunilFilter(l,f,vis));
   const allSel=col.every(l=>funilSelected.has(l.id));
   col.forEach(l=>allSel?funilSelected.delete(l.id):funilSelected.add(l.id));
   document.getElementById('funil-sel-count').textContent=`${funilSelected.size} lead${funilSelected.size!==1?'s':''} selecionado${funilSelected.size!==1?'s':''}`;
