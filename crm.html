@@ -458,10 +458,12 @@
     if (lead.sb_id) {
       payload.id = lead.sb_id;
       const { data, error } = await window._sb.from('leads').upsert(payload, { onConflict: 'id' }).select().single();
-      if (!error && data) lead.sb_id = data.id;
+      if (error) console.error('[_syncLead] upsert error:', error.message, '| payload.telefone:', payload.telefone);
+      else if (data) lead.sb_id = data.id;
     } else {
       const { data, error } = await window._sb.from('leads').insert(payload).select().single();
-      if (!error && data) lead.sb_id = data.id;
+      if (error) console.error('[_syncLead] insert error:', error.message, '| payload.telefone:', payload.telefone);
+      else if (data) lead.sb_id = data.id;
     }
   };
 
@@ -4452,6 +4454,8 @@ function importarLeadsCSV(input){
         ||(()=>{const k=Object.keys(obj).find(k=>/(tel|phone|whatsapp|fone|celular|numero|contato)/i.test(k)&&obj[k]);return k?obj[k]:'';})()
         ||'';
       const tel=normalizaTel(telRaw);
+      // Log de diagnóstico: primeira linha com telefone
+      if(i===1)console.log('[importCSV] linha 1 | nome='+nome+' | telRaw='+JSON.stringify(telRaw)+' | tel='+JSON.stringify(tel)+' | chaves obj='+Object.keys(obj).join(','));
 
       // Tipo — cobre ambos os CSVs:
       // CSV2 tem "qual_tipo_de_imovel_voce_pretende_adquirir?" (casa/apartamento/terreno+construção)
@@ -4590,6 +4594,17 @@ function importarLeadsCSV(input){
         await Promise.all(lote.map(l=>window._syncLead(l).catch(e=>console.warn('[importCSV sync]',e))));
         if(b+BATCH<novos.length) await new Promise(r=>setTimeout(r,500)); // pausa entre lotes
       }
+      // Diagnóstico: verifica se telefone foi salvo no banco
+      try{
+        const primeiroComTel=novos.find(l=>l.tel&&l.sb_id);
+        if(primeiroComTel){
+          const {data:chk}=await window._sb.from('leads').select('telefone').eq('id',primeiroComTel.sb_id).single();
+          if(chk&&!chk.telefone){
+            console.error('[importCSV] DIAGNÓSTICO: telefone NÃO foi salvo no banco. Lead sb_id='+primeiroComTel.sb_id+' tel em memória='+primeiroComTel.tel);
+            showToast('⚠️ Telefone importado mas não salvo no banco. Abra o console (F12) e contacte o suporte.','ti-alert-triangle','#ef4444');
+          }
+        }
+      }catch(e){console.warn('[importCSV diagnóstico]',e);}
     }
   };
   // Lê primeiro como ArrayBuffer para detectar BOM e encoding correto
