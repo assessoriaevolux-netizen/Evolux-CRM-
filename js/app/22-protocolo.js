@@ -27,7 +27,8 @@ function openProtocolo(leadId, data, horaIni, horaFim, obs){
 
   // Dados do consultor (igual à simulação)
   const fotoEl=document.getElementById('foto-preview-conta')?.querySelector('img');
-  const fotoSrc=(fotoEl&&fotoEl.src&&!fotoEl.src.endsWith('/v7.html'))?fotoEl.src:(resp.foto||'');
+  const _fotoBruta=(fotoEl&&fotoEl.src&&!fotoEl.src.endsWith('/v7.html'))?fotoEl.src:(resp.foto||'');
+  const fotoSrc=safeUrl(_fotoBruta)?_fotoBruta:'';
   const accInstagram=(document.getElementById('accInstagram')?.value||resp.instagram||'').trim();
   const accWhatsapp=(document.getElementById('accWhatsapp')?.value||resp.whatsapp||'').trim();
   const accNomeVal=(document.getElementById('accNome')?.value||resp.nome||'').trim();
@@ -37,14 +38,14 @@ function openProtocolo(leadId, data, horaIni, horaFim, obs){
   body.innerHTML=`
     <div style="background:linear-gradient(135deg,#0d2818,#1a4a2e);border-radius:10px;padding:16px 18px;margin-bottom:14px;display:flex;align-items:center;gap:14px">
       ${fotoSrc
-        ?`<img src="${fotoSrc}" style="width:56px;height:56px;border-radius:10px;object-fit:cover;object-position:center 15%;border:2px solid #1db954;flex-shrink:0">`
+        ?`<img src="${safeUrl(fotoSrc)}" style="width:56px;height:56px;border-radius:10px;object-fit:cover;object-position:center 15%;border:2px solid #1db954;flex-shrink:0">`
         :`<div style="width:56px;height:56px;border-radius:10px;background:linear-gradient(135deg,#15803d,#1db954);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;border:2px solid #1db954">👤</div>`}
       <div style="flex:1;min-width:0">
-        <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:-.01em">${accNomeVal||resp.nome}</div>
+        <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:-.01em">${esc(accNomeVal||resp.nome)}</div>
         <div style="font-size:10px;font-weight:600;color:#4ade80;text-transform:uppercase;letter-spacing:.08em;margin-top:2px">Consultor de Crédito</div>
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:7px">
-          ${instaFmt?`<span style="font-size:11px;color:rgba(255,255,255,.75);display:flex;align-items:center;gap:4px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><rect x="2" y="2" width="20" height="20" rx="5.5" stroke="#e1306c" stroke-width="2"/><circle cx="12" cy="12" r="4.5" stroke="#e1306c" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.2" fill="#e1306c"/></svg>${instaFmt}</span>`:''}
-          ${accWhatsapp?`<span style="font-size:11px;color:rgba(255,255,255,.75);display:flex;align-items:center;gap:4px"><svg width="11" height="11" viewBox="0 0 24 24"><path fill="#25d366" d="M12 2C6.48 2 2 6.48 2 12c0 1.85.5 3.58 1.37 5.07L2 22l5.1-1.34A9.93 9.93 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm4.93 13.57c-.21.58-1.22 1.11-1.68 1.18-.43.06-.97.09-1.56-.1-.36-.11-.82-.27-1.41-.52-2.47-1.07-4.08-3.56-4.21-3.73-.12-.17-.99-1.32-.99-2.52s.63-1.79.85-2.04c.22-.25.48-.31.64-.31l.46.01c.15 0 .35-.06.54.41l.76 1.91c.06.15.03.32-.05.46l-.34.45c-.1.12-.2.25-.09.48.12.23.52.86 1.12 1.39.77.69 1.42.9 1.62.99.2.09.32.07.44-.04l.49-.58c.13-.16.25-.12.42-.07l1.9.89c.18.08.3.13.33.2.03.07.03.42-.18 1z"/></svg>${accWhatsapp}</span>`:''}
+          ${instaFmt?`<span style="font-size:11px;color:rgba(255,255,255,.75);display:flex;align-items:center;gap:4px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><rect x="2" y="2" width="20" height="20" rx="5.5" stroke="#e1306c" stroke-width="2"/><circle cx="12" cy="12" r="4.5" stroke="#e1306c" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.2" fill="#e1306c"/></svg>${esc(instaFmt)}</span>`:''}
+          ${accWhatsapp?`<span style="font-size:11px;color:rgba(255,255,255,.75);display:flex;align-items:center;gap:4px"><svg width="11" height="11" viewBox="0 0 24 24"><path fill="#25d366" d="M12 2C6.48 2 2 6.48 2 12c0 1.85.5 3.58 1.37 5.07L2 22l5.1-1.34A9.93 9.93 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm4.93 13.57c-.21.58-1.22 1.11-1.68 1.18-.43.06-.97.09-1.56-.1-.36-.11-.82-.27-1.41-.52-2.47-1.07-4.08-3.56-4.21-3.73-.12-.17-.99-1.32-.99-2.52s.63-1.79.85-2.04c.22-.25.48-.31.64-.31l.46.01c.15 0 .35-.06.54.41l.76 1.91c.06.15.03.32-.05.46l-.34.45c-.1.12-.2.25-.09.48.12.23.52.86 1.12 1.39.77.69 1.42.9 1.62.99.2.09.32.07.44-.04l.49-.58c.13-.16.25-.12.42-.07l1.9.89c.18.08.3.13.33.2.03.07.03.42-.18 1z"/></svg>${esc(accWhatsapp)}</span>`:''}
         </div>
       </div>
       <div style="text-align:right;flex-shrink:0">
@@ -56,34 +57,34 @@ function openProtocolo(leadId, data, horaIni, horaFim, obs){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div>
           <div style="font-size:10px;color:var(--tm);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Cliente</div>
-          <div style="font-size:13px;font-weight:700;color:var(--tx)">${lead.nome}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--tx)">${esc(lead.nome)}</div>
         </div>
         <div>
           <div style="font-size:10px;color:var(--tm);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Telefone</div>
-          <div style="font-size:13px;font-weight:700;color:var(--tx)">${lead.tel||'—'}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--tx)">${esc(formatTelefone(lead.tel)||'—')}</div>
         </div>
         <div>
           <div style="font-size:10px;color:var(--tm);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Data <span style="color:var(--g);font-size:9px">(editável)</span></div>
-          <input type="date" id="proto-data" value="${data||''}" style="font-size:12px;font-weight:600;color:var(--tx);background:var(--w);border:1px solid var(--c3);border-radius:6px;padding:4px 7px;width:100%;box-sizing:border-box">
+          <input type="date" id="proto-data" value="${esc(data||'')}" style="font-size:12px;font-weight:600;color:var(--tx);background:var(--w);border:1px solid var(--c3);border-radius:6px;padding:4px 7px;width:100%;box-sizing:border-box">
         </div>
         <div>
           <div style="font-size:10px;color:var(--tm);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Horário <span style="color:var(--g);font-size:9px">(editável)</span></div>
           <div style="display:flex;align-items:center;gap:4px">
-            <input type="time" id="proto-hora-ini" value="${horaIni||''}" style="font-size:12px;font-weight:600;color:var(--tx);background:var(--w);border:1px solid var(--c3);border-radius:6px;padding:4px 5px;flex:1;box-sizing:border-box">
+            <input type="time" id="proto-hora-ini" value="${esc(horaIni||'')}" style="font-size:12px;font-weight:600;color:var(--tx);background:var(--w);border:1px solid var(--c3);border-radius:6px;padding:4px 5px;flex:1;box-sizing:border-box">
             <span style="color:var(--tm);font-size:11px">–</span>
-            <input type="time" id="proto-hora-fim" value="${horaFim||''}" style="font-size:12px;font-weight:600;color:var(--tx);background:var(--w);border:1px solid var(--c3);border-radius:6px;padding:4px 5px;flex:1;box-sizing:border-box">
+            <input type="time" id="proto-hora-fim" value="${esc(horaFim||'')}" style="font-size:12px;font-weight:600;color:var(--tx);background:var(--w);border:1px solid var(--c3);border-radius:6px;padding:4px 5px;flex:1;box-sizing:border-box">
           </div>
         </div>
         <div>
           <div style="font-size:10px;color:var(--tm);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Interesse</div>
-          <div style="font-size:13px;font-weight:700;color:var(--tx)">${lead.tipo} · ${fmtR(lead.credito)}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--tx)">${esc(lead.tipo)} · ${fmtR(lead.credito)}</div>
         </div>
         <div>
           <div style="font-size:10px;color:var(--tm);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Administradora</div>
-          <div style="font-size:13px;font-weight:700;color:var(--tx)">${lead.admin||'—'}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--tx)">${esc(lead.admin||'—')}</div>
         </div>
       </div>
-      ${obs?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--c2)"><div style="font-size:10px;color:var(--tm);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Observações</div><div style="font-size:12px;color:var(--tx)">${obs}</div></div>`:''}
+      ${obs?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--c2)"><div style="font-size:10px;color:var(--tm);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Observações</div><div style="font-size:12px;color:var(--tx)">${esc(obs)}</div></div>`:''}
     </div>
     <div style="background:rgba(29,185,84,.07);border:1px solid rgba(29,185,84,.2);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--tx);line-height:1.6;text-align:center;margin-bottom:12px">
       ✅ <strong>Atendimento confirmado.</strong> Estamos comprometidos em encontrar a melhor solução para você.
@@ -127,7 +128,8 @@ function closeProtoPDFModal(){
 
 function _getConsultorDados(resp){
   const fotoEl=document.getElementById('foto-preview-conta')?.querySelector('img');
-  const fotoSrc=(fotoEl&&fotoEl.src&&!fotoEl.src.endsWith('/v7.html'))?fotoEl.src:(resp.foto||'');
+  const _fotoBruta=(fotoEl&&fotoEl.src&&!fotoEl.src.endsWith('/v7.html'))?fotoEl.src:(resp.foto||'');
+  const fotoSrc=safeUrl(_fotoBruta)?_fotoBruta:'';
   const accInstagram=(document.getElementById('accInstagram')?.value||resp.instagram||'').trim();
   const accWhatsapp=(document.getElementById('accWhatsapp')?.value||resp.whatsapp||'').trim();
   const accNome=(document.getElementById('accNome')?.value||resp.nome||'').trim();

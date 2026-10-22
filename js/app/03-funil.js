@@ -11,7 +11,7 @@ function toggleFunilFiltros(){
   // Popula apenas usuários visíveis para o usuário logado
   const vis=getVisiveisParaMim();
   const usersVisiveis=users.filter(u=>vis.has(u.id));
-  if(fc)fc.innerHTML='<option value="">Todos os consultores</option>'+usersVisiveis.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+  if(fc)fc.innerHTML='<option value="">Todos os consultores</option>'+usersVisiveis.map(u=>`<option value="${u.id}">${esc(u.nome)}</option>`).join('');
 }
 function limparFiltrosFunil(){
   ['ff-consultor','ff-origem','ff-tipo','ff-atendimento'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
@@ -82,22 +82,35 @@ function getFunilFiltros(){
     atendimento:document.getElementById('ff-atendimento')?.value||''
   };
 }
+function _atualizarContagemSel(){
+  const n=funilSelected.size;
+  document.getElementById('funil-sel-count').textContent=`${n} lead${n!==1?'s':''} selecionado${n!==1?'s':''}`;
+}
 function toggleFunilSelMode(){
+  if(!funilSelMode&&!can('leads_transfer')&&!can('leads_delete')){
+    showToast('Você não tem permissão para transferir nem excluir leads.','ti-lock');
+    return;
+  }
   funilSelMode=!funilSelMode;
   funilSelected.clear();
+  _atualizarContagemSel();
   const bar=document.getElementById('funil-transfer-bar');
   bar.style.display=funilSelMode?'flex':'none';
+  const podeTransf=can('leads_transfer');
   const dest=document.getElementById('funil-transfer-dest');
-  // Para transferência: mostra todos os usuários da mesma empresa (não restringe por hierarquia)
-  const me=getMe();
-  const usersTransf=users.filter(u=>!me||u.empresaId===me.empresaId||me.role==='superadmin'||me.role==='master');
-  if(dest)dest.innerHTML='<option value="">Selecionar consultor...</option>'+usersTransf.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+  // Transferência pode ir para qualquer pessoa ativa da empresa (o banco confere a permissão)
+  if(dest){
+    dest.style.display=podeTransf?'':'none';
+    dest.innerHTML='<option value="">Transferir para...</option>'+users.map(u=>`<option value="${u.id}">${esc(u.nome)}</option>`).join('');
+  }
+  const bt=document.getElementById('btn-funil-transferir'); if(bt) bt.style.display=podeTransf?'':'none';
+  const bx=document.getElementById('btn-funil-excluir'); if(bx) bx.style.display=can('leads_delete')?'':'none';
   renderKanban();
 }
 function cancelarSelecaoFunil(){funilSelMode=false;funilSelected.clear();document.getElementById('funil-transfer-bar').style.display='none';renderKanban();}
 function toggleFunilCard(id){
   if(funilSelected.has(id))funilSelected.delete(id);else funilSelected.add(id);
-  document.getElementById('funil-sel-count').textContent=`${funilSelected.size} lead${funilSelected.size!==1?'s':''} selecionado${funilSelected.size!==1?'s':''}`;
+  _atualizarContagemSel();
   renderKanban();
 }
 function toggleSelectColuna(etapa){
@@ -107,7 +120,7 @@ function toggleSelectColuna(etapa){
   const col=leads.filter(l=>l.etapa===etapa&&applyFunilFilter(l,f,vis));
   const allSel=col.every(l=>funilSelected.has(l.id));
   col.forEach(l=>allSel?funilSelected.delete(l.id):funilSelected.add(l.id));
-  document.getElementById('funil-sel-count').textContent=`${funilSelected.size} lead${funilSelected.size!==1?'s':''} selecionado${funilSelected.size!==1?'s':''}`;
+  _atualizarContagemSel();
   renderKanban();
 }
 function selectAllFunil(){
@@ -116,58 +129,58 @@ function selectAllFunil(){
   const filtrados=leads.filter(l=>applyFunilFilter(l,f,vis));
   const allSel=filtrados.every(l=>funilSelected.has(l.id));
   filtrados.forEach(l=>allSel?funilSelected.delete(l.id):funilSelected.add(l.id));
-  document.getElementById('funil-sel-count').textContent=`${funilSelected.size} lead${funilSelected.size!==1?'s':''} selecionado${funilSelected.size!==1?'s':''}`;
+  _atualizarContagemSel();
   renderKanban();
 }
-function transferirSelecionados(){
+// Transfere leads (inclusive para outra equipe) pelo servidor, que confere a permissão
+async function transferirLeadsPara(ids,dest){
+  const sbIds=ids.map(id=>leads.find(x=>x.id===id)).filter(l=>l&&l.sb_id).map(l=>l.sb_id);
+  if(!sbIds.length) return 0;
+  const {data,error}=await window._rpc('crm_transferir_leads',{p_ids:sbIds,p_destino:dest.sb_id});
+  if(error){ showToast('Não foi possível transferir: '+error.message,'ti-alert-triangle','#dc2626'); return -1; }
+  if(window._saveAtividade) window._saveAtividade('ti-arrows-right-left',`${data} lead${data!==1?'s':''} transferido${data!==1?'s':''} para ${dest.nome}`);
+  await window._loadLeads();
+  return data||0;
+}
+async function transferirSelecionados(){
+  if(!can('leads_transfer')){showToast('Sem permissão para transferir leads.','ti-lock');return;}
   const destId=parseInt(document.getElementById('funil-transfer-dest').value)||0;
-  if(!destId){showToast('Selecione um consultor de destino.','ti-alert-triangle','#d97706');return;}
+  if(!destId){showToast('Selecione para quem transferir.','ti-alert-triangle','#d97706');return;}
   if(funilSelected.size===0){showToast('Selecione ao menos um lead.','ti-alert-triangle','#d97706');return;}
   const dest=users.find(u=>u.id===destId);
-  if(!dest){showToast('Consultor não encontrado.','ti-alert-triangle','#d97706');return;}
-  if(!dest.sb_id){showToast('Consultor sem ID válido no banco.','ti-alert-triangle','#d97706');return;}
-  const destSbId=dest.sb_id;
-  funilSelected.forEach(id=>{
-    const l=leads.find(x=>x.id===id);
-    if(l&&l.sb_id){
-      l.responsavelId=destId;
-      // UPDATE direto só do responsavel_id — mais seguro que _syncLead completo
-      window._sb.from('leads')
-        .update({responsavel_id:destSbId,updated_at:new Date().toISOString()})
-        .eq('id',l.sb_id)
-        .then(({error})=>{
-          if(error) console.error('[transferir] erro ao salvar no banco:',error);
-          else console.log('[transferir] lead',l.nome,'→',dest.nome,'salvo no banco');
-        });
-      if(window._saveAtividade) window._saveAtividade('ti-arrows-right-left',`${l.nome} transferido para ${dest.nome}`);
-    }
-  });
-  const qtd=funilSelected.size;
+  if(!dest||!dest.sb_id){showToast('Consultor não encontrado.','ti-alert-triangle','#d97706');return;}
+  const n=await transferirLeadsPara([...funilSelected],dest);
+  if(n<0) return;
   cancelarSelecaoFunil();
-  showToast(`${qtd} lead${qtd!==1?'s':''} transferido${qtd!==1?'s':''} para ${dest.nome}.`,'ti-check','#1db954');
+  showToast(`${n} lead${n!==1?'s':''} transferido${n!==1?'s':''} para ${dest.nome}.`,'ti-check','#1db954');
   renderKanban();renderDashboard();renderTable();renderNotifPanel();
 }
 function excluirSelecionados(){
+  if(!can('leads_delete')){showToast('Sem permissão para excluir leads.','ti-lock');return;}
   if(funilSelected.size===0){showToast('Selecione ao menos um lead.','ti-alert-triangle','#d97706');return;}
   const qtd=funilSelected.size;
-  if(!confirm(`Excluir ${qtd} lead${qtd!==1?'s':''} selecionado${qtd!==1?'s':''}? Essa ação não pode ser desfeita.`))return;
-  const idsParaExcluir=[...funilSelected];
-  idsParaExcluir.forEach(id=>{
-    const idx=leads.findIndex(x=>x.id===id);
-    if(idx!==-1){
-      const l=leads[idx];
-      leads.splice(idx,1);
-      if(l.sb_id&&window._deleteLead) window._deleteLead(l.sb_id).catch(e=>console.warn(e));
+  showConfirm(`Excluir ${qtd} lead${qtd!==1?'s':''} selecionado${qtd!==1?'s':''}? Essa ação não pode ser desfeita.`,async function(){
+    const alvo=[...funilSelected].map(id=>leads.find(x=>x.id===id)).filter(Boolean);
+    const sbIds=alvo.filter(l=>l.sb_id).map(l=>l.sb_id);
+    let excluidos=new Set();
+    for(let i=0;i<sbIds.length;i+=200){
+      const {data,error}=await window._sb.from('leads').delete().in('id',sbIds.slice(i,i+200)).select('id');
+      if(error){showToast('Erro ao excluir: '+error.message,'ti-alert-triangle','#dc2626');break;}
+      (data||[]).forEach(r=>excluidos.add(r.id));
     }
+    alvo.forEach(l=>{ if(!l.sb_id||excluidos.has(l.sb_id)){ const i=leads.indexOf(l); if(i!==-1) leads.splice(i,1); } });
+    const n=alvo.filter(l=>!l.sb_id||excluidos.has(l.sb_id)).length;
+    cancelarSelecaoFunil();
+    if(n<qtd) showToast(`${n} excluído${n!==1?'s':''}; ${qtd-n} sem permissão.`,'ti-alert-triangle','#d97706');
+    else showToast(`${n} lead${n!==1?'s':''} excluído${n!==1?'s':''}.`,'ti-trash','#e53e3e');
+    if(window._saveAtividade&&n) window._saveAtividade('ti-trash',`${n} lead${n!==1?'s':''} excluído${n!==1?'s':''}`);
+    renderKanban();renderDashboard();renderTable();renderNotifPanel();
   });
-  cancelarSelecaoFunil();
-  showToast(`${qtd} lead${qtd!==1?'s':''} excluído${qtd!==1?'s':''}.`,'ti-trash','#e53e3e');
-  renderKanban();renderDashboard();renderTable();renderNotifPanel();
 }
 function applyFunilFilter(l,f,vis){
   // Visibilidade hierárquica: só mostra leads que o usuário pode ver
   if(!vis) vis=getVisiveisParaMim();
-  if(!vis.has(l.responsavelId)) return false;
+  if(!isGestor()&&!vis.has(l.responsavelId)) return false;
   if(f.consultor&&l.responsavelId!==parseInt(f.consultor))return false;
   if(f.origem&&l.origem!==f.origem)return false;
   if(f.tipo&&l.tipo!==f.tipo)return false;
@@ -182,50 +195,50 @@ function applyFunilFilter(l,f,vis){
 }
 
 // ─── KANBAN + DRAG ────────────────────────────────────────────────────────────
-// Paginação por coluna: quantos cards mostrar por etapa
-const KANBAN_PAGE_SIZE=99999; // sem paginação — mostra todos os leads rolando
+// Cada coluna mostra 50 cards por vez (botão "Ver mais" carrega o resto aos poucos)
+const KANBAN_PAGE_SIZE=50;
 let kanbanColPage={}; // { etapa: número de cards visíveis }
+const ATD_LABEL={aguardando:'⏳ Aguardando',em_andamento:'🔵 Em andamento',finalizado:'✅ Finalizado'};
 
-function renderKanbanColuna(etapa,i,f,vis){
-  const atdLabel={aguardando:'⏳ Aguardando',em_andamento:'🔵 Em andamento',finalizado:'✅ Finalizado'};
+function renderKanbanColuna(etapa,i,f,vis,ctx){
   const todosCards=leads.filter(l=>l.etapa===etapa&&applyFunilFilter(l,f,vis));
   const limite=kanbanColPage[etapa]||KANBAN_PAGE_SIZE;
   const cards=todosCards.slice(0,limite);
   const allColSel=cards.length>0&&cards.every(l=>funilSelected.has(l.id));
-  const temMais=todosCards.length>limite;
-  const etapaEsc=etapa.replace(/'/g,"\\'");
-  return `<div class="col" ondragover="onDragOver(event,this)" ondragleave="onDragLeave(event,this)" ondrop="onDrop(event,'${etapaEsc}')">
+  const restantes=todosCards.length-cards.length;
+  return `<div class="col" ondragover="onDragOver(event,this)" ondragleave="onDragLeave(event,this)" ondrop="onDrop(event,${i})">
     <div class="col-hdr">
-      <span class="cn2"><span class="cdot" style="background:${EC[i]}"></span>${ETAPAS_LABEL[etapa]||etapa}</span>
+      <span class="cn2"><span class="cdot" style="background:${EC[i]}"></span>${esc(etapaLabel(etapa))}</span>
       <div style="display:flex;align-items:center;gap:6px">
         <span class="ccnt">${todosCards.length}</span>
-        ${funilSelMode?`<input type="checkbox" title="Selecionar coluna" ${allColSel?'checked':''} onclick="event.stopPropagation();toggleSelectColuna('${etapaEsc}');renderKanban()" style="accent-color:var(--b);cursor:pointer">`:''}
+        ${funilSelMode?`<input type="checkbox" title="Selecionar coluna" ${allColSel?'checked':''} onclick="event.stopPropagation();toggleSelectColuna(ETAPAS[${i}])" style="accent-color:var(--b);cursor:pointer">`:''}
       </div>
     </div>
     ${cards.map(l=>{
       const isSel=funilSelected.has(l.id);
-      const resp=users.find(u=>u.id===l.responsavelId);
-      const podeEditar=podeEditarLead(l);
-      const podeDrag=podeEditar&&!funilSelMode;
-      return `<div class="kcard${isSel?' kcard-sel':''}${!podeEditar?' kcard-readonly':''}" draggable="${podeDrag}" data-id="${l.id}"
+      const resp=ctx.usersPorId.get(l.responsavelId);
+      const podeDrag=ctx.podeMover&&!funilSelMode;
+      return `<div class="kcard${isSel?' kcard-sel':''}${!ctx.podeAbrir?' kcard-readonly':''}" draggable="${podeDrag}" data-id="${l.id}"
         ondragstart="${podeDrag?`onDragStart(event,${l.id})`:'return false'}"
-        onclick="${podeEditar?`funilSelMode?toggleFunilCard(${l.id}):openLeadDetalhe(${l.id})`:`openLeadDetalhe(${l.id})`}">
-        ${funilSelMode&&podeEditar?`<input type="checkbox" ${isSel?'checked':''} onclick="event.stopPropagation();toggleFunilCard(${l.id})" style="accent-color:var(--b);float:right;margin-left:4px;cursor:pointer">`:''}
-        <div class="kcard-n">${l.nome}</div>
-        <div class="kcard-i">${l.tel||'—'}${resp?` · <span style="color:var(--b)">${resp.nome.split(' ')[0]}</span>`:''}</div>
-        ${l.atendimento?`<div style="font-size:10px;color:var(--tm);margin-bottom:4px">${atdLabel[l.atendimento]||''}</div>`:''}
-        <div class="kcard-b"><span class="tag ${TMAP[l.tipo]||'ts3'}">${l.tipo}</span><span class="kcard-v">${fmtR(l.credito)}</span></div>
+        onclick="${funilSelMode?`toggleFunilCard(${l.id})`:`openLeadDetalhe(${l.id})`}">
+        ${funilSelMode?`<input type="checkbox" ${isSel?'checked':''} onclick="event.stopPropagation();toggleFunilCard(${l.id})" style="accent-color:var(--b);float:right;margin-left:4px;cursor:pointer">`:''}
+        <div class="kcard-n">${esc(l.nome)}</div>
+        <div class="kcard-i">${esc(formatTelefone(l.tel)||'—')}${resp?` · <span style="color:var(--b)">${esc(resp.nome.split(' ')[0])}</span>`:''}</div>
+        ${l.atendimento?`<div style="font-size:10px;color:var(--tm);margin-bottom:4px">${ATD_LABEL[l.atendimento]||''}</div>`:''}
+        <div class="kcard-b"><span class="tag ${TMAP[l.tipo]||'ts3'}">${esc(l.tipo)}</span><span class="kcard-v">${fmtR(l.credito)}</span></div>
       </div>`;
     }).join('')}
+    ${restantes>0?`<button class="add-col-btn" style="width:100%;margin-top:4px" onclick="kanbanVerMais(${i})"><i class="ti ti-chevron-down"></i>Ver mais (${restantes})</button>`:''}
     <div style="display:flex;gap:4px;margin-top:4px">
-      <button class="add-col-btn" style="flex:1" onclick="openModal()"><i class="ti ti-plus"></i>Adicionar</button>
-      ${funilSelMode?`<button class="add-col-btn" style="flex:0 0 auto;padding:6px 8px" title="Selecionar todos nesta coluna" onclick="toggleSelectColuna('${etapaEsc}')"><i class="ti ti-select-all"></i></button>`:''}
+      ${ctx.podeCriar?`<button class="add-col-btn" style="flex:1" onclick="openModal(ETAPAS[${i}])"><i class="ti ti-plus"></i>Adicionar</button>`:''}
+      ${funilSelMode?`<button class="add-col-btn" style="flex:0 0 auto;padding:6px 8px" title="Selecionar todos nesta coluna" onclick="toggleSelectColuna(ETAPAS[${i}])"><i class="ti ti-select-all"></i></button>`:''}
     </div>
   </div>`;
 }
 
-function kanbanVerMais(etapa){
-  kanbanColPage[etapa]=(kanbanColPage[etapa]||KANBAN_PAGE_SIZE)+KANBAN_PAGE_SIZE;
+function kanbanVerMais(i){
+  const etapa=ETAPAS[i];
+  kanbanColPage[etapa]=(kanbanColPage[etapa]||KANBAN_PAGE_SIZE)+KANBAN_PAGE_SIZE*2;
   renderKanban();
 }
 
@@ -236,106 +249,142 @@ function renderKanban(){
   _rkTimer=setTimeout(_renderKanbanImediato,16);
 }
 function _renderKanbanImediato(){
+  const el=document.getElementById('kanban');
+  if(!el)return;
   const f=getFunilFiltros();
   const vis=getVisiveisParaMim();
+  const ctx={
+    usersPorId:new Map(users.map(u=>[u.id,u])),
+    podeMover:can('funil_move'),
+    podeAbrir:can('leads_edit')||can('funil_move'),
+    podeCriar:can('leads_create'),
+  };
   const totalFiltrado=leads.filter(l=>applyFunilFilter(l,f,vis)).length;
   document.getElementById('funil-total').textContent=totalFiltrado;
-  document.getElementById('kanban').innerHTML=ETAPAS.map((etapa,i)=>renderKanbanColuna(etapa,i,f,vis)).join('');
+  el.innerHTML=ETAPAS.map((etapa,i)=>renderKanbanColuna(etapa,i,f,vis,ctx)).join('');
 }
-// ─── EDITAR FUNIL ─────────────────────────────────────────────────────────────
+// ─── EDITAR FUNIL (só o nome exibido de cada etapa; o banco guarda por empresa) ──
 function openEditarFunil(){
+  if(!can('funil_edit')){showToast('Você não tem permissão para editar o funil.','ti-lock');return;}
   const list=document.getElementById('funil-etapas-list');
   list.innerHTML=ETAPAS.map((e,i)=>`
     <div style="display:flex;align-items:center;gap:8px">
       <span class="cdot" style="background:${EC[i]};flex-shrink:0"></span>
-      ${i<=4
-        ?`<input type="text" class="fi" value="${e}" id="ef-${i}" style="flex:1">`
-        :`<span class="fi" style="flex:1;background:var(--c1);color:var(--tm);cursor:not-allowed">${e}</span>`}
-    </div>`).join('');
+      <input type="text" class="fi" value="${esc(etapaLabel(e))}" id="ef-${i}" maxlength="40" placeholder="${esc(ETAPAS_LABEL_PADRAO[e]||e)}" style="flex:1">
+    </div>`).join('')+`<div style="font-size:11.5px;color:var(--tm);margin-top:6px">Muda só o nome que aparece. Os leads continuam nas mesmas etapas.</div>`;
   document.getElementById('modal-editar-funil').classList.add('open');
 }
 function closeEditarFunil(){document.getElementById('modal-editar-funil').classList.remove('open');}
-function salvarEditarFunil(){
-  for(let i=0;i<=4;i++){
+async function salvarEditarFunil(){
+  const labels={};
+  for(let i=0;i<ETAPAS.length;i++){
     const inp=document.getElementById(`ef-${i}`);
-    if(!inp)continue;
-    const novo=inp.value.trim();
-    if(!novo){showToast('O nome da etapa não pode estar vazio.','ti-alert-triangle','#d97706');return;}
-    const old=ETAPAS[i];
-    if(novo!==old){
-      leads.forEach(l=>{if(l.etapa===old)l.etapa=novo;});
-      ETAPAS[i]=novo;
-    }
+    const v=(inp?inp.value:'').trim();
+    if(!v){showToast('O nome da etapa não pode ficar vazio.','ti-alert-triangle','#d97706');return;}
+    if(v!==(ETAPAS_LABEL_PADRAO[ETAPAS[i]]||ETAPAS[i])) labels[ETAPAS[i]]=v.slice(0,40);
   }
+  const {error}=await window._rpc('crm_salvar_etapas',{p_labels:labels});
+  if(error){showToast('Não foi possível salvar: '+error.message,'ti-alert-triangle','#dc2626');return;}
+  aplicarEtapasLabels(labels);
   closeEditarFunil();
-  renderKanban();renderDashboard();
+  showToast('Nomes das etapas salvos.','ti-check');
+  renderKanban();renderDashboard();populateSelects();
 }
 
 // ─── DETALHE / EDIÇÃO DO LEAD ─────────────────────────────────────────────────
 let _leadDetalheId=null;
+// Mantém valores que não estão na lista (ex.: origem "Simulador") para não apagá-los ao salvar
+function _garantirOpcao(sel,valor){
+  if(!sel)return;
+  sel.querySelectorAll('option[data-extra]').forEach(o=>o.remove());
+  if(valor&&![...sel.options].some(o=>o.value===valor)){
+    const o=document.createElement('option');
+    o.value=valor;o.textContent=valor;o.setAttribute('data-extra','1');
+    sel.appendChild(o);
+  }
+  sel.value=valor||'';
+}
 function openLeadDetalhe(id){
   _leadDetalheId=id;
   const l=leads.find(x=>x.id===id);if(!l)return;
-  const podeEd=podeEditarLead(l);
-  document.getElementById('lead-det-titulo').innerHTML=`<i class="ti ti-user" style="color:var(--b)"></i> ${l.nome}`;
+  const vis=getVisiveisParaMim();
+  const podeEd=podeEditarLead(l,vis);
+  const podeMov=podeMoverLead(l,vis);
+  const podeTransf=can('leads_transfer')&&(isGestor()||vis.has(l.responsavelId));
+  const tit=document.getElementById('lead-det-titulo');
+  tit.innerHTML='<i class="ti ti-user" style="color:var(--b)"></i> ';
+  tit.appendChild(document.createTextNode(l.nome));
   document.getElementById('ld-nome').value=l.nome;
-  document.getElementById('ld-tel').value=l.tel||'';
-  document.getElementById('ld-tipo').value=l.tipo;
+  document.getElementById('ld-tel').value=formatTelefone(l.tel)||'';
+  _garantirOpcao(document.getElementById('ld-tipo'),l.tipo);
   document.getElementById('ld-credito').value=l.credito?l.credito.toLocaleString('pt-BR'):'';
   const ldEtapa=document.getElementById('ld-etapa');
-  ldEtapa.innerHTML=ETAPAS.map(e=>`<option value="${e}"${e===l.etapa?' selected':''}>${ETAPAS_LABEL[e]||e}</option>`).join('');
-  document.getElementById('ld-origem').value=l.origem||'';
+  ldEtapa.innerHTML=ETAPAS.map(e=>`<option value="${esc(e)}"${e===l.etapa?' selected':''}>${esc(etapaLabel(e))}</option>`).join('');
+  _garantirOpcao(document.getElementById('ld-origem'),l.origem||'');
   const ldResp=document.getElementById('ld-resp');
-  // Popula com usuários visíveis (quem pode ser responsável)
-  const vis=getVisiveisParaMim();
-  const usersOpt=users.filter(u=>vis.has(u.id));
-  ldResp.innerHTML=usersOpt.map(u=>`<option value="${u.id}"${u.id===l.responsavelId?' selected':''}>${u.nome}</option>`).join('');
+  const usersOpt=users.filter(u=>isGestor()||vis.has(u.id));
+  ldResp.innerHTML=(l.responsavelId?'':'<option value="" selected>— sem responsável —</option>')+
+    usersOpt.map(u=>`<option value="${u.id}"${u.id===l.responsavelId?' selected':''}>${esc(u.nome)}</option>`).join('');
   document.getElementById('ld-atendimento').value=l.atendimento||'';
   document.getElementById('ld-obs').value=l.obs||'';
-  // Bloqueia campos se não pode editar
-  const campos=['ld-nome','ld-tel','ld-tipo','ld-credito','ld-etapa','ld-origem','ld-resp','ld-atendimento','ld-obs'];
-  campos.forEach(cid=>{const el=document.getElementById(cid);if(el)el.disabled=!podeEd;});
+  ['ld-nome','ld-tel','ld-tipo','ld-credito','ld-origem','ld-atendimento','ld-obs'].forEach(cid=>{const el=document.getElementById(cid);if(el)el.disabled=!podeEd;});
+  ldEtapa.disabled=!podeMov;
+  ldResp.disabled=!podeTransf;
   const btnSave=document.getElementById('btn-save-lead-det');
   const btnRem=document.getElementById('btn-rem-lead-det');
-  if(btnSave)btnSave.style.display=podeEd?'':'none';
-  if(btnRem)btnRem.style.display=podeEd?'':'none';
+  if(btnSave)btnSave.style.display=(podeEd||podeMov||podeTransf)?'':'none';
+  if(btnRem)btnRem.style.display=(can('leads_delete')&&(isGestor()||vis.has(l.responsavelId)))?'':'none';
   document.getElementById('modal-lead-detalhe').classList.add('open');
 }
 function closeLeadDetalhe(){
   document.getElementById('modal-lead-detalhe').classList.remove('open');
   _leadDetalheId=null;
-  // Reenabilita campos para próxima abertura
   ['ld-nome','ld-tel','ld-tipo','ld-credito','ld-etapa','ld-origem','ld-resp','ld-atendimento','ld-obs'].forEach(cid=>{const el=document.getElementById(cid);if(el)el.disabled=false;});
   const btnSave=document.getElementById('btn-save-lead-det');const btnRem=document.getElementById('btn-rem-lead-det');
   if(btnSave)btnSave.style.display='';if(btnRem)btnRem.style.display='';
 }
-function saveLeadDetalhe(){
+// Depois de fechar/reabrir venda: o banco já acertou vendas e lances; atualiza a tela
+function _atualizarAposVenda(){
+  if(window._invalidarRanking) window._invalidarRanking();
+  setTimeout(()=>{ window._loadProfiles&&window._loadProfiles(); window._loadLances&&window._loadLances(); },600);
+}
+async function saveLeadDetalhe(){
   const l=leads.find(x=>x.id===_leadDetalheId);if(!l)return;
-  const nome=document.getElementById('ld-nome').value.trim();
-  if(!nome){showToast('Informe o nome.','ti-alert-triangle','#d97706');return;}
-  const oldEtapa=l.etapa;
-  const newEtapa=document.getElementById('ld-etapa').value;
-  const newResp=parseInt(document.getElementById('ld-resp').value)||l.responsavelId;
-  const newCredito=unM(document.getElementById('ld-credito').value)||l.credito;
-  // Sync user stats se etapa mudou
-  if(oldEtapa!==newEtapa){
-    if(oldEtapa==='Fechado / Convertido'){const r=users.find(u=>u.id===l.responsavelId);if(r){r.vendas=Math.max(0,(r.vendas||0)-1);r.credito=Math.max(0,(r.credito||0)-l.credito);if(window._syncUser) window._syncUser(r).catch(e=>console.warn(e));}if(window._estornarVenda) window._estornarVenda(l).catch(e=>console.warn(e));}
-    if(newEtapa==='Fechado / Convertido'){const r=users.find(u=>u.id===newResp);if(r){r.vendas=(r.vendas||0)+1;r.credito=(r.credito||0)+newCredito;if(window._syncUser) window._syncUser(r).catch(e=>console.warn(e));}if(window._registrarVenda) window._registrarVenda(l,newResp).catch(e=>console.warn(e));setTimeout(()=>showCelebra(users.find(u=>u.id===newResp)?.nome||'Vendedor',newCredito),100);}
-    if(window._saveAtividade)window._saveAtividade('ti-arrows-right-left',`${nome}: ${oldEtapa} → ${newEtapa}`);
+  const vis=getVisiveisParaMim();
+  const podeEd=podeEditarLead(l,vis), podeMov=podeMoverLead(l,vis), podeTransf=can('leads_transfer')&&(isGestor()||vis.has(l.responsavelId));
+  const antes={...l};
+  if(podeEd){
+    const nome=document.getElementById('ld-nome').value.trim();
+    if(!nome){showToast('Informe o nome.','ti-alert-triangle','#d97706');return;}
+    l.nome=nome;
+    l.tel=normalizaTelefone(document.getElementById('ld-tel').value);
+    l.tipo=document.getElementById('ld-tipo').value;
+    l.credito=unM(document.getElementById('ld-credito').value)||l.credito;
+    l.origem=document.getElementById('ld-origem').value;
+    l.atendimento=document.getElementById('ld-atendimento').value;
+    l.obs=document.getElementById('ld-obs').value;
   }
-  l.nome=nome;l.tel=document.getElementById('ld-tel').value;l.tipo=document.getElementById('ld-tipo').value;
-  l.credito=newCredito;l.etapa=newEtapa;l.origem=document.getElementById('ld-origem').value;
-  l.responsavelId=newResp;l.atendimento=document.getElementById('ld-atendimento').value;
-  l.obs=document.getElementById('ld-obs').value;
-  if(window._syncLead) window._syncLead(l).catch(e=>console.warn(e));
+  if(podeMov) l.etapa=document.getElementById('ld-etapa').value;
+  if(podeTransf) l.responsavelId=parseInt(document.getElementById('ld-resp').value)||l.responsavelId;
+  const ok=await window._syncLead(l);
+  if(!ok&&!window._leadPendente(l)){ Object.assign(l,antes); renderKanban();renderTable(); return; }
+  if(antes.etapa!==l.etapa){
+    if(window._saveAtividade)window._saveAtividade('ti-arrows-right-left',`${l.nome}: ${etapaLabel(antes.etapa)} → ${etapaLabel(l.etapa)}`);
+    if(l.etapa==='Fechado / Convertido'){
+      const r=users.find(u=>u.id===l.responsavelId);
+      setTimeout(()=>showCelebra(r?r.nome:'Vendedor',l.credito),100);
+    }
+    if(antes.etapa==='Fechado / Convertido'||l.etapa==='Fechado / Convertido') _atualizarAposVenda();
+  } else if(l.etapa==='Fechado / Convertido'&&(antes.credito!==l.credito||antes.responsavelId!==l.responsavelId)) _atualizarAposVenda();
+  if(antes.responsavelId!==l.responsavelId&&window._saveAtividade){
+    const d=users.find(u=>u.id===l.responsavelId);
+    window._saveAtividade('ti-arrows-right-left',`${l.nome} transferido para ${d?d.nome:'—'}`);
+  }
   closeLeadDetalhe();
   renderKanban();renderDashboard();renderTable();renderNotifPanel();
 }
 function removeLeadDetalhe(){
-  showConfirm('Remover este lead? Esta ação não pode ser desfeita.',function(){
-    const _rld=leads.find(l=>l.id===_leadDetalheId); if(_rld?.sb_id&&window._deleteLead) window._deleteLead(_rld.sb_id);
-    const _rldIdx=leads.findIndex(l=>l.id===_leadDetalheId); if(_rldIdx!==-1) leads.splice(_rldIdx,1);
-    closeLeadDetalhe();renderKanban();renderDashboard();renderTable();
-  });
+  const l=leads.find(x=>x.id===_leadDetalheId);
+  if(!l)return;
+  removeLead(l.id,true);
 }
-

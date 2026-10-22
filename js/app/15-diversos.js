@@ -94,18 +94,24 @@ function launchConfetes() {
 function avatarHTML(u, size='sm') {
   const cls = size==='sm' ? 'rank-av-foto' : 'rank-av-foto-lg';
   const av = size==='sm' ? 'rank-av' : 'tv-av';
-  if(u.foto) return `<img src="${u.foto}" class="${cls}" alt="${u.nome}">`;
-  return `<div class="${av}">${u.nome.charAt(0)}</div>`;
+  const f = safeUrl(u.foto);
+  if(f) return `<img src="${f}" class="${cls}" alt="">`;
+  return `<div class="${av}">${esc((u.nome||'?').charAt(0))}</div>`;
 }
 
-// ─── DISTRIBUIÇÃO DE LEADS ────────────────────────────────────────────────────
+// ─── DISTRIBUIÇÃO DE LEADS (aba Leads) ────────────────────────────────────────
 function toggleDistrib() {
+  if(!distribMode && !can('leads_transfer')){showToast('Você não tem permissão para distribuir leads.','ti-lock');return;}
   distribMode = !distribMode;
   selectedLeads.clear();
   document.getElementById('distrib-bar').style.display = distribMode ? 'flex' : 'none';
   document.getElementById('btn-distrib').classList.toggle('active', distribMode);
+  const cnt = document.getElementById('distrib-count');
+  if(cnt) cnt.textContent = '0 leads selecionados';
+  // Pode distribuir para qualquer pessoa ativa da empresa (o servidor confere a permissão)
   const dest = document.getElementById('distrib-dest');
-  if(dest) dest.innerHTML = '<option value="">Selecionar responsável...</option>' + users.map(u=>`<option value="${u.id}">${u.nome} (${RL[u.role]})</option>`).join('');
+  if(dest) dest.innerHTML = '<option value="">Selecionar responsável...</option>' + users.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'))
+    .map(u=>`<option value="${u.id}">${esc(u.nome)} (${esc(getHierLabel(u))})</option>`).join('');
   renderTable();
 }
 function toggleLeadSelect(id) {
@@ -114,15 +120,22 @@ function toggleLeadSelect(id) {
   document.getElementById('distrib-count').textContent = `${selectedLeads.size} lead${selectedLeads.size!==1?'s':''} selecionado${selectedLeads.size!==1?'s':''}`;
   renderTable();
 }
-function distribuirLeads() {
+let _distribuindo = false;
+async function distribuirLeads() {
+  if(_distribuindo) return;
+  if(!can('leads_transfer')){showToast('Você não tem permissão para distribuir leads.','ti-lock');return;}
   const destId = parseInt(document.getElementById('distrib-dest').value);
-  if(!destId){showToast('Selecione um responsável.','ti-alert-triangle','#d97706');return;}
-  if(!selectedLeads.size){showToast('Selecione pelo menos um lead.','ti-alert-triangle','#d97706');return;}
   const dest = users.find(u=>u.id===destId);
-  leads.forEach(l=>{if(selectedLeads.has(l.id))l.responsavelId=destId;});
-  if(window._saveAtividade)window._saveAtividade('ti-arrows-exchange',`${selectedLeads.size} lead${selectedLeads.size!==1?'s':''} distribuído${selectedLeads.size!==1?'s':''} para ${dest?.nome}`);
-  showToast(`${selectedLeads.size} lead(s) distribuído(s) para ${dest?.nome}!`,'ti-check','#1db954');
-  toggleDistrib();
+  if(!dest){showToast('Selecione um responsável.','ti-alert-triangle','#d97706');return;}
+  if(!selectedLeads.size){showToast('Selecione pelo menos um lead.','ti-alert-triangle','#d97706');return;}
+  _distribuindo = true;
+  try{
+    const n = await transferirLeadsPara([...selectedLeads], dest);
+    if(n < 0) return;
+    showToast(`${n} lead${n!==1?'s':''} distribuído${n!==1?'s':''} para ${dest.nome}!`,'ti-check','#1db954');
+    toggleDistrib();
+    renderKanban();renderDashboard();renderNotifPanel();
+  } finally { _distribuindo = false; }
 }
 
 // ─── RELATÓRIO COM PERÍODO ────────────────────────────────────────────────────
@@ -136,6 +149,7 @@ function setRelPeriodo(p, btn) {
   renderRelatorios();
 }
 function downloadRelatorio() {
+  if(!can('relatorios_export')){showToast('Você não tem permissão para baixar relatórios.','ti-lock');return;}
   const labels = {hoje:'Hoje',semana:'Semana',mes:'Mês',trimestre:'Trimestre',ano:'Ano'};
   const periodo = labels[relPeriodo]||'Período';
   const data = new Date().toLocaleDateString('pt-BR');
@@ -156,8 +170,9 @@ function downloadRelatorio() {
   function _parseDL(s){if(!s)return null;const p=s.split('/');if(p.length===3)return new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0]));const d=new Date(s);return isNaN(d)?null:d;}
   const _iniDL=_relIniDL();
   const _visDL=getVisiveisParaMim();
-  const _leadsDL=leads.filter(l=>_visDL.has(l.responsavelId)&&(_iniDL?(_parseDL(l.data)&&_parseDL(l.data)>=_iniDL):true));
-  const _usersDL=users.filter(u=>_visDL.has(u.id));
+  const _gestorDL=isGestor();
+  const _leadsDL=leads.filter(l=>(_gestorDL||_visDL.has(l.responsavelId))&&(_iniDL?(_parseDL(l.data)&&_parseDL(l.data)>=_iniDL):true));
+  const _usersDL=users.filter(u=>_gestorDL||_visDL.has(u.id));
   const total = _leadsDL.length, conv = _leadsDL.filter(l=>l.etapa==='Fechado / Convertido').length;
   const tx = total ? Math.round(conv/total*100) : 0;
   const vol = _leadsDL.filter(l=>l.etapa==='Fechado / Convertido').reduce((s,l)=>s+l.credito,0);
@@ -217,7 +232,7 @@ function downloadRelatorio() {
 .eq-foto-av img{width:100%;height:100%;object-fit:cover}
 </style></head><body>
   <h1>📊 Relatório — ${periodo}</h1>
-  <h2>Administradora: ${adminNomeRel} · Gerado em ${data} · Evolux CRM</h2>
+  <h2>Administradora: ${esc(adminNomeRel)} · Gerado em ${data} · Evolux CRM</h2>
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
     <div class="card"><div class="lbl">Total leads</div><div class="num">${total}</div></div>
     <div class="card"><div class="lbl">Convertidos</div><div class="num">${conv}</div></div>
@@ -226,11 +241,11 @@ function downloadRelatorio() {
   <div class="card"><div class="lbl">Volume convertido</div><div class="num">R$ ${Math.round(vol/1000)}k</div></div>
   <h3 style="margin-top:20px;font-size:13px;color:#1a6e3c">Desempenho da equipe (${periodo})</h3>
   <table><thead><tr><th>Membro</th><th>Leads ativos</th><th>Convertidos</th><th>Crédito fechado</th></tr></thead>
-  <tbody>${_usersDL.map(u=>{const mL=_leadsDL.filter(l=>l.responsavelId===u.id);const mA=mL.filter(l=>!['Fechado / Convertido','Perdido'].includes(l.etapa)).length;const mC=mL.filter(l=>l.etapa==='Fechado / Convertido').length;const mV=mL.filter(l=>l.etapa==='Fechado / Convertido').reduce((a,l)=>a+l.credito,0);return`<tr><td>${u.nome}</td><td>${mA}</td><td>${mC}</td><td>${fmtR(mV)}</td></tr>`;}).join('')}</tbody></table>
+  <tbody>${_usersDL.map(u=>{const mL=_leadsDL.filter(l=>l.responsavelId===u.id);const mA=mL.filter(l=>!['Fechado / Convertido','Perdido'].includes(l.etapa)).length;const mC=mL.filter(l=>l.etapa==='Fechado / Convertido').length;const mV=mL.filter(l=>l.etapa==='Fechado / Convertido').reduce((a,l)=>a+l.credito,0);return`<tr><td>${esc(u.nome)}</td><td>${mA}</td><td>${mC}</td><td>${fmtR(mV)}</td></tr>`;}).join('')}</tbody></table>
   <h3 style="margin-top:20px;font-size:13px;color:#1a6e3c">Leads do período</h3>
   <table><thead><tr><th>Nome</th><th>Tipo</th><th>Crédito</th><th>Etapa</th><th>Responsável</th></tr></thead>
-  <tbody>${_leadsDL.map(l=>{const u=users.find(x=>x.id===l.responsavelId);return`<tr><td>${l.nome}</td><td>${l.tipo}</td><td>${fmtR(l.credito)}</td><td>${l.etapa}</td><td>${u?u.nome:'—'}</td></tr>`;}).join('')}</tbody></table>
-  <div class="footer">Evolux CRM · ${adminNomeRel} · ${data}</div>
+  <tbody>${_leadsDL.map(l=>{const u=users.find(x=>x.id===l.responsavelId);return`<tr><td>${esc(l.nome)}</td><td>${esc(l.tipo)}</td><td>${fmtR(l.credito)}</td><td>${esc(etapaLabel(l.etapa))}</td><td>${u?esc(u.nome):'—'}</td></tr>`;}).join('')}</tbody></table>
+  <div class="footer">Evolux CRM · ${esc(adminNomeRel)} · ${data}</div>
   
 
 </div>
@@ -239,17 +254,17 @@ function downloadRelatorio() {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([html],{type:'text/html'}));
   a.download = `Relatorio_${periodo.replace(/ /g,'_')}_${data.replace(/\//g,'-')}.html`;
-  a.click(); URL.revokeObjectURL(a.href);
+  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 
 // ─── LANCE: ALERTA CLIENTE FECHOU ────────────────────────────────────────────
 function alertarCadastroLance(nomeLead, leadId) {
-  showConfirm(`${nomeLead} fechou! Deseja cadastrar um lance para acompanhamento?`,function(){
-    openLanceModal();
-    setTimeout(()=>{
-      const cl = document.getElementById('lCliente');
-      if(cl) cl.value = leadId;
-    }, 100);
+  // o banco já cria o lance automático; aqui só oferece completar os dados agora
+  if(!can('lances_edit')&&!can('lances_create')) return;
+  showConfirm(`${nomeLead} fechou! Deseja completar o lance agora?`,function(){
+    const auto=lances.find(la=>la.leadId===leadId&&la._auto&&!la._removido);
+    if(auto&&can('lances_edit')) editarLanceAuto(auto.id);
+    else openLanceModal(leadId);
   });
 }
 
@@ -309,11 +324,12 @@ async function uploadFoto(e) {
     // 4) Atualiza UI
     updateSbUser();
     const prev = document.getElementById('foto-preview-conta');
-    if(prev) prev.innerHTML = `<img src="${_meF.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+    const fotoSegura = safeUrl(_meF.foto);
+    if(prev&&fotoSegura) prev.innerHTML = `<img src="${fotoSegura}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
     // Atualiza avatar no header também
-    document.querySelectorAll('.user-avatar,.avatar-img,[data-user-foto]').forEach(el=>{
+    if(fotoSegura) document.querySelectorAll('.user-avatar,.avatar-img,[data-user-foto]').forEach(el=>{
       if(el.tagName==='IMG') el.src=_meF.foto;
-      else el.style.backgroundImage=`url(${_meF.foto})`;
+      else el.style.backgroundImage=`url("${_meF.foto.replace(/"/g,'')}")`;
     });
     showToast('Foto salva com sucesso! ✅','ti-check');
     if(document.getElementById('ranking-rows')) renderRanking();
@@ -335,116 +351,75 @@ function toggleDarkMode(on) {
 let rankCalYear=new Date().getFullYear(), rankCalMonth=new Date().getMonth();
 let rankDataSelecionada='';
 
-// Cache de vendas por período para não rebuscar toda vez
-let _rankVendasCache={periodo:null,data:null,resultado:null};
+// Resultado do ranking por período (somado no servidor)
+let _rankVendasCache={chave:null,resultado:null};
+function _invalidarRanking(){ _rankVendasCache={chave:null,resultado:null}; window._dashVendasCache=null; }
+window._invalidarRanking=_invalidarRanking;
 
-// Calcula intervalo de datas para o período selecionado
+// Intervalo de datas do período (sempre no fuso local — toISOString vira o dia depois das 21h)
 function _getRankDateRange(p, dataCustom){
   const hoje=new Date();
   hoje.setHours(0,0,0,0);
-  const fmt=d=>d.toISOString().split('T')[0];
-  if(p==='hoje'||p==='dia'){
-    return{de:fmt(hoje),ate:fmt(hoje)};
-  }
-  if(p==='semana'){
-    const ini=new Date(hoje);
-    ini.setDate(hoje.getDate()-hoje.getDay()); // domingo
-    return{de:fmt(ini),ate:fmt(hoje)};
-  }
-  if(p==='mes'){
-    const ini=new Date(hoje.getFullYear(),hoje.getMonth(),1);
-    return{de:fmt(ini),ate:fmt(hoje)};
-  }
+  const fmt=d=>hojeISO(d);
+  if(p==='hoje'||p==='dia') return{de:fmt(hoje),ate:fmt(hoje)};
+  if(p==='semana'){ const ini=new Date(hoje); ini.setDate(hoje.getDate()-hoje.getDay()); return{de:fmt(ini),ate:fmt(hoje)}; }
+  if(p==='mes'){ return{de:fmt(new Date(hoje.getFullYear(),hoje.getMonth(),1)),ate:fmt(hoje)}; }
   if(p==='semana_passada'){
-    const dom=new Date(hoje);
-    dom.setDate(hoje.getDate()-hoje.getDay()-7);
-    const sab=new Date(dom);sab.setDate(dom.getDate()+6);
+    const dom=new Date(hoje); dom.setDate(hoje.getDate()-hoje.getDay()-7);
+    const sab=new Date(dom); sab.setDate(dom.getDate()+6);
     return{de:fmt(dom),ate:fmt(sab)};
   }
-  if(p==='mes_passado'){
-    const ini=new Date(hoje.getFullYear(),hoje.getMonth()-1,1);
-    const fim=new Date(hoje.getFullYear(),hoje.getMonth(),0);
-    return{de:fmt(ini),ate:fmt(fim)};
-  }
-  if(p==='ultimos_7'){
-    const ini=new Date(hoje);ini.setDate(hoje.getDate()-6);
-    return{de:fmt(ini),ate:fmt(hoje)};
-  }
-  if(p==='ultimos_30'){
-    const ini=new Date(hoje);ini.setDate(hoje.getDate()-29);
-    return{de:fmt(ini),ate:fmt(hoje)};
-  }
-  if(p==='custom'&&dataCustom){
-    return{de:dataCustom,ate:dataCustom};
-  }
-  // padrão: mês atual
-  const ini=new Date(hoje.getFullYear(),hoje.getMonth(),1);
-  return{de:fmt(ini),ate:fmt(hoje)};
+  if(p==='mes_passado') return{de:fmt(new Date(hoje.getFullYear(),hoje.getMonth()-1,1)),ate:fmt(new Date(hoje.getFullYear(),hoje.getMonth(),0))};
+  if(p==='ultimos_7'){ const ini=new Date(hoje); ini.setDate(hoje.getDate()-6); return{de:fmt(ini),ate:fmt(hoje)}; }
+  if(p==='ultimos_30'){ const ini=new Date(hoje); ini.setDate(hoje.getDate()-29); return{de:fmt(ini),ate:fmt(hoje)}; }
+  if(p==='custom'&&dataCustom) return{de:dataCustom,ate:dataCustom};
+  if(p==='todos') return{de:null,ate:null};
+  return{de:fmt(new Date(hoje.getFullYear(),hoje.getMonth(),1)),ate:fmt(hoje)};
 }
 
-// Aplica filtro de período no ranking
-// "mes" = acumulado do profiles (mesma fonte do painel, sempre bate)
-// outros períodos = tabela vendas filtrada por data
-// _rankOverride: mapa {sb_id -> {vendas, credito}} usado pelo renderRanking quando não é null
+// _rankOverride: {sb_id → {vendas, credito}} do período escolhido (usado pelo ranking)
 let _rankOverride=null;
-
+let _rankPedido=0;
 async function _aplicarFiltroVendas(){
-  const p=rankPeriodo;
-  const dc=rankDataSelecionada;
-
-  // Todos os períodos buscam direto da tabela vendas e filtram em JS
-  // usando data_fechamento com fallback para created_at (igual ao Minhas Vendas)
-  const cacheKey='all'; // sempre busca tudo e filtra em JS
-  let rows=null;
-  if(_rankVendasCache.periodo===cacheKey&&_rankVendasCache.resultado){
-    rows=_rankVendasCache.resultado;
-  } else {
+  const range=_getRankDateRange(rankPeriodo,rankDataSelecionada);
+  const chave=`${range.de||''}|${range.ate||''}`;
+  if(_rankVendasCache.chave===chave&&_rankVendasCache.resultado){
+    _rankOverride=_rankVendasCache.resultado;
     renderRanking();
-    const empresaId=await window._getEmpresaId().catch(()=>null);
-    if(!empresaId||!window._sb){return;}
-    const {data,error}=await window._sb.from('vendas')
-      .select('id,user_id,valor_credito,data_fechamento,created_at')
-      .eq('empresa_id',empresaId);
-    if(error){console.warn('[RankFiltro]',error);return;}
-    rows=data||[];
-    _rankVendasCache={periodo:cacheKey,resultado:rows};
+    return;
   }
-
-  // Filtra por período em JS usando data_fechamento || created_at como fallback
-  let rowsFiltradas=rows;
-  if(p!=='todos'){
-    const range=_getRankDateRange(p,dc);
-    if(range?.de||range?.ate){
-      const de=range.de?new Date(range.de+'T00:00:00'):null;
-      const ate=range.ate?new Date(range.ate+'T23:59:59'):null;
-      rowsFiltradas=rows.filter(r=>{
-        const dataStr=(r.data_fechamento||r.created_at||'').split('T')[0];
-        if(!dataStr) return false;
-        const d=new Date(dataStr+'T00:00:00');
-        if(de&&d<de) return false;
-        if(ate&&d>ate) return false;
-        return true;
+  const pedido=++_rankPedido;
+  let agg=null;
+  const {data,error}=await window._rpc('crm_ranking_vendas',{p_de:range.de,p_ate:range.ate});
+  if(!error){
+    agg={};
+    (data||[]).forEach(r=>{ if(r.user_id) agg[r.user_id]={vendas:Number(r.vendas)||0,credito:Number(r.credito)||0}; });
+  } else {
+    // banco ainda sem a função nova: soma aqui, buscando todas as vendas em páginas
+    try{
+      const empresaId=await window._getEmpresaId();
+      if(!empresaId) return;
+      const rows=await window._sbTodos(()=>window._sb.from('vendas').select('id,user_id,valor_credito,data_fechamento,created_at')
+        .eq('empresa_id',empresaId).order('created_at',{ascending:false}).order('id'));
+      agg={};
+      rows.forEach(r=>{
+        const d=r.data_fechamento?String(r.data_fechamento).slice(0,10):(r.created_at?hojeISO(new Date(r.created_at)):'');
+        if(!r.user_id||(range.de&&(!d||d<range.de))||(range.ate&&(!d||d>range.ate))) return;
+        if(!agg[r.user_id]) agg[r.user_id]={vendas:0,credito:0};
+        agg[r.user_id].vendas++;
+        agg[r.user_id].credito+=Number(r.valor_credito)||0;
       });
-    }
+    }catch(e){ console.warn('[ranking]',e); return; }
   }
-
-  // Agrega por user_id (sb_id)
-  const agg={};
-  rowsFiltradas.forEach(r=>{
-    if(!r.user_id)return;
-    if(!agg[r.user_id])agg[r.user_id]={vendas:0,credito:0};
-    agg[r.user_id].vendas++;
-    agg[r.user_id].credito+=(r.valor_credito||0);
-  });
-
+  if(pedido!==_rankPedido) return; // chegou resposta de um período antigo
+  _rankVendasCache={chave,resultado:agg};
   _rankOverride=agg;
   renderRanking();
 }
+window._aplicarFiltroVendas=_aplicarFiltroVendas;
 
 function setRankPeriodo(p, btn) {
   rankPeriodo = p;
-  _rankVendasCache={periodo:null,data:null,resultado:null}; // limpa cache ao trocar período
-  _rankOverride=null; // limpa override ao trocar período
   document.querySelectorAll('.rank-hdr .periodo-tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   const popup=document.getElementById('rank-cal-popup');
@@ -484,8 +459,6 @@ function rankCalRender(){
 function rankCalSelect(dStr){
   rankDataSelecionada=dStr;
   rankPeriodo='custom';
-  _rankVendasCache={periodo:null,data:null,resultado:null};
-  _rankOverride=null; // limpa override ao selecionar nova data
   rankCalRender();
   const popup=document.getElementById('rank-cal-popup');
   if(popup) popup.style.display='none';
@@ -498,8 +471,6 @@ function rankCalPeriod(p){
   const popup=document.getElementById('rank-cal-popup');
   if(popup) popup.style.display='none';
   rankPeriodo=p; rankDataSelecionada='';
-  _rankVendasCache={periodo:null,data:null,resultado:null};
-  _rankOverride=null; // limpa override ao trocar período
   const labels={'semana_passada':'Semana passada','mes_passado':'Mês passado','ultimos_7':'Últimos 7 dias','ultimos_30':'Últimos 30 dias'};
   document.getElementById('rank-month').textContent=labels[p]||'';
   _aplicarFiltroVendas();
@@ -512,15 +483,6 @@ document.addEventListener('click',function(e){
     popup.style.display='none';
   }
 });
-
-
-function editMeta(id) {
-  const u = users.find(x=>x.id===id); if(!u) return;
-  const val = prompt(`Meta de ${u.nome} (R$):`, u.meta||500000);
-  if(val===null) return;
-  const n = parseFloat(val.replace(/\./g,'').replace(',','.'));
-  if(!isNaN(n)&&n>0) { u.meta=n; if(window._syncUser)window._syncUser(u).catch(e=>console.warn('[editMeta]',e)); renderUserList(); renderRanking(); }
-}
 
 
 function getMe(){
@@ -542,9 +504,9 @@ function getMe(){
     const tempNome=u.user_metadata?.nome||u.email?.split('@')[0]||'Usuário';
     return {
       id:9999, sb_id:u.id, nome:tempNome, email:u.email||'',
-      role:u.user_metadata?.role||'vendedor',
+      role:'vendedor', // nunca confiar no cargo informado no cadastro
       hierarquiaId:null, equipeId:null, managerId:null,
-      vendas:0, credito:0, meta:u.user_metadata?.meta||500000,
+      vendas:0, credito:0, meta:0,
       foto:null, perms:{}, hperms:{}
     };
   }

@@ -25,15 +25,16 @@ function renderRelatorios(){
 
   // ── Filtra por visibilidade + período ────────────────────────────────────
   const _visRel=getVisiveisParaMim();
-  const _leadsRelTodos=leads.filter(l=>_visRel.has(l.responsavelId));
+  const _gestorRel=isGestor();
+  const _leadsRelTodos=_gestorRel?leads:leads.filter(l=>_visRel.has(l.responsavelId));
   const _leadsRel=_iniRel
     ? _leadsRelTodos.filter(l=>{ const d=_parseDataLead(l.data); return d&&d>=_iniRel; })
     : _leadsRelTodos;
-  const _usersRel=users.filter(u=>_visRel.has(u.id));
+  const _usersRel=users.filter(u=>_gestorRel||_visRel.has(u.id));
 
   // ── Etapas do funil ──────────────────────────────────────────────────────
   const maxE=Math.max(...ETAPAS.map(e=>_leadsRel.filter(l=>l.etapa===e).length),1);
-  document.getElementById('rel-etapas').innerHTML=ETAPAS.map((e,i)=>{const c=_leadsRel.filter(l=>l.etapa===e).length;return `<div class="br"><span class="brl">${e}</span><div class="brt"><div class="brf" style="width:${Math.round(c/maxE*100)}%;background:${EC[i]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
+  document.getElementById('rel-etapas').innerHTML=ETAPAS.map((e,i)=>{const c=_leadsRel.filter(l=>l.etapa===e).length;return `<div class="br"><span class="brl">${esc(etapaLabel(e))}</span><div class="brt"><div class="brf" style="width:${Math.round(c/maxE*100)}%;background:${EC[i]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
 
   // ── Tipos ────────────────────────────────────────────────────────────────
   document.getElementById('rel-tipos').innerHTML=['Imóvel','Automóvel','Moto','Serviço'].map(t=>{const c=_leadsRel.filter(l=>l.tipo===t).length;return `<div class="lr"><span class="ld" style="background:${TC[t]}"></span><span style="flex:1">${t}</span><span style="font-weight:700;color:var(--tx)">${c}</span></div>`;}).join('');
@@ -92,14 +93,14 @@ function renderRelatorios(){
         return `<tr style="border-bottom:1px solid var(--c1);background:${bg}">
           <td style="padding:10px 10px">
             <div style="display:flex;align-items:center;gap:8px">
-              <div style="width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;overflow:hidden;flex-shrink:0">${u.foto?`<img src="${u.foto}" style="width:100%;height:100%;object-fit:cover">`:u.nome.charAt(0)}</div>
+              <div style="width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;overflow:hidden;flex-shrink:0">${safeUrl(u.foto)?`<img src="${safeUrl(u.foto)}" style="width:100%;height:100%;object-fit:cover">`:esc(u.nome.charAt(0))}</div>
               <div>
-                <div style="font-weight:700;color:var(--tx)">${u.nome}</div>
-                <div style="font-size:10.5px;color:var(--tm)">${u.email}</div>
+                <div style="font-weight:700;color:var(--tx)">${esc(u.nome)}</div>
+                <div style="font-size:10.5px;color:var(--tm)">${esc(u.email)}</div>
               </div>
             </div>
           </td>
-          <td style="padding:10px 10px"><span style="font-size:10.5px;padding:2px 8px;border-radius:20px;background:rgba(1,107,60,.1);color:var(--g);font-weight:600">${h?h.nome:RL[u.role]}</span></td>
+          <td style="padding:10px 10px"><span style="font-size:10.5px;padding:2px 8px;border-radius:20px;background:rgba(1,107,60,.1);color:var(--g);font-weight:600">${esc(h?h.nome:getHierLabel(u))}</span></td>
           <td style="padding:10px 10px;text-align:right;font-weight:700;color:var(--tx)">${u._mAtivos}</td>
           <td style="padding:10px 10px;text-align:right;font-weight:700;color:var(--g)">${u._mConv}</td>
           <td style="padding:10px 10px;text-align:right;font-weight:800;color:var(--tx)">${fmtR(u._mVol)}</td>
@@ -119,8 +120,8 @@ function renderRelatorios(){
   if(histEl){
     const searchEl=document.getElementById('rel-search-hist');
     const q=(searchEl?searchEl.value:'').toLowerCase().trim();
-    const _allActs=window.activities||activities||[];
-    const filtered=q?_allActs.filter(a=>a.text.toLowerCase().includes(q)):_allActs;
+    const _allActs=_atividadesVisiveis();
+    const filtered=q?_allActs.filter(a=>String(a.text||'').toLowerCase().includes(q)):_allActs;
     const ICON_CLS={'ti-user-plus':'color:#6366f1','ti-circle-check':'color:var(--g)','ti-message':'color:var(--b)','ti-brand-whatsapp':'color:#25d366','ti-arrows-right-left':'color:var(--y)','ti-phone':'color:var(--b)','ti-x':'color:var(--r)','ti-trophy':'color:#f0c040','ti-gavel':'color:var(--y)','ti-user-edit':'color:var(--b)'};
     if(!filtered.length){histEl.innerHTML='<p style="color:var(--tm);font-size:13px">Nenhuma movimentação encontrada.</p>';return;}
     histEl.innerHTML='<div style="display:flex;flex-direction:column;gap:4px">'+[...filtered].slice(0,50).map((a,i)=>{
@@ -128,12 +129,12 @@ function renderRelatorios(){
       const bg=i%2===0?'background:var(--c0)':'';
       return `<div style="display:flex;align-items:flex-start;gap:12px;padding:9px 12px;border-radius:8px;${bg}">
         <div style="width:28px;height:28px;border-radius:8px;background:var(--c1);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <i class="ti ${a.icon}" style="font-size:13px;${icStyle}"></i>
+          <i class="ti ${esc(a.icon)}" style="font-size:13px;${icStyle}"></i>
         </div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:12.5px;color:var(--tx);font-weight:500">${a.text}</div>
+          <div style="font-size:12.5px;color:var(--tx);font-weight:500">${esc(a.text)}</div>
         </div>
-        <div style="font-size:11px;color:var(--tm);white-space:nowrap;flex-shrink:0">${a.time}</div>
+        <div style="font-size:11px;color:var(--tm);white-space:nowrap;flex-shrink:0">${esc(a.time)}</div>
       </div>`;
     }).join('')+'</div>'+(filtered.length>50?`<div style="text-align:center;padding:10px;font-size:12px;color:var(--tm)">Exibindo 50 de ${filtered.length} registros</div>`:' ');
   }

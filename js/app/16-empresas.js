@@ -1,140 +1,123 @@
-// ─── EMPRESAS (superadmin) ────────────────────────────────────────────────────
+// ─── EMPRESAS (administrador da plataforma) ───────────────────────────────────
+// Tudo passa por funções do servidor que conferem se quem chama é da plataforma.
 let _empresasCache=[];
 async function loadEmpresas(){
-  try{
-    const {data}=await window._sb.from('empresas').select('*').order('criado_em');
-    if(data) _empresasCache=data;
-  }catch(e){console.warn('loadEmpresas:',e);}
+  const r=await window._sb.from('empresas').select('*').order('nome');
+  if(r.error){ console.warn('loadEmpresas:',r.error); showToast('Não foi possível carregar as empresas: '+r.error.message,'ti-alert-triangle','#dc2626'); return; }
+  _empresasCache=r.data||[];
+}
+function _linkConvite(token){
+  const base=window.location.origin+window.location.pathname.replace(/crm\.html$/,'index.html');
+  return `${base}?convite=${encodeURIComponent(token)}`;
 }
 async function renderEmpresas(){
+  if(!isPlataforma()) return;
   await loadEmpresas();
   const list=document.getElementById('empresas-list');if(!list)return;
-  if(!_empresasCache.length){list.innerHTML='<p style="color:var(--fg2)">Nenhuma empresa cadastrada ainda.</p>';return;}
-  const base=window.location.origin+window.location.pathname.replace('crm.html','index.html');
+  if(!_empresasCache.length){list.innerHTML='<p style="color:var(--tm)">Nenhuma empresa cadastrada ainda.</p>';return;}
   list.innerHTML=_empresasCache.map(e=>{
-    const link=`${base}?convite=${e.id}&empresa=${encodeURIComponent(e.nome)}`;
+    const ativo=e.ativo!==false;
     return `<div style="background:var(--w);border:1px solid var(--c2);border-radius:12px;padding:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-      <div style="width:48px;height:48px;border-radius:10px;background:var(--gs);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--g);flex-shrink:0">${e.nome.charAt(0)}</div>
+      <div style="width:48px;height:48px;border-radius:10px;background:var(--gs);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--g);flex-shrink:0">${esc((e.nome||'?').charAt(0))}</div>
       <div style="flex:1;min-width:160px">
-        <div style="font-weight:700;font-size:14px">${e.nome}</div>
-        <div style="font-size:12px;color:var(--tm);margin-top:2px">Plano: <strong>${e.plano||'básico'}</strong> · ${e.ativo?'<span style="color:var(--g)">● Ativo</span>':'<span style="color:#dc2626">● Inativo</span>'}</div>
-        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;background:var(--c0);border:1px solid var(--c2);border-radius:7px;padding:6px 10px">
-          <i class="ti ti-link" style="font-size:13px;color:var(--tm);flex-shrink:0"></i>
-          <span style="font-size:11px;color:var(--tm);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${link}</span>
-          <button onclick="navigator.clipboard.writeText('${link}').then(()=>showToast('Link copiado!','ti-check'))" style="border:none;background:var(--g);color:#fff;border-radius:5px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0"><i class="ti ti-copy"></i> Copiar</button>
-        </div>
+        <div style="font-weight:700;font-size:14px">${esc(e.nome)}</div>
+        <div style="font-size:12px;color:var(--tm);margin-top:2px">Plano: <strong>${esc(e.plano||'básico')}</strong> · ${ativo?'<span style="color:var(--g)">● Ativa</span>':'<span style="color:#dc2626">● Suspensa (ninguém da empresa consegue entrar)</span>'}</div>
+        ${e.obs?`<div style="font-size:11.5px;color:var(--tm);margin-top:4px">${esc(e.obs)}</div>`:''}
       </div>
-      <div style="display:flex;gap:8px;flex-shrink:0">
-        <button class="btn bd bsm" onclick="openEditarEmpresaModal('${e.id}')" title="Editar empresa"><i class="ti ti-pencil"></i></button>
-        <button class="btn bd bsm" onclick="toggleEmpresaAtivo('${e.id}',${e.ativo})" style="flex-shrink:0">${e.ativo?'Desativar':'Ativar'}</button>
+      <div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap">
+        <button class="btn bg bsm" onclick="gerarConviteEmpresa('${esc(e.id)}')" title="Gerar link de convite para o gestor"><i class="ti ti-link"></i>Convite</button>
+        <button class="btn bd bsm" onclick="openEditarEmpresaModal('${esc(e.id)}')" title="Editar empresa"><i class="ti ti-pencil"></i></button>
+        <button class="btn bd bsm" onclick="toggleEmpresaAtivo('${esc(e.id)}',${ativo})" style="flex-shrink:0">${ativo?'Suspender':'Reativar'}</button>
       </div>
     </div>`;
   }).join('');
 }
+function _modalConvite(nomeEmpresa,token,titulo){
+  document.getElementById('modal-convite')?.remove();
+  const link=_linkConvite(token);
+  window._ultimoLinkConvite=link;
+  const html=`<div id="modal-convite" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">
+    <div style="background:var(--w);border-radius:16px;padding:28px;width:100%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="text-align:center;margin-bottom:18px">
+        <div style="width:56px;height:56px;background:rgba(29,185,84,.1);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 12px"><i class="ti ti-check" style="font-size:26px;color:var(--g)"></i></div>
+        <div style="font-size:17px;font-weight:800">${esc(titulo)}</div>
+        <div style="font-size:13px;color:var(--tm);margin-top:4px">Envie o link abaixo para o gestor da <strong>${esc(nomeEmpresa)}</strong>.<br>Vale por 7 dias e para 1 cadastro.</div>
+      </div>
+      <div style="background:var(--c0);border:1px solid var(--c2);border-radius:10px;padding:12px 14px;font-size:12px;word-break:break-all;color:var(--tx);margin-bottom:14px;font-family:monospace;user-select:all">${esc(link)}</div>
+      <div style="display:flex;gap:10px">
+        <button onclick="copiarLinkConvite()" style="flex:2;padding:11px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-copy"></i> Copiar link</button>
+        <button onclick="document.getElementById('modal-convite')?.remove();renderEmpresas();" style="flex:1;padding:11px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Fechar</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function copiarLinkConvite(){
+  const link=window._ultimoLinkConvite||'';
+  if(navigator.clipboard&&link) navigator.clipboard.writeText(link).then(()=>showToast('Link copiado!','ti-check')).catch(()=>showToast('Selecione o link e copie manualmente.','ti-info-circle'));
+}
+async function gerarConviteEmpresa(id){
+  const e=_empresasCache.find(x=>String(x.id)===String(id));
+  const {data,error}=await window._rpc('crm_admin_criar_convite',{p_empresa:String(id),p_role:'gestor',p_dias:7,p_max_usos:1});
+  if(error){showToast('Não foi possível gerar o convite: '+error.message,'ti-alert-triangle','#dc2626');return;}
+  _modalConvite(e?e.nome:'empresa',data,'Novo link de convite');
+}
 async function openNovaEmpresaModal(){
-  // Modal bonito ao invés de prompt
+  if(!isPlataforma()){showToast('Somente o administrador da plataforma cria empresas.','ti-lock');return;}
+  document.getElementById('modal-nova-empresa')?.remove();
   const html=`<div id="modal-nova-empresa" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">
     <div style="background:var(--w);border-radius:16px;padding:28px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
       <div style="font-size:17px;font-weight:800;margin-bottom:4px">Nova empresa</div>
       <div style="font-size:13px;color:var(--tm);margin-bottom:20px">Preencha os dados da empresa cliente</div>
-      <div class="field" style="margin-bottom:12px"><label>Nome da empresa</label><input type="text" id="ne-nome" class="fi" placeholder="Ex: Corretor Silva Consórcios" autofocus></div>
+      <div class="field" style="margin-bottom:12px"><label>Nome da empresa</label><input type="text" id="ne-nome" class="fi" placeholder="Ex: Corretor Silva Consórcios"></div>
       <div class="field" style="margin-bottom:20px"><label>Plano</label><select id="ne-plano" class="fi"><option value="basico">Básico</option><option value="pro">Pro</option><option value="master">Master</option></select></div>
       <div style="display:flex;gap:10px">
         <button onclick="document.getElementById('modal-nova-empresa')?.remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
-        <button onclick="criarEmpresaConfirm()" style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-building-plus"></i> Criar empresa</button>
+        <button id="ne-btn" onclick="criarEmpresaConfirm()" style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-building-plus"></i> Criar empresa</button>
       </div>
     </div>
   </div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   setTimeout(()=>document.getElementById('ne-nome')?.focus(),100);
 }
+let _criandoEmpresa=false;
 async function criarEmpresaConfirm(){
+  if(_criandoEmpresa)return;
   const nome=document.getElementById('ne-nome')?.value.trim();
   const plano=document.getElementById('ne-plano')?.value||'basico';
   if(!nome){showToast('Informe o nome da empresa.','ti-alert-triangle','#d97706');return;}
-  // Usa Edge Function para contornar RLS (service_role no servidor)
-  let data=null;
-  try{
-    let _token=window._session?.access_token||'';
-    try{const {data:{session:_fs}}=await window._sb.auth.getSession();if(_fs?.access_token)_token=_fs.access_token;}catch(e){}
-    const res=await fetch(`${window._sbUrl}/functions/v1/create-empresa`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':window._sbAnon,'Authorization':`Bearer ${_token}`},
-      body:JSON.stringify({nome,plano})
-    });
-    const json=await res.json();
-    if(!res.ok||json.error){showToast('Erro: '+(json.error||`HTTP ${res.status}`),'ti-alert-circle','#dc3545');return;}
-    data=json.data;
-  }catch(err){showToast('Erro ao criar empresa: '+err.message,'ti-alert-circle','#dc3545');return;}
-  // NÃO altera empresa_id do master — ele permanece na própria empresa
-  // O gestor convidado ficará vinculado a esta nova empresa ao aceitar o convite
+  _criandoEmpresa=true;
+  const btn=document.getElementById('ne-btn'); if(btn) btn.disabled=true;
+  const {data,error}=await window._rpc('crm_admin_criar_empresa',{p_nome:nome,p_plano:plano});
+  _criandoEmpresa=false;
+  if(btn) btn.disabled=false;
+  if(error){showToast('Erro ao criar empresa: '+error.message,'ti-alert-circle','#dc3545');return;}
   document.getElementById('modal-nova-empresa')?.remove();
-  // Gera link de convite com empresa_id
-  const base=window.location.origin+window.location.pathname.replace('crm.html','index.html');
-  const link=`${base}?convite=${data.id}&empresa=${encodeURIComponent(nome)}`;
-  // Modal com link de convite
-  const html2=`<div id="modal-convite" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">
-    <div style="background:var(--w);border-radius:16px;padding:28px;width:100%;max-width:460px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-      <div style="text-align:center;margin-bottom:20px">
-        <div style="width:56px;height:56px;background:rgba(29,185,84,.1);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 12px"><i class="ti ti-check" style="font-size:26px;color:var(--g)"></i></div>
-        <div style="font-size:17px;font-weight:800">Empresa criada!</div>
-        <div style="font-size:13px;color:var(--tm);margin-top:4px">Compartilhe o link abaixo com o gestor da <strong>${nome}</strong></div>
-      </div>
-      <div style="background:var(--c0);border:1px solid var(--c2);border-radius:10px;padding:12px 14px;font-size:12px;word-break:break-all;color:var(--tx);margin-bottom:14px;font-family:monospace">${link}</div>
-      <div style="display:flex;gap:10px">
-        <button onclick="navigator.clipboard.writeText('${link}').then(()=>showToast('Link copiado!','ti-check'));document.getElementById('modal-convite')?.remove();renderEmpresas();" style="flex:2;padding:11px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-copy"></i> Copiar link</button>
-        <button onclick="document.getElementById('modal-convite')?.remove();renderEmpresas();" style="flex:1;padding:11px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Fechar</button>
-      </div>
-    </div>
-  </div>`;
-  document.body.insertAdjacentHTML('beforeend',html2);
+  _modalConvite(nome,data.token,'Empresa criada!');
+  renderEmpresas();
 }
 async function toggleEmpresaAtivo(id,atual){
-  const novoStatus=!atual;
-  const me=getMe();
-  if(!me||!['master','superadmin'].includes(me.role)){
-    showToast('Sem permissão para alterar status de empresa.','ti-ban',4000);
-    return;
-  }
-  showToast((novoStatus?'Ativando':'Desativando')+' empresa...','ti-loader-2',2000);
-  // Tenta via Edge Function (tem service_role, bypassa RLS)
-  let ok=false;
-  try{
-    // Sempre busca sessão fresca para garantir token válido
-    let _token='';
-    try{const {data:{session:_fs}}=await window._sb.auth.getSession();_token=_fs?.access_token||'';}catch(e){}
-    if(!_token) _token=window._session?.access_token||'';
-    const res=await fetch(`${window._sbUrl}/functions/v1/create-empresa`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':window._sbAnon,'Authorization':`Bearer ${_token}`},
-      body:JSON.stringify({action:'toggle_ativo',empresa_id:id,ativo:novoStatus})
-    });
-    if(res.ok){ok=true;}
-    else{
-      // Fallback: tenta direto no banco
-      const {error}=await window._sb.from('empresas').update({ativo:novoStatus}).eq('id',id);
-      if(!error) ok=true;
-      else{ console.error('[toggleEmpresaAtivo] RLS bloqueou:',error); showToast('Erro: '+error.message+'. Execute o SQL de policy no Supabase.','ti-alert-circle',6000); return; }
-    }
-  }catch(e){
-    const {error}=await window._sb.from('empresas').update({ativo:novoStatus}).eq('id',id);
-    if(!error) ok=true;
-    else{ console.error('[toggleEmpresaAtivo] erro:',e,error); showToast('Erro ao alterar status da empresa.','ti-alert-circle',5000); return; }
-  }
-  if(ok){
-    showToast('Empresa '+(novoStatus?'ativada':'desativada')+' com sucesso!','ti-check',3000);
+  if(!isPlataforma()){showToast('Sem permissão para alterar status de empresa.','ti-ban');return;}
+  const e=_empresasCache.find(x=>String(x.id)===String(id));
+  const novo=!atual;
+  const executar=async()=>{
+    const {error}=await window._rpc('crm_admin_ativar_empresa',{p_id:String(id),p_ativo:novo});
+    if(error){showToast('Erro ao alterar a empresa: '+error.message,'ti-alert-circle','#dc2626');return;}
+    showToast('Empresa '+(novo?'reativada':'suspensa')+'.','ti-check');
     renderEmpresas();
-  }
+  };
+  if(novo) executar();
+  else showConfirm(`Suspender a ${e?e.nome:'empresa'}? Ninguém dela conseguirá entrar no CRM até você reativar.`,executar);
 }
-
 async function openEditarEmpresaModal(id){
-  const e=_empresasCache.find(x=>x.id===id);
+  const e=_empresasCache.find(x=>String(x.id)===String(id));
   if(!e)return;
+  document.getElementById('modal-editar-empresa')?.remove();
   const html=`<div id="modal-editar-empresa" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">
     <div style="background:var(--w);border-radius:16px;padding:28px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
       <div style="font-size:17px;font-weight:800;margin-bottom:4px">Editar empresa</div>
       <div style="font-size:13px;color:var(--tm);margin-bottom:20px">Altere os dados da empresa</div>
-      <div class="field" style="margin-bottom:12px"><label>Nome da empresa</label><input type="text" id="ee-nome" class="fi" value="${e.nome.replace(/"/g,'&quot;')}"></div>
+      <div class="field" style="margin-bottom:12px"><label>Nome da empresa</label><input type="text" id="ee-nome" class="fi" value="${esc(e.nome)}"></div>
       <div class="field" style="margin-bottom:12px"><label>Plano</label>
         <select id="ee-plano" class="fi">
           <option value="basico" ${(e.plano||'basico')==='basico'?'selected':''}>Básico</option>
@@ -142,10 +125,10 @@ async function openEditarEmpresaModal(id){
           <option value="master" ${e.plano==='master'?'selected':''}>Master</option>
         </select>
       </div>
-      <div class="field" style="margin-bottom:20px"><label>Observações internas</label><textarea id="ee-obs" class="fi" rows="2" placeholder="Anotações sobre este cliente...">${e.obs||''}</textarea></div>
+      <div class="field" style="margin-bottom:20px"><label>Observações internas</label><textarea id="ee-obs" class="fi" rows="2" placeholder="Anotações sobre este cliente...">${esc(e.obs||'')}</textarea></div>
       <div style="display:flex;gap:10px">
         <button onclick="document.getElementById('modal-editar-empresa')?.remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
-        <button onclick="salvarEdicaoEmpresa('${id}')" style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-device-floppy"></i> Salvar</button>
+        <button onclick="salvarEdicaoEmpresa('${esc(e.id)}')" style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-device-floppy"></i> Salvar</button>
       </div>
     </div>
   </div>`;
@@ -157,28 +140,11 @@ async function salvarEdicaoEmpresa(id){
   const plano=document.getElementById('ee-plano')?.value||'basico';
   const obs=document.getElementById('ee-obs')?.value.trim()||null;
   if(!nome){showToast('Informe o nome da empresa.','ti-alert-triangle','#d97706');return;}
-  showToast('Salvando...','ti-loader-2',2000);
-  try{
-    let _token='';
-    try{const {data:{session:_fs}}=await window._sb.auth.getSession();_token=_fs?.access_token||'';}catch(e){}
-    if(!_token) _token=window._session?.access_token||'';
-    // Tenta via Edge Function primeiro
-    const res=await fetch(`${window._sbUrl}/functions/v1/create-empresa`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':window._sbAnon,'Authorization':`Bearer ${_token}`},
-      body:JSON.stringify({action:'editar',empresa_id:id,nome,plano,obs})
-    });
-    if(!res.ok){
-      // Fallback direto no banco
-      const {error}=await window._sb.from('empresas').update({nome,plano,obs}).eq('id',id);
-      if(error){showToast('Erro ao salvar: '+error.message,'ti-alert-circle','#dc2626');return;}
-    }
-    document.getElementById('modal-editar-empresa')?.remove();
-    showToast('Empresa atualizada!','ti-check','#16a34a');
-    renderEmpresas();
-  }catch(err){
-    showToast('Erro: '+err.message,'ti-alert-circle','#dc2626');
-  }
+  const {error}=await window._rpc('crm_admin_editar_empresa',{p_id:String(id),p_nome:nome,p_plano:plano,p_obs:obs});
+  if(error){showToast('Erro ao salvar: '+error.message,'ti-alert-circle','#dc2626');return;}
+  document.getElementById('modal-editar-empresa')?.remove();
+  showToast('Empresa atualizada!','ti-check','#16a34a');
+  renderEmpresas();
 }
 
 function updateSbUser(){
@@ -187,7 +153,8 @@ function updateSbUser(){
   const tpAv = document.getElementById('tp-av');
   const sbName = document.getElementById('sb-user-name');
   const sbRole = document.getElementById('sb-user-role');
-  const avatarHtml = me.foto ? `<img src="${me.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : (me.nome||'U').charAt(0).toUpperCase();
+  const foto = safeUrl(me.foto);
+  const avatarHtml = foto ? `<img src="${foto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : esc((me.nome||'U').charAt(0).toUpperCase());
   if(sbAv) sbAv.innerHTML = avatarHtml;
   if(tpAv) tpAv.innerHTML = avatarHtml;
   if(sbName) sbName.textContent = me.nome;
@@ -197,7 +164,6 @@ window.updateSbUser=updateSbUser;
 // Expõe funções globais para _loadProfiles poder chamá-las após profiles carregarem
 window.renderDashboard=renderDashboard;
 window._aplicarFiltroVendas=_aplicarFiltroVendas;
-window._rankVendasCache=_rankVendasCache;
 // renderRanking, renderUserList, renderConfig, applyNavPermissions são
 // function declarations e já são globais — não precisam ser re-atribuídas
 
@@ -229,7 +195,9 @@ function maskCnpjInt(el){
   el.value=v;
 }
 
-function salvarConfiguracoesConta(){
+let _salvandoConta=false;
+async function salvarConfiguracoesConta(){
+  if(_salvandoConta)return;
   const nomeEl = document.getElementById('accNome');
   const sobrenomeEl = document.getElementById('accSobrenome');
   const instaEl = document.getElementById('accInstagram');
@@ -237,71 +205,48 @@ function salvarConfiguracoesConta(){
   const nome = nomeEl ? nomeEl.value.trim() : '';
   const sobrenome = sobrenomeEl ? sobrenomeEl.value.trim() : '';
   const nomeCompleto = (nome + (sobrenome ? ' ' + sobrenome : '')).trim();
-
-  // Atualiza foto da conta se houver preview
-  const fotoPreviewEl = document.getElementById('foto-preview-conta');
-  const fotoImg = fotoPreviewEl ? fotoPreviewEl.querySelector('img') : null;
-  const fotoSrc = fotoImg ? fotoImg.src : '';
-
-  // Atualiza usuário logado
-  const me = getMe(); // FIX: nunca usa users[0]
-  if(me){
-    if(nomeCompleto) me.nome = nomeCompleto;
-    if(fotoSrc) me.foto = fotoSrc;
-    if(waEl) me.whatsapp = waEl.value.trim();
-    // Bug #9: salvar instagram no objeto usuário para persistir no DB
-    if(instaEl) me.instagram = instaEl.value.trim();
-    // Garante que email e sb_id estão no objeto me para _syncUser não abortar
-    if(!me.email && window._session?.user?.email) me.email = window._session.user.email;
-    if(!me.sb_id && window._currentUserId) me.sb_id = window._currentUserId;
+  const fotoImg = document.getElementById('foto-preview-conta')?.querySelector('img');
+  const fotoSrc = fotoImg ? fotoImg.getAttribute('src') : '';
+  const me = getMe();
+  if(!me){showToast('Sessão não identificada. Recarregue a página.','ti-alert-triangle','#dc2626');return;}
+  const antes = {nome:me.nome,foto:me.foto,whatsapp:me.whatsapp,instagram:me.instagram};
+  if(nomeCompleto) me.nome = nomeCompleto;
+  if(fotoSrc) me.foto = fotoSrc;
+  if(waEl) me.whatsapp = waEl.value.trim();
+  if(instaEl) me.instagram = instaEl.value.trim();
+  if(!me.sb_id && window._currentUserId) me.sb_id = window._currentUserId;
+  _salvandoConta=true;
+  let ok = await window._syncUser(me);
+  if(!ok && !window._pendentes.has('perfil')) Object.assign(me,antes);
+  // Dados da empresa: só o gestor altera
+  if(isGestor(me)){
+    const empNomeEl=document.getElementById('empNome');
+    const empWaEl=document.getElementById('empWhatsapp');
+    const empEmailEl=document.getElementById('empEmail');
+    const empAntes={...empresa};
+    if(empNomeEl) empresa.nome=empNomeEl.value.trim()||empresa.nome;
+    if(empWaEl) empresa.whatsapp=empWaEl.value.trim();
+    if(empEmailEl) empresa.email=empEmailEl.value.trim();
+    const okEmp = await window._syncEmpresa();
+    if(!okEmp){ Object.assign(empresa,empAntes); ok=false; }
   }
-  // Salva no localStorage como camada extra de persistência (independente do Supabase)
-  try{
-    const _lsKey = 'evolux_cfg_' + (window._currentUserId||'default');
-    const _cfg = JSON.parse(localStorage.getItem(_lsKey)||'{}');
-    _cfg.whatsapp = waEl?.value.trim()||'';
-    _cfg.instagram = instaEl?.value.trim()||'';
-    localStorage.setItem(_lsKey, JSON.stringify(_cfg));
-  }catch(e){}
-
-  // Atualiza sidebar e topbar imediatamente
-  const sbName = document.getElementById('sb-user-name');
-  const sbAv = document.getElementById('sb-av');
-  const tpAv = document.getElementById('tp-av');
-  if(sbName && nomeCompleto) sbName.textContent = nomeCompleto;
-  const avatarHtml = fotoSrc
-    ? `<img src="${fotoSrc}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
-    : (nomeCompleto ? nomeCompleto.charAt(0).toUpperCase() : 'E');
-  if(sbAv) sbAv.innerHTML = avatarHtml;
-  if(tpAv) tpAv.innerHTML = avatarHtml;
-
-  // Salva dados da empresa
-  const empNomeEl=document.getElementById('empNome');
-  const empWaEl=document.getElementById('empWhatsapp');
-  const empEmailEl=document.getElementById('empEmail');
-  if(empNomeEl) empresa.nome=empNomeEl.value.trim()||empresa.nome;
-  if(empWaEl) empresa.whatsapp=empWaEl.value.trim();
-  if(empEmailEl) empresa.email=empEmailEl.value.trim();
-  console.log('[salvarConfig] me=', me, 'role=', me?.role, 'sb_id=', me?.sb_id);
-  if(window._syncUser&&me) window._syncUser(me).catch(e=>console.warn('[salvarConfig] _syncUser error:',e));
-  if(window._syncEmpresa) window._syncEmpresa().catch(e=>console.warn('[salvarConfig] _syncEmpresa error:',e));
-
-  // Atualiza o dashboard se estiver visível
+  _salvandoConta=false;
+  updateSbUser();
   const dashTab = document.getElementById('tab-dashboard');
   if(dashTab && dashTab.classList.contains('active')) renderDashboard();
-
-  showToast('Configurações salvas!', 'ti-check');
+  if(ok) showToast('Configurações salvas!', 'ti-check');
 }
 
 function uploadLogoEmpresa(e){
   const file=e.target.files[0];if(!file)return;
+  if(!isGestor()){showToast('Somente o gestor altera a logo da empresa.','ti-lock');return;}
   const r=new FileReader();
   r.onload=ev=>{
     empresa.logo=ev.target.result;
     const prev=document.getElementById('emp-logo-preview');
-    if(prev)prev.innerHTML=`<img src="${empresa.logo}" style="max-width:100%;max-height:100%;object-fit:contain">`;
-    if(window._syncEmpresa) window._syncEmpresa().catch(e=>console.warn(e));
-    showToast('Logo da empresa atualizada!','ti-check');
+    const logo=safeUrl(empresa.logo);
+    if(prev&&logo)prev.innerHTML=`<img src="${logo}" style="max-width:100%;max-height:100%;object-fit:contain">`;
+    window._syncEmpresa().then(ok=>{ if(ok) showToast('Logo da empresa atualizada!','ti-check'); });
   };
   r.readAsDataURL(file);
 }

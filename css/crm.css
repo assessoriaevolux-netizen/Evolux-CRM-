@@ -1193,3 +1193,29 @@ html.dark .sec-hdr-select,html[data-theme="dark"] .sec-hdr-select{background:#1c
 html.dark .sec-hdr-btn,html[data-theme="dark"] .sec-hdr-btn{border-color:rgba(29,185,84,.35);color:#1db954;background:rgba(29,185,84,.08)}
 html.dark .sec-hdr-btn:hover,html[data-theme="dark"] .sec-hdr-btn:hover{background:rgba(29,185,84,.15)}
 html.dark .tp-user-wrap:hover,html[data-theme="dark"] .tp-user-wrap:hover{background:rgba(255,255,255,.05)}
+
+/* ── Importação de CSV ─────────────────────────────────────────────── */
+.imp-sec{margin-bottom:16px}
+.imp-sec-tit{font-size:12px;font-weight:800;color:var(--tm);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.imp-arquivo{display:flex;align-items:center;gap:10px;padding:14px;border:2px dashed var(--c3);border-radius:10px;cursor:pointer;font-weight:600;font-size:13px;color:var(--tx);background:var(--c0);transition:border-color .15s}
+.imp-arquivo:hover{border-color:var(--g)}
+.imp-resumo{margin-top:10px;font-size:13px;color:var(--tx);display:flex;flex-direction:column;gap:6px}
+.imp-resumo:empty{display:none}
+.imp-res-nums{display:flex;flex-wrap:wrap;gap:6px 14px;color:var(--tm)}
+.imp-res-nums b{color:var(--tx)}
+.imp-res-ok,.imp-res-ok b{color:var(--g)}
+.imp-info{font-size:12px;color:var(--tm)}
+.imp-info:empty{display:none}
+.imp-det summary{cursor:pointer;font-size:12px;color:var(--b);font-weight:600}
+.imp-det div{font-size:12px;color:var(--tm);margin-top:6px;line-height:1.5}
+.imp-tipos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.imp-resp{display:flex;flex-direction:column;gap:8px}
+.imp-opc{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1.5px solid var(--c2);border-radius:9px;cursor:pointer;font-size:13px;font-weight:600;color:var(--tx);transition:border-color .15s,background .15s}
+.imp-opc input{accent-color:var(--g);margin:0}
+.imp-opc:has(input:checked){border-color:var(--g);background:rgba(29,185,84,.07)}
+.imp-rodizio{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px;max-height:170px;overflow:auto;padding:10px;border:1px solid var(--c2);border-radius:9px;font-size:12.5px;color:var(--tx)}
+.imp-rodizio label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.imp-rodizio input{accent-color:var(--g)}
+.imp-prog{height:8px;border-radius:6px;background:var(--c2);overflow:hidden}
+.imp-prog>div{height:100%;width:0;background:var(--g);transition:width .2s}
+.bsv:disabled,.bcn:disabled{opacity:.55;cursor:not-allowed}

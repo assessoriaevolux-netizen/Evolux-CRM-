@@ -6,13 +6,13 @@
 <title>Evolux CRM</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.0/dist/tabler-icons.min.css">
-<link rel="stylesheet" href="css/crm.css?v=20261022a">
+<link rel="stylesheet" href="css/crm.css?v=20261022b">
 
 <!-- ═══════════════════════════════════════════════════════════
      SUPABASE — Auth guard + sincronização em tempo real
      ═══════════════════════════════════════════════════════════ -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="js/dados.js?v=20261022a"></script>
+<script src="js/dados.js?v=20261022b"></script>
 </head>
 <body>
 
@@ -144,11 +144,11 @@
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:0">
       <button class="btn bg bsm" onclick="toggleFunilFiltros()" id="btn-funil-filtros"><i class="ti ti-filter"></i>Filtros</button>
-      <button class="btn bg bsm" onclick="openEditarFunil()"><i class="ti ti-pencil"></i>Editar funil</button>
+      <button class="btn bg bsm" data-perm="funil_edit" onclick="openEditarFunil()"><i class="ti ti-pencil"></i>Editar funil</button>
       <button class="btn bg bsm" onclick="exportarLeadsCSV()"><i class="ti ti-download"></i>Exportar</button>
-      <button class="btn bg bsm" onclick="abrirModalImportar()"><i class="ti ti-upload"></i>Importar</button>
-      <button class="btn bg bsm" onclick="toggleFunilSelMode()" id="btn-funil-sel"><i class="ti ti-checkboxes"></i>Selecionar</button>
-      <button class="btn bp bsm" onclick="openModal()"><i class="ti ti-plus"></i>Novo lead</button>
+      <button class="btn bg bsm" data-perm="leads_import" onclick="abrirModalImportar()"><i class="ti ti-upload"></i>Importar</button>
+      <button class="btn bg bsm" data-perm="leads_transfer|leads_delete" onclick="toggleFunilSelMode()" id="btn-funil-sel"><i class="ti ti-checkboxes"></i>Selecionar</button>
+      <button class="btn bp bsm" data-perm="leads_create" onclick="openModal()"><i class="ti ti-plus"></i>Novo lead</button>
     </div>
   </div>
   <style>
@@ -174,8 +174,8 @@
     <span id="funil-sel-count" style="font-size:13px;font-weight:600;color:var(--tx)">0 leads selecionados</span>
     <button class="btn bg bsm" onclick="selectAllFunil()"><i class="ti ti-layout-grid"></i>Todos</button>
     <select id="funil-transfer-dest" class="fi" style="max-width:200px;padding:6px 10px;margin-left:auto"></select>
-    <button class="btn bp bsm" onclick="transferirSelecionados()"><i class="ti ti-check"></i>Transferir</button>
-    <button class="btn bsm" style="background:#e53e3e;color:#fff" onclick="excluirSelecionados()"><i class="ti ti-trash"></i>Excluir</button>
+    <button class="btn bp bsm" id="btn-funil-transferir" onclick="transferirSelecionados()"><i class="ti ti-check"></i>Transferir</button>
+    <button class="btn bsm" id="btn-funil-excluir" style="background:#e53e3e;color:#fff" onclick="excluirSelecionados()"><i class="ti ti-trash"></i>Excluir</button>
     <button class="btn bg bsm" onclick="cancelarSelecaoFunil()">Cancelar</button>
   </div>
   <div class="kw"><div class="kanban" id="kanban"></div></div>
@@ -230,8 +230,8 @@
     <select id="fEtapa" class="tfield" onchange="renderTable()"><option value="">Todas as etapas</option></select>
     <select id="fOrigem" class="tfield" onchange="renderTable()"><option value="">Todas as origens</option><option>Meta Ads</option><option>Indicação</option><option>Orgânico</option></select>
     <select id="fConsultor" class="tfield" style="display:none" onchange="renderTable()"><option value="">Todos os consultores</option></select>
-    <button class="btn bp" onclick="openModal()"><i class="ti ti-plus"></i>Novo lead</button>
-    <button class="btn bg" id="btn-distrib" onclick="toggleDistrib()"><i class="ti ti-arrows-exchange"></i>Distribuir leads</button>
+    <button class="btn bp" data-perm="leads_create" onclick="openModal()"><i class="ti ti-plus"></i>Novo lead</button>
+    <button class="btn bg" id="btn-distrib" data-perm="leads_transfer" onclick="toggleDistrib()"><i class="ti ti-arrows-exchange"></i>Distribuir leads</button>
   </div>
   <div id="distrib-bar" style="display:none" class="distrib-bar">
     <i class="ti ti-arrows-exchange" style="color:var(--g)"></i>
@@ -325,7 +325,7 @@
             <select id="sLeadSel" class="fi" style="flex:1" onchange="simLoadLead()">
               <option value="">Selecionar lead cadastrado...</option>
             </select>
-            <button class="btn bg bsm" style="white-space:nowrap" onclick="openModal()"><i class="ti ti-plus"></i></button>
+            <button class="btn bg bsm" data-perm="leads_create" style="white-space:nowrap" onclick="openModal()"><i class="ti ti-plus"></i></button>
           </div>
         </div>
         <div class="field" style="margin:0">
@@ -438,7 +438,7 @@
 <div id="tab-lances" class="content">
   <div class="shdr">
     <span class="stitle">Lances do mês — <span id="lance-mes"></span></span>
-    <button class="btn bp" onclick="openLanceModal()"><i class="ti ti-plus"></i>Cadastrar lance</button>
+    <button class="btn bp" data-perm="lances_create" onclick="openLanceModal()"><i class="ti ti-plus"></i>Cadastrar lance</button>
   </div>
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px">
     <div class="mcard cr"><div class="mcard-icon"><i class="ti ti-alert-triangle"></i></div><div class="ml">Vence hoje / atrasado</div><div class="mv" id="l-urgente">0</div><div class="ms">requer ação imediata</div></div>
@@ -453,11 +453,11 @@
   <div class="shdr">
     <span class="stitle"><i class="ti ti-receipt" style="margin-right:6px"></i>Minhas Vendas</span>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <input type="text" id="mv-busca" class="fi" placeholder="Buscar cliente..." style="max-width:200px;font-size:12px;padding:6px 10px" oninput="renderMinhasVendas()">
-      <select id="mv-filtro-user" class="fi" style="max-width:180px;font-size:12px;padding:6px 10px" onchange="renderMinhasVendas()">
+      <input type="text" id="mv-busca" class="fi" placeholder="Buscar cliente..." style="max-width:200px;font-size:12px;padding:6px 10px" oninput="mvFiltrar()">
+      <select id="mv-filtro-user" class="fi" style="max-width:180px;font-size:12px;padding:6px 10px" onchange="mvFiltrar()">
         <option value="">Todos os vendedores</option>
       </select>
-      <select id="mv-filtro-periodo" class="fi" style="max-width:150px;font-size:12px;padding:6px 10px" onchange="renderMinhasVendas()">
+      <select id="mv-filtro-periodo" class="fi" style="max-width:150px;font-size:12px;padding:6px 10px" onchange="mvFiltrar()">
         <option value="todos">Todo período</option>
         <option value="hoje">Hoje</option>
         <option value="semana">Esta semana</option>
@@ -527,14 +527,14 @@
         <button class="tv-btn" onclick="openTV()"><i class="ti ti-maximize"></i>Abrir tela cheia</button>
       </div>
       <!-- Card: minha venda (qualquer usuário logado) -->
-      <div class="side-card" id="card-minha-venda">
+      <div class="side-card" id="card-minha-venda" data-perm="vendas_create">
         <h3><i class="ti ti-trophy" style="color:var(--g)"></i>Registrar minha venda</h3>
         <p id="minha-venda-sub">Selecione o lead convertido ou informe o valor.</p>
         <div class="vf">
           <select id="vleadme" onchange="rankAutoFillMe()" style="font-size:12px"><option value="">Selecionar lead (opcional)...</option></select>
           <input type="text" id="vval-me" placeholder="Valor do crédito (R$)" oninput="maskM(this)">
           <button class="btn bp" style="justify-content:center" onclick="addMinhaVenda()"><i class="ti ti-check"></i>Registrar</button>
-          <button class="btn" style="justify-content:center;background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)" onclick="removerMinhaVenda()"><i class="ti ti-trash"></i>Remover última venda</button>
+          <button class="btn" data-perm="vendas_delete" style="justify-content:center;background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)" onclick="removerMinhaVenda()"><i class="ti ti-trash"></i>Remover última venda</button>
         </div>
       </div>
       <!-- Card: registrar por qualquer vendedor (gestor/permissão) -->
@@ -546,7 +546,7 @@
           <select id="vlead" style="font-size:12px" onchange="rankAutoFillVend()"><option value="">Selecionar lead (opcional)...</option></select>
           <input type="text" id="vval" placeholder="Valor do crédito (R$)" oninput="maskM(this)">
           <button class="btn bp" style="justify-content:center" onclick="addVenda()"><i class="ti ti-check"></i>Registrar venda</button>
-          <button class="btn" style="justify-content:center;background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)" onclick="removerVenda()"><i class="ti ti-trash"></i>Remover última venda</button>
+          <button class="btn" data-perm="vendas_delete" style="justify-content:center;background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)" onclick="removerVenda()"><i class="ti ti-trash"></i>Remover última venda</button>
         </div>
       </div>
     </div>
@@ -557,7 +557,7 @@
 <div id="tab-relatorios" class="content">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
     <span style="font-size:12px;font-weight:700;color:var(--tm)">Período:</span>
-    <div class="periodo-tabs">
+    <div class="periodo-tabs" data-perm="relatorios_generate">
       <button class="periodo-tab" onclick="setRelPeriodo('hoje',this)">Hoje</button>
       <button class="periodo-tab" onclick="setRelPeriodo('semana',this)">Semana</button>
       <button class="periodo-tab active" onclick="setRelPeriodo('mes',this)">Mês</button>
@@ -565,7 +565,7 @@
       <button class="periodo-tab" onclick="setRelPeriodo('ano',this)">Ano</button>
     </div>
     <span style="font-size:11px;color:var(--tm)" id="rel-periodo-label">Exibindo: Mês atual</span>
-    <button class="btn bg bsm" style="margin-left:auto" onclick="downloadRelatorio()"><i class="ti ti-download"></i>Exportar</button>
+    <button class="btn bg bsm" data-perm="relatorios_export" style="margin-left:auto" onclick="downloadRelatorio()"><i class="ti ti-download"></i>Exportar</button>
   </div>
   <div class="rel-grid">
     <div class="rel-card"><div class="rel-title">Leads por etapa</div><div id="rel-etapas"></div></div>
@@ -932,46 +932,7 @@
   <div class="tv-body" id="tv-body"></div>
 </div>
 
-<!-- MODAL EDITAR USUÁRIO -->
-<div class="overlay" id="edit-user-modal">
-  <div class="modal" style="max-width:420px">
-    <div class="mtit"><i class="ti ti-user-edit"></i>Editar usuário</div>
-    <!-- foto -->
-    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:20px">
-      <div id="edit-user-foto-preview" onclick="document.getElementById('edit-user-foto-input').click()"
-        style="width:88px;height:88px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--gc));
-        display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;color:#fff;
-        cursor:pointer;overflow:hidden;border:3px solid rgba(1,122,69,.4);box-shadow:0 4px 20px rgba(1,122,69,.3);
-        position:relative;flex-shrink:0">
-        <span id="edit-user-inicial">?</span>
-      </div>
-      <input type="file" id="edit-user-foto-input" accept="image/*" style="display:none" onchange="editUserFotoPreview(event)">
-      <div style="font-size:11.5px;color:var(--tm)">Clique na foto para alterar</div>
-    </div>
-    <div class="field">
-      <label>Nome completo</label>
-      <input type="text" id="edit-user-nome" class="fi" placeholder="Nome do usuário">
-    </div>
-    <div class="field">
-      <label>E-mail</label>
-      <input type="text" id="edit-user-email" class="fi" placeholder="email@exemplo.com">
-    </div>
-    <div class="field">
-      <label>Função</label>
-      <select id="edit-user-role" class="fi">
-        <option value="gestor">Gestor</option>
-        <option value="representante">Representante</option>
-        <option value="vendedor">Vendedor</option>
-      </select>
-    </div>
-    <input type="hidden" id="edit-user-id">
-    <input type="hidden" id="edit-user-foto-data">
-    <div class="ma">
-      <button class="bcn" onclick="closeEditUser()">Cancelar</button>
-      <button class="bsv" onclick="saveEditUser()">Salvar alterações</button>
-    </div>
-  </div>
-</div>
+
 
 <!-- MODAL EQUIPE -->
 <div class="overlay" id="equipe-modal">
@@ -1266,30 +1227,30 @@
 </div>
 
 <!-- Scripts do CRM (em ordem de execução) -->
-<script src="js/app/01-base.js?v=20261022a"></script>
-<script src="js/app/02-dashboard.js?v=20261022a"></script>
-<script src="js/app/03-funil.js?v=20261022a"></script>
-<script src="js/app/04-importacao.js?v=20261022a"></script>
-<script src="js/app/05-leads.js?v=20261022a"></script>
-<script src="js/app/06-simulador.js?v=20261022a"></script>
-<script src="js/app/07-lances.js?v=20261022a"></script>
-<script src="js/app/08-ranking.js?v=20261022a"></script>
-<script src="js/app/09-administradoras.js?v=20261022a"></script>
-<script src="js/app/10-usuarios.js?v=20261022a"></script>
-<script src="js/app/11-configuracoes.js?v=20261022a"></script>
-<script src="js/app/12-relatorios.js?v=20261022a"></script>
-<script src="js/app/13-calendario.js?v=20261022a"></script>
-<script src="js/app/14-whatsapp.js?v=20261022a"></script>
-<script src="js/app/15-diversos.js?v=20261022a"></script>
-<script src="js/app/16-empresas.js?v=20261022a"></script>
-<script src="js/app/17-equipes.js?v=20261022a"></script>
-<script src="js/app/18-ui.js?v=20261022a"></script>
-<script src="js/app/19-minhas-vendas.js?v=20261022a"></script>
-<script src="js/app/20-init.js?v=20261022a"></script>
-<script src="js/app/21-hierarquia.js?v=20261022a"></script>
-<script src="js/app/22-protocolo.js?v=20261022a"></script>
-<script src="js/app/23-eventos.js?v=20261022a"></script>
-<script src="js/app/24-nova-senha.js?v=20261022a"></script>
-<script src="js/app/99-inicio.js?v=20261022a"></script>
+<script src="js/app/01-base.js?v=20261022b"></script>
+<script src="js/app/02-dashboard.js?v=20261022b"></script>
+<script src="js/app/03-funil.js?v=20261022b"></script>
+<script src="js/app/04-importacao.js?v=20261022b"></script>
+<script src="js/app/05-leads.js?v=20261022b"></script>
+<script src="js/app/06-simulador.js?v=20261022b"></script>
+<script src="js/app/07-lances.js?v=20261022b"></script>
+<script src="js/app/08-ranking.js?v=20261022b"></script>
+<script src="js/app/09-administradoras.js?v=20261022b"></script>
+<script src="js/app/10-usuarios.js?v=20261022b"></script>
+<script src="js/app/11-configuracoes.js?v=20261022b"></script>
+<script src="js/app/12-relatorios.js?v=20261022b"></script>
+<script src="js/app/13-calendario.js?v=20261022b"></script>
+<script src="js/app/14-whatsapp.js?v=20261022b"></script>
+<script src="js/app/15-diversos.js?v=20261022b"></script>
+<script src="js/app/16-empresas.js?v=20261022b"></script>
+<script src="js/app/17-equipes.js?v=20261022b"></script>
+<script src="js/app/18-ui.js?v=20261022b"></script>
+<script src="js/app/19-minhas-vendas.js?v=20261022b"></script>
+<script src="js/app/20-init.js?v=20261022b"></script>
+<script src="js/app/21-hierarquia.js?v=20261022b"></script>
+<script src="js/app/22-protocolo.js?v=20261022b"></script>
+<script src="js/app/23-eventos.js?v=20261022b"></script>
+<script src="js/app/24-nova-senha.js?v=20261022b"></script>
+<script src="js/app/99-inicio.js?v=20261022b"></script>
 </body>
 </html>

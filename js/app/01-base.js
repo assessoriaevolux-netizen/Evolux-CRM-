@@ -1,7 +1,17 @@
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
 const ETAPAS=['Novo lead','Primeiro contato','Aguardando resposta','Proposta enviada','Negociação','Fechado / Convertido','Perdido'];
-// Labels visuais das etapas (mesmo índice que ETAPAS) — não altera as chaves do banco
+// Labels visuais das etapas (mesmo índice que ETAPAS) — não altera as chaves do banco.
+// Cada empresa pode renomear as etapas (Editar funil); o nome fica salvo em empresas.etapas_labels.
 const ETAPAS_LABEL={'Negociação':'Negociação/Agendamento'};
+const ETAPAS_LABEL_PADRAO={...ETAPAS_LABEL};
+function aplicarEtapasLabels(obj){
+  Object.keys(ETAPAS_LABEL).forEach(k=>delete ETAPAS_LABEL[k]);
+  Object.assign(ETAPAS_LABEL,ETAPAS_LABEL_PADRAO);
+  if(obj&&typeof obj==='object'){
+    ETAPAS.forEach(e=>{const v=obj[e];if(typeof v==='string'&&v.trim())ETAPAS_LABEL[e]=v.trim().slice(0,40);});
+  }
+}
+function etapaLabel(e){return ETAPAS_LABEL[e]||e;}
 const EC=['#1a6e3c','#c8870a','#5b3db0','#1e3a6e','#a06010','#22954f','#c0392b'];
 const ES=['s0','s1','s2','s3','s4','s5','s6'];
 const TMAP={Imóvel:'ti',Automóvel:'ta',Moto:'tm3','Serviço':'ts3'};
@@ -40,75 +50,119 @@ const DPERMS={
 // ─── HIERARQUIAS (cargos) ─────────────────────────────────────────────────────
 // Módulos e permissões disponíveis
 const HPERM_MODULES=[
-  {id:'dashboard',label:'Dashboard',perms:[
-    {id:'dashboard_view',label:'Visualizar dashboard'},
+  {id:'dashboard',label:'Painel',perms:[
+    {id:'dashboard_view',label:'Ver o Painel (dashboard)'},
   ]},
   {id:'leads',label:'Leads',perms:[
-    {id:'leads_view',label:'Visualizar leads'},
+    {id:'leads_view',label:'Ver a aba Leads'},
     {id:'leads_create',label:'Criar leads'},
-    {id:'leads_edit',label:'Editar leads'},
+    {id:'leads_edit',label:'Editar dados dos leads'},
     {id:'leads_delete',label:'Excluir leads'},
+    {id:'leads_import',label:'Importar leads (CSV)'},
+    {id:'leads_transfer',label:'Transferir / distribuir leads'},
   ]},
   {id:'funil',label:'Funil de Vendas',perms:[
-    {id:'funil_view',label:'Visualizar funil'},
-    {id:'funil_move',label:'Mover leads no funil'},
+    {id:'funil_view',label:'Ver o Funil'},
+    {id:'funil_move',label:'Mover leads entre etapas'},
+    {id:'funil_edit',label:'Renomear etapas do funil'},
   ]},
   {id:'vendas',label:'Vendas',perms:[
-    {id:'vendas_view',label:'Visualizar vendas'},
-    {id:'vendas_create',label:'Registrar venda'},
+    {id:'vendas_view',label:'Ver Minhas Vendas'},
+    {id:'vendas_create',label:'Registrar venda manual'},
     {id:'vendas_edit',label:'Editar venda'},
     {id:'vendas_delete',label:'Excluir venda'},
   ]},
-  {id:'equipe',label:'Equipe',perms:[
-    {id:'equipe_view',label:'Visualizar equipe'},
-    {id:'equipe_view_sellers',label:'Visualizar vendedores'},
-    {id:'equipe_add',label:'Adicionar vendedores'},
-    {id:'equipe_edit',label:'Editar vendedores'},
-    {id:'equipe_remove',label:'Remover vendedores'},
+  {id:'equipe',label:'Equipe e usuários',perms:[
+    {id:'equipe_view',label:'Ver equipes (Configurações)'},
+    {id:'equipe_view_sellers',label:'Ver usuários (Configurações)'},
+    {id:'equipe_add',label:'Cadastrar usuários abaixo do seu cargo'},
+    {id:'equipe_edit',label:'Editar usuários e a própria equipe'},
+    {id:'equipe_remove',label:'Remover usuários abaixo do seu cargo'},
   ]},
   {id:'ranking',label:'Ranking',perms:[
-    {id:'ranking_view',label:'Visualizar ranking'},
-    {id:'ranking_team',label:'Visualizar ranking da própria equipe'},
-    {id:'ranking_all',label:'Visualizar ranking geral'},
+    {id:'ranking_view',label:'Ver o Ranking'},
+    {id:'ranking_team',label:'Ver o ranking da própria equipe'},
+    {id:'ranking_all',label:'Ver o ranking geral da empresa'},
   ]},
   {id:'relatorios',label:'Relatórios',perms:[
-    {id:'relatorios_view',label:'Visualizar relatórios'},
-    {id:'relatorios_generate',label:'Gerar relatórios'},
-    {id:'relatorios_export',label:'Exportar relatórios'},
+    {id:'relatorios_view',label:'Ver Relatórios'},
+    {id:'relatorios_generate',label:'Mudar o período dos relatórios'},
+    {id:'relatorios_export',label:'Baixar relatórios'},
   ]},
   {id:'simulador',label:'Simulador',perms:[
-    {id:'simulador_view',label:'Usar simulador'},
-    {id:'simulador_models',label:'Gerenciar modelos'},
+    {id:'simulador_view',label:'Usar o Simulador'},
+    {id:'simulador_models',label:'Gerenciar administradoras e tabelas'},
   ]},
   {id:'lances',label:'Lances',perms:[
-    {id:'lances_view',label:'Visualizar lances'},
-    {id:'lances_create',label:'Registrar lances'},
-    {id:'lances_edit',label:'Editar lances'},
+    {id:'lances_view',label:'Ver Lances'},
+    {id:'lances_create',label:'Cadastrar lances'},
+    {id:'lances_edit',label:'Editar, marcar ofertado e remover lances'},
+  ]},
+  {id:'whatsapp',label:'WhatsApp',perms:[
+    {id:'whatsapp_view',label:'Ver a aba WhatsApp'},
+  ]},
+  {id:'agenda',label:'Calendário',perms:[
+    {id:'agenda_view',label:'Ver o Calendário'},
   ]},
   {id:'config',label:'Configurações',perms:[
-    {id:'config_view',label:'Acessar configurações'},
-    {id:'config_users',label:'Gerenciar usuários'},
-    {id:'config_teams',label:'Gerenciar equipes'},
-    {id:'config_hierarchy',label:'Gerenciar hierarquias'},
-    {id:'config_permissions',label:'Gerenciar permissões'},
+    {id:'config_view',label:'Ver integrações da empresa'},
+    {id:'config_users',label:'Gerenciar todos os usuários'},
+    {id:'config_teams',label:'Gerenciar todas as equipes'},
+    {id:'config_hierarchy',label:'Gerenciar cargos (abaixo do seu)'},
+    {id:'config_permissions',label:'Alterar permissões dos cargos'},
   ]},
   {id:'notificacoes',label:'Notificações',perms:[
-    {id:'notif_view',label:'Visualizar notificações'},
-    {id:'notif_team',label:'Visualizar notificações da equipe'},
-    {id:'notif_manage',label:'Gerenciar notificações'},
+    {id:'notif_view',label:'Ver notificações'},
+    {id:'notif_team',label:'Ver notificações da equipe'},
+    {id:'notif_manage',label:'Configurar notificações'},
   ]},
 ];
 
 // Helper: all perm ids flat
 function allHPermIds(){return HPERM_MODULES.flatMap(m=>m.perms.map(p=>p.id));}
 
-// Default permissions per cargo slug
+// Permissões padrão (iguais às do banco: crm_garantir_hierarquias_empresa)
+const _PERMS_VEND=['dashboard_view','leads_view','leads_create','leads_edit','funil_view','funil_move','simulador_view',
+  'lances_view','lances_create','lances_edit','ranking_view','ranking_team','ranking_all','vendas_view','vendas_create','notif_view'];
+const _PERMS_REP=[..._PERMS_VEND,'leads_import','leads_transfer','notif_team','whatsapp_view','agenda_view'];
+const _PERMS_SUP=[..._PERMS_REP,'simulador_models','config_view','equipe_view','equipe_view_sellers','equipe_add','equipe_edit','equipe_remove'];
+function _permsDe(lista){return Object.fromEntries(allHPermIds().map(id=>[id,lista.includes(id)]));}
 const HPERM_DEFAULTS={
   gestor: Object.fromEntries(allHPermIds().map(id=>[id,true])),
-  representante: Object.fromEntries(allHPermIds().map(id=>[id,false])),
-  supervisor: Object.fromEntries(allHPermIds().map(id=>[id,false])),
-  vendedor: Object.fromEntries(allHPermIds().map(id=>[id,false])),
+  representante: _permsDe(_PERMS_REP),
+  supervisor: _permsDe(_PERMS_SUP),
+  vendedor: _permsDe(_PERMS_VEND),
 };
+
+// ─── PERMISSÕES — regra única usada no CRM inteiro (espelha o banco) ─────────
+// Nível: 0 plataforma (master), 1 gestor, 2 representante, 3 supervisor, 4 vendedor
+const ROLE_NIVEL={master:0,superadmin:0,gestor:1,admin:1,administrador:1,representante:2,supervisor:3,vendedor:4};
+function roleNivel(role){const n=ROLE_NIVEL[(role||'').toLowerCase()];return n===undefined?4:n;}
+function isPlataforma(u){u=u||getMe();return !!u&&roleNivel(u.role)===0;}
+function isGestor(u){u=u||getMe();return !!u&&roleNivel(u.role)<=1;}
+function nivelDe(u){
+  if(!u)return 99;
+  const rn=roleNivel(u.role);
+  if(rn<=1)return rn;
+  const h=u.hierarquiaId?getHier(u.hierarquiaId):null;
+  return Math.max(h&&h.ordem?h.ordem:rn,rn);
+}
+function _permsPadraoRole(role){
+  const r=(role||'').toLowerCase();
+  if(r==='supervisor'||r==='representante')return _permsDe([..._PERMS_REP,'config_view']);
+  return _permsDe(_PERMS_VEND);
+}
+// Pode fazer X? (gestor e plataforma podem tudo; o resto segue o cargo)
+function can(perm,u){
+  u=u||getMe();
+  if(!u)return false;
+  if(isGestor(u))return true;
+  const h=u.hierarquiaId?getHier(u.hierarquiaId):null;
+  const p=h&&h.perms;
+  if(p&&typeof p[perm]==='boolean')return p[perm];
+  return !!_permsPadraoRole(u.role)[perm];
+}
+window.can=can;
 
 // Hierarquias (cargos configuráveis)
 let hierarquias=[
@@ -149,11 +203,9 @@ function applyHierToUser(u){
   if(h&&h.perms) u.hperms={...h.perms};
 }
 function applyHierToAll(hId){
+  // As permissões vêm sempre da hierarquia (não são copiadas para o perfil de cada pessoa)
   const h=getHier(hId);if(!h)return;
-  users.filter(u=>u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id).forEach(u=>{
-    u.hperms={...h.perms};
-    if(window._syncUser) window._syncUser(u).catch(e=>console.warn('[applyHierToAll]',e));
-  });
+  users.filter(u=>u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id).forEach(u=>{u.hperms={...h.perms};});
   try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
 }
 
@@ -219,9 +271,61 @@ function maskM(el){
   // Insere ponto a cada 3 dígitos da direita durante a digitação
   el.value=v.replace(/\B(?=(\d{3})+(?!\d))/g,'.');
 }
-function unM(v){return parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.'))||0;}
+// Lê valor em reais em qualquer formato: "R$ 1.234,56", "1.234", "1234,5", 1234
+function unM(v){
+  if(typeof v==='number')return isFinite(v)?v:0;
+  let s=String(v||'').replace(/[^\d,.-]/g,'');
+  if(!s)return 0;
+  if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');
+  else if((s.match(/\./g)||[]).length>1||/\.\d{3}$/.test(s))s=s.replace(/\./g,'');
+  return parseFloat(s)||0;
+}
 function maskMeta(el){maskM(el);}
-function toDate(){const d=new Date();return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;}
+function toDate(d){d=d||new Date();return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;}
+// Data de hoje no fuso local (toISOString usa UTC e vira o dia depois das 21h)
+function hojeISO(d){d=d||new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+
+// ─── PROTEÇÃO CONTRA CÓDIGO MALICIOSO EM TEXTOS (nome de lead etc.) ──────────
+// Todo texto vindo de usuário/importação passa por esc() antes de ir para innerHTML.
+function esc(v){
+  if(v===null||v===undefined)return '';
+  return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+// Só aceita imagens http(s) ou data:image — bloqueia "javascript:" e aspas
+function safeUrl(u){
+  if(!u||typeof u!=='string')return '';
+  const t=u.trim();
+  if(/^https?:\/\//i.test(t)||/^data:image\/[a-z+.-]+;base64,[a-z0-9+/=\s]+$/i.test(t))return esc(t);
+  return '';
+}
+
+// ─── TELEFONE ────────────────────────────────────────────────────────────────
+// Padrão salvo: 55 + DDD + número (só dígitos). Igual à função do banco.
+function normalizaTelefone(raw){
+  if(!raw)return '';
+  let s=String(raw).trim();
+  if(/^p:/i.test(s))s=s.slice(2);
+  if(/^\d[\d.]*[eE][+\-]\d+$/.test(s))s=Number(s).toFixed(0); // notação científica do Excel
+  const d=s.replace(/\D/g,'');
+  if(d.length===10||d.length===11)return '55'+d;
+  if((d.length===12||d.length===13)&&d.startsWith('55'))return d;
+  return d.length>=8?d:s;
+}
+// Chave para achar duplicado: DDD + 8 últimos dígitos (pega número com e sem o 9)
+function chaveTelefone(raw){
+  let d=String(raw||'').replace(/\D/g,'');
+  if(d.length>=12&&d.startsWith('55'))d=d.slice(2);
+  return d.length>=10?d.slice(0,2)+d.slice(-8):null;
+}
+// Exibição: +55 (19) 98936-7759
+function formatTelefone(raw){
+  if(!raw)return '';
+  let d=String(raw).replace(/\D/g,'');
+  if(d.length>=12&&d.startsWith('55'))d=d.slice(2);
+  if(d.length===11)return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+  if(d.length===10)return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+  return String(raw);
+}
 function getAdminById(id){return administradoras.find(a=>a.id===id)||null;}
 function mesAtual(){const m=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];const d=new Date();return `${m[d.getMonth()]} ${d.getFullYear()}`;}
 
@@ -241,43 +345,62 @@ function getNotifIconClass(icon){
   return '';
 }
 
+// Atividades que a pessoa pode ver no sininho (equipe só com permissão)
+function _atividadesVisiveis(){
+  const me=getMe();
+  const todas=window.activities||activities||[];
+  if(!me||isGestor(me))return todas;
+  if(can('notif_team')){
+    const vis=new Set([...getVisiveisParaMim()].map(id=>(users.find(u=>u.id===id)||{}).sb_id).filter(Boolean));
+    return todas.filter(a=>!a._userId||vis.has(a._userId));
+  }
+  return todas.filter(a=>!a._userId||a._userId===me.sb_id);
+}
 function renderNotifPanel(){
   const list=document.getElementById('notif-list');
   const dot=document.getElementById('bell-dot');
+  const wrap=document.querySelector('.tp-bell-wrap');
+  if(wrap) wrap.style.display=can('notif_view')?'':'none';
   if(!list) return;
-  const items=[...(window.activities||activities||[])].slice(0,20);
+  const items=_atividadesVisiveis().slice(0,20);
+  window._notifItens=items;
   const unreadCount=items.filter(act=>!notifRead.has(_notifKey(act))).length;
   if(dot) dot.style.display=unreadCount>0?'block':'none';
   if(items.length===0){
     list.innerHTML='<div class="notif-empty"><i class="ti ti-bell-off" style="font-size:28px;display:block;margin-bottom:8px;opacity:.35"></i>Nenhuma notificação</div>';
     return;
   }
-  list.innerHTML=items.map((act)=>{
-    const key=_notifKey(act);
-    const read=notifRead.has(key);
+  list.innerHTML=items.map((act,i)=>{
+    const read=notifRead.has(_notifKey(act));
     const cls=getNotifIconClass(act.icon);
-    return `<div class="notif-item${read?'':' unread'}" onclick="readNotif('${key.toString().replace(/'/g,'\\')}')">
-      <div class="notif-icon ${cls}"><i class="ti ${act.icon}"></i></div>
+    return `<div class="notif-item${read?'':' unread'}" onclick="readNotif(${i})">
+      <div class="notif-icon ${cls}"><i class="ti ${esc(act.icon)}"></i></div>
       <div class="notif-body">
-        <div class="notif-text">${act.text}</div>
-        <div class="notif-time">${act.time}</div>
+        <div class="notif-text">${esc(act.text)}</div>
+        <div class="notif-time">${esc(act.time)}</div>
       </div>
     </div>`;
   }).join('');
 }
 
 // ─── BUSCA GLOBAL ─────────────────────────────────────────────────────────────
+// Espera a pessoa parar de digitar; só troca de aba uma vez.
+let _buscaTimer=null;
 function globalSearch(q){
-  if(!q||q.trim().length<2){
-    // clear any highlight, just re-render current tab
+  if(_buscaTimer)clearTimeout(_buscaTimer);
+  _buscaTimer=setTimeout(()=>_globalSearchAgora(q),400);
+}
+function _globalSearchAgora(q){
+  q=(q||'').trim().toLowerCase();
+  const srch=document.getElementById('srch');
+  if(q.length<2){
+    if(srch&&srch.value&&document.getElementById('tab-leads')?.classList.contains('active')){srch.value='';renderTable();}
     return;
   }
-  q=q.trim().toLowerCase();
-  // Switch to leads tab and filter
-  const leadsBtn=document.querySelector('.nb[onclick*="leads"]');
-  showTab('leads',leadsBtn);
-  // Set the leads search field
-  const srch=document.getElementById('srch');
+  if(!can('leads_view'))return;
+  if(!document.getElementById('tab-leads')?.classList.contains('active')){
+    showTab('leads',document.querySelector('.nb[onclick*="\'leads\'"]'));
+  }
   if(srch){srch.value=q;renderTable();}
 }
 
@@ -293,14 +416,14 @@ function toggleNotifPanel(){
   }
 }
 
-function readNotif(key){
-  notifRead.add(key);
+function readNotif(i){
+  const act=(window._notifItens||[])[i];
+  if(act) notifRead.add(_notifKey(act));
   renderNotifPanel();
 }
 
 function markAllRead(){
-  const items=[...(window.activities||activities||[])].slice(0,20);
-  items.forEach(act=>notifRead.add(_notifKey(act)));
+  _atividadesVisiveis().slice(0,20).forEach(act=>notifRead.add(_notifKey(act)));
   renderNotifPanel();
   const panel=document.getElementById('notif-panel');
   if(panel) panel.classList.remove('open');
@@ -325,67 +448,56 @@ function toggleSidebar(){
 }
 
 // ─── TABS ─────────────────────────────────────────────────────────────────────
-// Mapa: tab id → chave em DPERMS (null = sempre acessível)
-const TAB_PERM_MAP={dashboard:null,funil:'funil',leads:'leads',simulador:'simulador',lances:'lances',ranking:'ranking',relatorios:'relatorios',whatsapp:'whatsapp',calendario:'calendario',configuracoes:'config',empresas:null};
-function _getMeRole(){
-  // FIX bug#1: nunca usa users[0] como fallback — retorna null se não identificado
-  return getMe()||null;
+// Aba → permissão necessária (null = qualquer pessoa logada)
+const TAB_PERM={dashboard:'dashboard_view',funil:'funil_view',leads:'leads_view',simulador:'simulador_view',
+  lances:'lances_view',minhasvendas:'vendas_view',ranking:'ranking_view',relatorios:'relatorios_view',
+  whatsapp:'whatsapp_view',calendario:'agenda_view',configuracoes:null,empresas:'__plataforma'};
+function podeAba(id,me){
+  me=me||getMe();
+  if(!me)return false;
+  const p=TAB_PERM[id];
+  if(p===undefined||p===null)return true;
+  if(p==='__plataforma')return isPlataforma(me);
+  return can(p,me);
 }
-// Mapa: chave do TAB_PERM_MAP → chave de hperms (permissão mínima para acessar a aba)
-const TAB_TO_HPERM={
-  leads:'leads_view', funil:'funil_view', simulador:'simulador_view',
-  lances:'lances_view', ranking:'ranking_view', relatorios:'relatorios_view',
-  whatsapp:'whatsapp_view', calendario:'agenda_view', config:'config_view'
-};
-function _hasTabPerm(me,permKey){
-  if(!permKey) return true;
-  if(!me) return false;
-  // master/gestor/superadmin sempre têm acesso total
-  if(me.role==='master'||me.role==='gestor'||me.role==='superadmin') return true;
-  // Configurações: todo usuário autenticado pode acessar (para editar próprio perfil/foto/senha)
-  if(permKey==='config') return true;
-  // Traduz a chave de aba para a chave granular de hperms
-  const hpermKey=TAB_TO_HPERM[permKey]||permKey;
-  // Chave simples do DPERMS (ex: 'leads', 'funil') — para compatibilidade
-  const dpermsKey=permKey;
-  // 1. Se hperms (da hierarquia) tem a chave explícita → usa ela como verdade
-  if(me.hperms&&typeof me.hperms[hpermKey]==='boolean') return me.hperms[hpermKey];
-  // 2. Fallback para perms (DPERMS por role)
-  if(me.perms&&typeof me.perms[dpermsKey]==='boolean') return me.perms[dpermsKey];
-  // 3. Sem permissão definida → supervisor pode, vendedor não pode
-  if(me.role==='supervisor'||me.role==='representante') return true;
-  return false;
+function primeiraAbaPermitida(){
+  return ['dashboard','funil','leads','minhasvendas','ranking','simulador','lances','calendario','whatsapp','relatorios','configuracoes']
+    .find(id=>podeAba(id))||'configuracoes';
 }
 function showTab(id,btn){
-  const me=_getMeRole();
-  const permKey=TAB_PERM_MAP[id];
-  if(!_hasTabPerm(me,permKey)){
+  if(!podeAba(id)){
     showToast('Você não tem permissão para acessar esta aba.','ti-lock');
     return;
   }
+  const tab=document.getElementById('tab-'+id);
+  if(!tab)return;
   document.querySelectorAll('.content').forEach(el=>el.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(el=>el.classList.remove('active'));
-  document.getElementById('tab-'+id).classList.add('active');
+  tab.classList.add('active');
+  btn=btn||document.querySelector(`.nb[onclick*="'${id}'"]`);
   if(btn) btn.classList.add('active');
   // Persiste aba ativa para restaurar após reload
   try{localStorage.setItem('evolux_last_tab',id);}catch(e){}
-  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,simulador:()=>{syncSim();calcSim();},lances:renderLances,minhasvendas:()=>renderMinhasVendas(),ranking:()=>{_rankVendasCache={periodo:null,data:null,resultado:null};_aplicarFiltroVendas();},relatorios:renderRelatorios,whatsapp:renderWhatsapp,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
+  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,simulador:()=>{syncSim();calcSim();},lances:renderLances,minhasvendas:()=>renderMinhasVendas(),ranking:()=>{_invalidarRanking();_aplicarFiltroVendas();},relatorios:renderRelatorios,whatsapp:renderWhatsapp,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
 }
-// Oculta/mostra botões do nav de acordo com permissões do usuário logado
+// Mostra/esconde abas e botões conforme as permissões da pessoa logada.
+// Botões fixos do HTML usam data-perm="chave" (ou várias separadas por "|": basta uma).
 function applyNavPermissions(){
-  // Mostra itens exclusivos do superadmin
-  // Checa getMe() OU role direto da sessão (caso master sem empresa ainda carregada)
-  const _meRole=getMe()?.role||window._session?.user?.user_metadata?.role||'';
-  const isSuperAdmin=_meRole==='superadmin'||_meRole==='master';
-  document.querySelectorAll('.sb-superadmin-only').forEach(el=>{el.style.display=isSuperAdmin?'':'none';});
-  const me=_getMeRole();
+  const me=getMe();
+  document.querySelectorAll('.sb-superadmin-only').forEach(el=>{el.style.display=isPlataforma(me)?'':'none';});
   if(!me) return;
-  Object.entries(TAB_PERM_MAP).forEach(([tabId,permKey])=>{
-    if(!permKey) return; // sempre visível
+  Object.keys(TAB_PERM).forEach(tabId=>{
+    if(tabId==='empresas')return;
     const navBtn=document.querySelector(`.nb[onclick*="'${tabId}'"]`);
-    if(!navBtn) return;
-    const allowed=_hasTabPerm(me,permKey);
-    navBtn.style.display=allowed?'':'none';
+    if(navBtn) navBtn.style.display=podeAba(tabId,me)?'':'none';
   });
+  document.querySelectorAll('[data-perm]').forEach(el=>{
+    const ok=el.getAttribute('data-perm').split('|').some(p=>can(p.trim(),me));
+    el.style.display=ok?'':'none';
+  });
+  // Se a aba aberta deixou de ser permitida, vai para a primeira permitida
+  const ativa=document.querySelector('.content.active');
+  const idAtiva=ativa&&ativa.id?ativa.id.replace('tab-',''):null;
+  if(idAtiva&&!podeAba(idAtiva,me)) showTab(primeiraAbaPermitida());
+  try{renderNotifPanel();}catch(e){}
 }
-

@@ -14,26 +14,28 @@ const CFG_SECTIONS=[
   {id:'seguranca',label:'Segurança',icon:'ti-shield-lock',group:null},
 ];
 let cfgActive='conta';
-function cfgShow(id){cfgActive=id;renderConfig();}
+// Quem vê cada seção (as ações dentro de cada uma conferem a permissão de novo)
+const CFG_PERM={
+  admins:()=>can('simulador_models'),
+  usuarios:()=>can('config_users')||can('equipe_view_sellers')||can('equipe_add'),
+  equipes:()=>can('config_teams')||can('equipe_view'),
+  hierarquia:()=>can('config_hierarchy')||can('config_permissions'),
+  integracoes:()=>can('config_view'), facebook:()=>can('config_view'), 'whatsapp-cfg':()=>can('config_view'),
+  google:()=>can('agenda_view'),
+  notificacoes:()=>can('notif_manage'),
+};
+function cfgPodeVer(id){ const f=CFG_PERM[id]; return !f||!!f(); }
+function cfgShow(id){cfgActive=cfgPodeVer(id)?id:'conta';renderConfig();}
 function renderConfig(){
   const nav=document.getElementById('cfg-nav');
   if(!nav)return;
-  const meC=getMe();
-  const isAdmin=meC&&(meC.role==='master'||meC.role==='gestor'||meC.role==='superadmin'||meC.role==='supervisor'||(meC.hperms&&meC.hperms.equipe_add));
-  // Somente master/gestor/superadmin pode editar a estrutura de hierarquias da empresa
-  const isGestorPlus=meC&&(meC.role==='master'||meC.role==='gestor'||meC.role==='superadmin');
-  const adminOnlySections=['admins','usuarios','equipes'];
-  const gestorOnlySections=['hierarquia'];
-  // Se a seção ativa é restrita e o usuário não tem acesso, redireciona para conta
-  if(!isAdmin&&adminOnlySections.includes(cfgActive)) cfgActive='conta';
-  if(!isGestorPlus&&gestorOnlySections.includes(cfgActive)) cfgActive='conta';
+  if(!cfgPodeVer(cfgActive)) cfgActive='conta';
   let nh='';
+  let grupoPendente=null;
   CFG_SECTIONS.forEach(s=>{
-    // Esconde seções administrativas para não-admins
-    if(!isAdmin&&adminOnlySections.includes(s.id)) return;
-    // Esconde hierarquia para supervisores e abaixo
-    if(!isGestorPlus&&gestorOnlySections.includes(s.id)) return;
-    if(s.group) nh+=`<div class="cfg-nav-group">${s.group}</div>`;
+    if(s.group) grupoPendente=s.group;
+    if(!cfgPodeVer(s.id)) return;
+    if(grupoPendente){ nh+=`<div class="cfg-nav-group">${grupoPendente}</div>`; grupoPendente=null; }
     nh+=`<div class="cfg-nav-item${cfgActive===s.id?' active':''}" onclick="cfgShow('${s.id}')"><i class="ti ${s.icon}"></i>${s.label}</div>`;
   });
   nh+=`<div style="margin:6px 10px;border-top:1px solid var(--c2)"></div><div class="cfg-nav-item" onclick="fazerLogout()" style="color:#dc2626;margin-bottom:6px"><i class="ti ti-logout" style="color:#dc2626"></i>Sair</div>`;
@@ -53,13 +55,13 @@ function cfgRenderSection(){
       <div class="cfg-card-sub">Informações principais da sua conta no Evolux CRM.</div>
       <div style="display:flex;align-items:center;gap:20px;margin-bottom:22px;padding:16px;background:var(--c0);border-radius:var(--radl);border:1px solid var(--c2)">
         <div style="position:relative;flex-shrink:0">
-          <div id="foto-preview-conta" onclick="document.getElementById('foto-input-real').click()" style="width:76px;height:76px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#fff;cursor:pointer;overflow:hidden;box-shadow:0 4px 14px rgba(26,110,60,.3);border:3px solid var(--gb)">${(()=>{const _m=getMe();return _m&&_m.foto?`<img src="${_m.foto}" style="width:100%;height:100%;object-fit:cover">`:(_m?_m.nome.charAt(0):'?')})()}</div>
+          <div id="foto-preview-conta" onclick="document.getElementById('foto-input-real').click()" style="width:76px;height:76px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#fff;cursor:pointer;overflow:hidden;box-shadow:0 4px 14px rgba(26,110,60,.3);border:3px solid var(--gb)">${(()=>{const _m=getMe();const f=_m&&safeUrl(_m.foto);return f?`<img src="${f}" style="width:100%;height:100%;object-fit:cover">`:esc(_m?_m.nome.charAt(0):'?')})()}</div>
           <div onclick="document.getElementById('foto-input-real').click()" style="position:absolute;bottom:0;right:0;width:24px;height:24px;background:var(--g);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.2)"><i class="ti ti-camera" style="font-size:12px;color:#fff"></i></div>
           <input type="file" id="foto-input-real" accept="image/*" style="display:none" onchange="uploadFoto(event)">
         </div>
         <div style="flex:1">
-          <div style="font-size:16px;font-weight:800;color:var(--tx)">${(getMe()||{nome:''}).nome}</div>
-          <div style="font-size:12px;color:var(--tm);margin-top:2px">${(()=>{const _m=getMe();const r=_m?_m.role:'vendedor';return (RL[r]||r)+' · '+((_m&&_m.email)||window._session?.user?.email||'')})()}</div>
+          <div style="font-size:16px;font-weight:800;color:var(--tx)">${esc((getMe()||{nome:''}).nome)}</div>
+          <div style="font-size:12px;color:var(--tm);margin-top:2px">${(()=>{const _m=getMe();return esc((_m?getHierLabel(_m):'Vendedor')+' · '+((_m&&_m.email)||window._session?.user?.email||''))})()}</div>
           <div style="font-size:11px;color:var(--gc);font-weight:700;margin-top:5px">● Online agora</div>
           <div style="font-size:11px;color:var(--tm);margin-top:6px"><i class="ti ti-camera" style="font-size:11px"></i> Clique na foto para alterar</div>
         </div>
@@ -248,8 +250,8 @@ function cfgRenderSection(){
       <div class="cfg-divider"></div>
       <div class="field"><label>Token de acesso da página (Page Access Token)</label><input type="text" class="fi" placeholder="EAAxxxxx..."></div>
       <div class="field"><label>ID do formulário de Lead Ad</label><input type="text" class="fi" placeholder="Ex: 1234567890123456"></div>
-      <div class="field"><label>Atribuir leads para</label><select class="fi">${users.map(u=>`<option>${u.nome} (${RL[u.role]})</option>`).join('')}</select></div>
-      <div class="field"><label>Etapa inicial no funil</label><select class="fi">${ETAPAS.slice(0,5).map(e=>`<option>${e}</option>`).join('')}</select></div>
+      <div class="field"><label>Atribuir leads para</label><select class="fi">${users.map(u=>`<option>${esc(u.nome)} (${esc(getHierLabel(u))})</option>`).join('')}</select></div>
+      <div class="field"><label>Etapa inicial no funil</label><select class="fi">${ETAPAS.slice(0,5).map(e=>`<option>${esc(etapaLabel(e))}</option>`).join('')}</select></div>
       <div class="cfg-divider"></div>
       <div style="font-size:12.5px;font-weight:700;color:var(--tx);margin-bottom:8px">URL do Webhook</div>
       <div class="wh-row"><div class="wh-url" id="meta-webhook-url">${window.location.origin}/api/meta-webhook</div><span class="wh-badge">POST</span><button class="btn bg bsm" onclick="var u=document.getElementById('meta-webhook-url')?.textContent||window.location.origin+'/api/meta-webhook';navigator.clipboard?.writeText(u).then(()=>showToast('URL copiada!','ti-copy')).catch(()=>showToast('Copie manualmente','ti-copy'))"><i class="ti ti-copy"></i></button></div>
@@ -351,9 +353,10 @@ function cfgRenderSection(){
       </div>
       ${toggleRow('Restringir acesso por IP','Permitir login apenas de IPs cadastrados',false)}
       <div class="cfg-divider"></div>
-      <div class="field"><label>Senha atual</label><input type="password" class="fi" placeholder="••••••••"></div>
-      <div class="g2"><div class="field"><label>Nova senha</label><input type="password" class="fi" placeholder="Nova senha"></div><div class="field"><label>Confirmar</label><input type="password" class="fi" placeholder="Confirmar"></div></div>
-      <button class="btn bp" onclick="integConectar('senha')"><i class="ti ti-lock"></i>Alterar senha</button>
+      <div style="font-size:12.5px;font-weight:700;color:var(--tx);margin-bottom:8px">Alterar minha senha</div>
+      <div class="field"><label>Senha atual</label><input type="password" class="fi" id="seg-senha-atual" placeholder="••••••••" autocomplete="current-password"></div>
+      <div class="g2"><div class="field"><label>Nova senha</label><input type="password" class="fi" id="seg-senha-nova" placeholder="Mínimo 6 caracteres" autocomplete="new-password"></div><div class="field"><label>Confirmar</label><input type="password" class="fi" id="seg-senha-conf" placeholder="Repita a nova senha" autocomplete="new-password"></div></div>
+      <button class="btn bp" id="seg-btn-senha" onclick="alterarMinhaSenha()"><i class="ti ti-lock"></i>Alterar senha</button>
     </div>`,
 
     plano:`<div class="cfg-card">
@@ -374,55 +377,46 @@ function cfgRenderSection(){
 
   // ── SEÇÃO EQUIPES ──────────────────────────────────────────
   sections.equipes=(()=>{
-    // Verificar permissão de criar equipe
-    const meEq=getMe();
-    const podeNovaEq=meEq&&(meEq.role==='admin'||meEq.role==='gestor'||meEq.role==='master'||meEq.role==='administrador'||(meEq.hperms&&meEq.hperms.equipe_add));
-    const podeEditarEquipe=(eq)=>{
-      if(!meEq) return false;
-      // master, superadmin, admin e gestor podem editar qualquer equipe da empresa
-      if(meEq.role==='master'||meEq.role==='superadmin'||meEq.role==='admin'||meEq.role==='administrador'||meEq.role==='gestor') return true;
-      // supervisor pode editar sua própria equipe
-      if(meEq.role==='supervisor' && eq.supervisorId===meEq.id) return true;
-      // representante pode editar equipe onde é representante
-      if(meEq.role==='representante' && eq.representanteId===meEq.id) return true;
-      return false;
-    };
+    const podeNovaEq=podeCriarEquipe();
     const eqAv=(eq)=>{
-      if(eq.foto) return `<img src="${eq.foto}" style="width:50px;height:50px;border-radius:12px;object-fit:cover;flex-shrink:0">`;
-      const ini=eq.nome.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
-      return `<div style="width:50px;height:50px;border-radius:12px;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#fff;flex-shrink:0">${ini}</div>`;
+      const f=safeUrl(eq.foto);
+      if(f) return `<img src="${f}" style="width:50px;height:50px;border-radius:12px;object-fit:cover;flex-shrink:0">`;
+      return `<div style="width:50px;height:50px;border-radius:12px;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#fff;flex-shrink:0">${esc(_iniciais(eq.nome))}</div>`;
     };
     const list=equipes.length?equipes.map(eq=>{
       const sup=users.find(u=>u.id===eq.supervisorId);
+      const rep=users.find(u=>u.id===eq.representanteId);
       const gest=users.find(u=>u.id===eq.gestorId);
       const mbs=(eq.membroIds||[]).map(id=>users.find(u=>u.id===id)).filter(Boolean);
+      const gerir=podeGerenciarEquipe(eq);
       return `<div style="background:var(--card-bg,#fff);border:1.5px solid var(--card-border,#e8ecf0);border-radius:var(--radl);overflow:hidden;box-shadow:var(--s1);margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:14px;padding:16px 18px">
           ${eqAv(eq)}
           <div style="flex:1;min-width:0">
-            <div style="font-size:15px;font-weight:800;color:var(--tx)">${eq.nome}</div>
+            <div style="font-size:15px;font-weight:800;color:var(--tx)">${esc(eq.nome)}</div>
             <div style="font-size:12px;color:var(--tm);margin-top:3px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-              ${sup?`<span><i class="ti ti-user-shield" style="font-size:11px"></i> ${sup.nome}</span>`:''}
-              ${gest?`<span><i class="ti ti-briefcase" style="font-size:11px"></i> ${gest.nome}</span>`:''}
+              ${sup?`<span title="Supervisor"><i class="ti ti-user-shield" style="font-size:11px"></i> ${esc(sup.nome)}</span>`:''}
+              ${rep?`<span title="Representante"><i class="ti ti-user-star" style="font-size:11px"></i> ${esc(rep.nome)}</span>`:''}
+              ${gest?`<span title="Gestor"><i class="ti ti-briefcase" style="font-size:11px"></i> ${esc(gest.nome)}</span>`:''}
               <span><i class="ti ti-users" style="font-size:11px"></i> ${mbs.length} membro${mbs.length!==1?'s':''}</span>
               <span class="eq-card-status ${eq.status==='inativa'?'eq-status-inativa':'eq-status-ativa'}">${(eq.status||'ativa').charAt(0).toUpperCase()+(eq.status||'ativa').slice(1)}</span>
-              ${eq.meta?`<span style="color:var(--gc);font-weight:700"><i class="ti ti-target" style="font-size:11px"></i> R$ ${eq.meta.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0})}/${({mensal:'mês',semanal:'sem',personalizado:'per'})[eq.periodo||'mensal']}</span>`:''}
+              ${eq.meta?`<span style="color:var(--gc);font-weight:700"><i class="ti ti-target" style="font-size:11px"></i> R$ ${Number(eq.meta).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0})}/${({mensal:'mês',semanal:'sem',personalizado:'per'})[eq.periodo||'mensal']||'mês'}</span>`:''}
             </div>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0">
-            ${podeEditarEquipe(eq)?`<button class="btn bg bsm" onclick="openEqModal(${eq.id})"><i class="ti ti-pencil"></i></button>`:''}
-            ${podeEditarEquipe(eq)?`<button class="btn bd bsm" onclick="deleteEquipe(${eq.id})"><i class="ti ti-trash"></i></button>`:''}
+            ${gerir?`<button class="btn bg bsm" onclick="openEqModal(${eq.id})" title="Editar equipe"><i class="ti ti-pencil"></i></button>`:''}
+            ${podeNovaEq?`<button class="btn bd bsm" onclick="deleteEquipe(${eq.id})" title="Excluir equipe"><i class="ti ti-trash"></i></button>`:''}
           </div>
         </div>
         ${mbs.length?`<div style="padding:0 18px 14px;border-top:1px solid var(--c1);padding-top:12px">
           <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--tm);margin-bottom:8px">Membros</div>
           <div style="display:flex;flex-wrap:wrap;gap:6px">
-            ${mbs.map(m=>`<div style="display:flex;align-items:center;gap:6px;background:var(--c0);border:1px solid var(--c2);border-radius:8px;padding:5px 10px;font-size:12px;color:var(--ts)">
-              <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#fff;overflow:hidden;flex-shrink:0">${m.foto?`<img src="${m.foto}" style="width:100%;height:100%;object-fit:cover">`:m.nome.charAt(0)}</div>
-              <span>${m.nome}</span>
-              <span class="rbadge ${getHierClass(m)}" style="font-size:9px">${getHierLabel(m)}</span>
-              <button onclick="removeMembro(${eq.id},${m.id})" style="width:16px;height:16px;border-radius:50%;background:rgba(220,38,38,.1);border:none;cursor:pointer;color:var(--r);font-size:9px;display:flex;align-items:center;justify-content:center"><i class="ti ti-x"></i></button>
-            </div>`).join('')}
+            ${mbs.map(m=>{const f=safeUrl(m.foto);return `<div style="display:flex;align-items:center;gap:6px;background:var(--c0);border:1px solid var(--c2);border-radius:8px;padding:5px 10px;font-size:12px;color:var(--ts)">
+              <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#fff;overflow:hidden;flex-shrink:0">${f?`<img src="${f}" style="width:100%;height:100%;object-fit:cover">`:esc(m.nome.charAt(0))}</div>
+              <span>${esc(m.nome)}</span>
+              <span class="rbadge ${getHierClass(m)}" style="font-size:9px">${esc(getHierLabel(m))}</span>
+              ${gerir?`<button onclick="removeMembro(${eq.id},${m.id})" title="Tirar da equipe" style="width:16px;height:16px;border-radius:50%;background:rgba(220,38,38,.1);border:none;cursor:pointer;color:var(--r);font-size:9px;display:flex;align-items:center;justify-content:center"><i class="ti ti-x"></i></button>`:''}
+            </div>`;}).join('')}
           </div>
         </div>`:''}
       </div>`;
@@ -450,18 +444,18 @@ function cfgRenderSection(){
       const inactive=h.status==='inativa';
       return '<div class="hier-card" data-hid="'+h.id+'" style="background:var(--card-bg,#fff);border:1.5px solid var(--card-border,#e8ecf0);border-radius:14px;padding:18px 20px;cursor:pointer;transition:all .15s;opacity:'+(inactive?0.6:1)+(inactive?';border-color:rgba(220,38,38,.3)':'')+'">'
         +'<div style="display:flex;align-items:center;gap:14px">'
-        +'<div style="width:46px;height:46px;border-radius:14px;background:'+bg+';display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:#fff;flex-shrink:0">'+h.nome.charAt(0).toUpperCase()+'</div>'
+        +'<div style="width:46px;height:46px;border-radius:14px;background:'+bg+';display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:#fff;flex-shrink:0">'+esc(h.nome.charAt(0).toUpperCase())+'</div>'
         +'<div style="flex:1;min-width:0">'
         +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">'
-        +'<span style="font-size:15px;font-weight:800;color:var(--tx)">'+h.nome+'</span>'
+        +'<span style="font-size:15px;font-weight:800;color:var(--tx)">'+esc(h.nome)+'</span>'
         +(inactive?'<span style="font-size:9px;padding:2px 8px;border-radius:20px;background:rgba(220,38,38,.12);color:#dc2626;font-weight:700">INATIVA</span>':'')
         +'</div>'
-        +'<div style="font-size:12px;color:var(--tm)">'+(h.descricao||'Sem descrição')+'</div>'
+        +'<div style="font-size:12px;color:var(--tm)">'+esc(h.descricao||'Sem descrição')+'</div>'
         +'</div>'
         +'<div style="text-align:right;flex-shrink:0;margin-right:8px">'
         +'<div style="font-size:13px;font-weight:700;color:var(--tx)">'+pcnt+' permiss'+(pcnt!==1?'ões':'ão')+'</div>'
         +'<div style="font-size:11px;color:var(--tm);margin-top:2px">'+cnt+' usuário'+(cnt!==1?'s':'')+' vinculado'+(cnt!==1?'s':'')+'</div>'
-        +(sup?'<div style="font-size:10px;color:#016b3c;margin-top:3px;font-weight:600">↑ '+sup.nome+'</div>':'')
+        +(sup?'<div style="font-size:10px;color:#016b3c;margin-top:3px;font-weight:600">↑ '+esc(sup.nome)+'</div>':'')
         +'</div>'
         +'<div style="color:var(--tm)"><i class="ti ti-chevron-right" style="font-size:16px"></i></div>'
         +'</div></div>';
@@ -469,7 +463,7 @@ function cfgRenderSection(){
     return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'
       +'<div><div style="font-size:16px;font-weight:800;color:var(--tx)">Hierarquias</div>'
       +'<div style="font-size:12px;color:var(--tm);margin-top:2px">'+hierarquias.length+' cargo'+(hierarquias.length!==1?'s':'')+' cadastrado'+(hierarquias.length!==1?'s':'')+'</div></div>'
-      +'<button id="btn-add-hier" class="btn bp"><i class="ti ti-plus"></i>Adicionar hierarquia</button>'
+      +(podeEditarHierarquias()?'<button id="btn-add-hier" class="btn bp"><i class="ti ti-plus"></i>Adicionar hierarquia</button>':'')
       +'</div>'
       +'<div id="hier-cards-list" style="display:flex;flex-direction:column;gap:10px">'+(cards||'<div style="text-align:center;padding:32px;color:var(--tm)">Nenhuma hierarquia cadastrada.</div>')+'</div>';
   })();
@@ -494,9 +488,10 @@ function cfgRenderSection(){
       const instaEl2=document.getElementById('accInstagram');
       const _ig = me.instagram || _lsCfg.instagram || '';
       if(instaEl2) instaEl2.value = _ig;
-      if(me.foto){
+      const fotoOk=safeUrl(me.foto);
+      if(fotoOk){
         const prev=document.getElementById('foto-preview-conta');
-        if(prev) prev.innerHTML=`<img src="${me.foto}" style="width:80px;height:80px;object-fit:cover;border-radius:50%;border:3px solid var(--g)">`;
+        if(prev) prev.innerHTML=`<img src="${fotoOk}" style="width:80px;height:80px;object-fit:cover;border-radius:50%;border:3px solid var(--g)">`;
       }
     }
   }
@@ -516,20 +511,13 @@ function cfgRenderSection(){
   if(cfgActive==='admins'){renderAdminList();const eF=document.getElementById('eTaxaFin');if(eF)eF.value=taxaFin;}
   if(cfgActive==='usuarios'){
     renderUserList();
-    const hs=document.getElementById('uHierarquia');
-    if(hs)hs.innerHTML='<option value="">Hierarquia...</option>'+hierarquias.slice().sort((a,b)=>a.ordem-b.ordem).map(h=>`<option value="${h.id}">${h.nome}</option>`).join('');
+    populateSelects();
     const es=document.getElementById('uEquipe');
-    if(es)es.innerHTML='<option value="">Equipe (opcional)</option>'+equipes.map(e=>`<option value="${e.id}">${e.nome}</option>`).join('');
+    if(es)es.innerHTML='<option value="">Equipe (opcional)</option>'+_equipesAtribuiveis().map(e=>`<option value="${e.id}">${esc(e.nome)}</option>`).join('');
     const btnInvite=document.getElementById('btn-invite-user');
     if(btnInvite)btnInvite.addEventListener('click',function(){inviteUser();});
-    // Controla visibilidade do form de adicionar usuário por permissão
     const formWrap=document.getElementById('form-add-user-wrap');
-    if(formWrap){
-      // FIX bug#4: usa getMe() seguro + inclui role 'admin'
-      const me=getMe();
-      const podeAdicionar=me&&(me.role==='admin'||me.role==='gestor'||(me.hperms&&me.hperms.equipe_add));
-      formWrap.style.display=podeAdicionar?'':'none';
-    }
+    if(formWrap) formWrap.style.display=_podeCadastrarUsuario()?'':'none';
   }
 }
 

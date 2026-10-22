@@ -3,13 +3,13 @@ function renderWhatsapp(){
   // lista de números
   const nl=document.getElementById('wa-num-list');
   nl.innerHTML=waNumbers.map((n,i)=>{
-    const u=users.find(u=>u.id===n.userId)||{nome:n.nome};
-    const ini=u.nome[0].toUpperCase();
+    const u=users.find(u=>u.id===n.userId)||{nome:n.nome||'?'};
+    const ini=(u.nome||'?')[0].toUpperCase();
     return `<div class="wa-num">
-      <div class="wa-num-avatar">${ini}</div>
+      <div class="wa-num-avatar">${esc(ini)}</div>
       <div class="wa-num-info">
-        <div class="wa-num-name">${u.nome}</div>
-        <div class="wa-num-phone">${n.phone}</div>
+        <div class="wa-num-name">${esc(u.nome)}</div>
+        <div class="wa-num-phone">${esc(n.phone)}</div>
       </div>
       <span class="wa-badge demo">Demo</span>
     </div>`;
@@ -18,26 +18,25 @@ function renderWhatsapp(){
   const pl=document.getElementById('wa-perms-list');
   pl.innerHTML=waNumbers.map((n,i)=>{
     return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--c1)">
-      <span style="font-size:12.5px;font-weight:600;color:var(--tx);flex:1">${n.nome}</span>
+      <span style="font-size:12.5px;font-weight:600;color:var(--tx);flex:1">${esc(n.nome)}</span>
       <span style="font-size:11.5px;color:var(--tm)">Visível para: <strong style="color:var(--g)">Representante+</strong></span>
     </div>`;
   }).join('') || '<p style="font-size:12px;color:var(--tm)">Nenhum número para configurar.</p>';
   // grid de leads — filtra pelos visíveis para o usuário logado
   waSelected=new Set();
-  const _waVisiveis=getVisiveisParaMim();
-  const _waLeads=leads.filter(l=>_waVisiveis.has(l.responsavelId));
+  const _waLeads=_waLeadsVisiveis();
   const gr=document.getElementById('wa-leads-grid');
   gr.innerHTML=_waLeads.map(l=>`
     <div class="wa-lead-item" id="wai-${l.id}" onclick="waToggle(${l.id})">
-      <input type="checkbox" id="wac-${l.id}" onchange="waToggle(${l.id})">
+      <input type="checkbox" id="wac-${l.id}" onclick="event.stopPropagation();waToggle(${l.id})">
       <div>
-        <div class="wa-lead-name">${l.nome}</div>
-        <div class="wa-lead-info">${l.tipo} · ${fmtR(l.credito)}</div>
+        <div class="wa-lead-name">${esc(l.nome)}</div>
+        <div class="wa-lead-info">${esc(l.tipo)} · ${fmtR(l.credito)}</div>
       </div>
     </div>`).join('');
   waUpdateBar();
 }
-function _waLeadsVisiveis(){const v=getVisiveisParaMim();return leads.filter(l=>v.has(l.responsavelId));}
+function _waLeadsVisiveis(){const v=getVisiveisParaMim();const g=isGestor();return leads.filter(l=>g||v.has(l.responsavelId));}
 function waToggle(id){
   if(waSelected.has(id)) waSelected.delete(id);
   else waSelected.add(id);
@@ -97,7 +96,7 @@ function waDemoSend(){
 }
 function openWaConnect(){
   const sel=document.getElementById('wa-user-sel');
-  sel.innerHTML=users.map(u=>`<option value="${u.id}">${u.nome} (${u.role})</option>`).join('');
+  sel.innerHTML=users.map(u=>`<option value="${u.id}">${esc(u.nome)} (${esc(getHierLabel(u))})</option>`).join('');
   document.getElementById('wa-phone').value='';
   document.getElementById('wa-modal').classList.add('open');
 }

@@ -26,37 +26,9 @@
     }
   },true); // capture=true para pegar antes de qualquer outro handler
 
-  // ── Intercepta onchange ───────────────────────────────────────────────────
-  document.addEventListener('change',function(e){
-    var oc=e.target.getAttribute&&e.target.getAttribute('onchange');
-    if(!oc)return;
-    try{
-      (new Function('event',oc)).call(e.target,e);
-    }catch(err){
-      console.warn('onchange delegation error:',err,oc);
-    }
-  },true);
-
-  // ── Intercepta oninput ────────────────────────────────────────────────────
-  document.addEventListener('input',function(e){
-    var oc=e.target.getAttribute&&e.target.getAttribute('oninput');
-    if(!oc)return;
-    try{
-      (new Function('event',oc)).call(e.target,e);
-    }catch(err){
-      console.warn('oninput delegation error:',err,oc);
-    }
-  },true);
-
-  // ── Intercepta mouseover/mouseout para hover inline ───────────────────────
-  document.addEventListener('mouseover',function(e){
-    var oc=e.target.getAttribute&&e.target.getAttribute('onmouseover');
-    if(oc)try{(new Function('event',oc)).call(e.target,e);}catch(err){}
-  },true);
-  document.addEventListener('mouseout',function(e){
-    var oc=e.target.getAttribute&&e.target.getAttribute('onmouseout');
-    if(oc)try{(new Function('event',oc)).call(e.target,e);}catch(err){}
-  },true);
+  // onchange / oninput / onmouseover / onmouseout ficam com o navegador:
+  // interceptar aqui fazia cada um rodar DUAS vezes (importação dupla,
+  // seleção que desmarcava sozinha, erro de "remove" no input de arquivo).
 
   // ── Bind dos botões estáticos do modal hierarquia ─────────────────────────
   var modal=document.getElementById('hier-modal');

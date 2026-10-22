@@ -1,32 +1,84 @@
 // ─── TOAST CENTRAL ────────────────────────────────────────────────────────────
+// O texto entra como texto (nunca como HTML) — nomes de leads não executam código
 function showToast(msg, icon='ti-check', cor='#1db954'){
+  let dur=null;
+  if(typeof cor==='number'){ dur=cor; cor='#1db954'; }
+  const texto=String(msg===undefined||msg===null?'':msg);
+  dur=dur||Math.max(3000,Math.min(9000,texto.length*60));
   const t=document.createElement('div');
-  t.style.cssText='position:fixed;bottom:24px;right:24px;background:'+cor+';color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;max-width:340px;animation:fadeInUp .25s ease';
-  t.innerHTML='<i class="ti '+icon+'" style="font-size:16px;flex-shrink:0"></i><span>'+msg+'</span>';
+  t.style.cssText='position:fixed;bottom:24px;right:24px;background:'+(/^#[0-9a-f]{3,8}$/i.test(cor)?cor:'#1db954')+';color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:10050;box-shadow:0 4px 20px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;max-width:380px;animation:fadeInUp .25s ease';
+  const i=document.createElement('i');
+  i.className='ti '+String(icon||'ti-check').replace(/[^a-z0-9 -]/gi,'');
+  i.style.cssText='font-size:16px;flex-shrink:0';
+  const sp=document.createElement('span');
+  sp.textContent=texto;
+  t.appendChild(i);t.appendChild(sp);
   document.body.appendChild(t);
-  setTimeout(()=>{t.style.transition='opacity .4s';t.style.opacity='0';setTimeout(()=>t.remove(),400);},3000);
+  setTimeout(()=>{t.style.transition='opacity .4s';t.style.opacity='0';setTimeout(()=>t.remove(),400);},dur);
 }
 
 // ── Modal de confirmação visual (substitui confirm() nativo) ──────────────────
 function showConfirm(msg, onOk, onCancel){
   const overlay=document.createElement('div');
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center;animation:fadeIn .15s ease';
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10040;display:flex;align-items:center;justify-content:center;animation:fadeIn .15s ease';
   overlay.innerHTML=`
-    <div style="background:var(--card,#1a1a2e);border-radius:14px;padding:28px 32px;max-width:420px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.4);text-align:center">
+    <div style="background:var(--w,#1a1a2e);border:1px solid var(--c2);border-radius:14px;padding:28px 32px;max-width:440px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.4);text-align:center">
       <div style="width:48px;height:48px;border-radius:50%;background:rgba(220,53,69,.15);display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
         <i class="ti ti-alert-triangle" style="font-size:22px;color:#dc3545"></i>
       </div>
-      <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:var(--fg,#e0e0e0)">${msg}</p>
+      <p class="_conf_msg" style="margin:0 0 24px;font-size:14px;line-height:1.6;color:var(--tx,#e0e0e0);white-space:pre-line"></p>
       <div style="display:flex;gap:10px;justify-content:center">
-        <button id="_conf_cancel" style="padding:10px 24px;border:1.5px solid var(--bord,#333);background:transparent;color:var(--fg,#e0e0e0);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
-        <button id="_conf_ok" style="padding:10px 24px;border:none;background:#dc3545;color:#fff;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Confirmar</button>
+        <button class="_conf_cancel" style="padding:10px 24px;border:1.5px solid var(--c3,#333);background:transparent;color:var(--tx,#e0e0e0);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+        <button class="_conf_ok" style="padding:10px 24px;border:none;background:#dc3545;color:#fff;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Confirmar</button>
       </div>
     </div>`;
+  overlay.querySelector('._conf_msg').textContent=String(msg||'');
   document.body.appendChild(overlay);
+  let feito=false;
   function fechar(){overlay.style.opacity='0';overlay.style.transition='opacity .15s';setTimeout(()=>overlay.remove(),150);}
-  overlay.querySelector('#_conf_ok').onclick=()=>{fechar();if(onOk)onOk();};
-  overlay.querySelector('#_conf_cancel').onclick=()=>{fechar();if(onCancel)onCancel();};
-  overlay.addEventListener('click',e=>{if(e.target===overlay){fechar();if(onCancel)onCancel();}});
+  overlay.querySelector('._conf_ok').addEventListener('click',e=>{e.stopPropagation();if(feito)return;feito=true;fechar();if(onOk)onOk();});
+  overlay.querySelector('._conf_cancel').addEventListener('click',e=>{e.stopPropagation();if(feito)return;feito=true;fechar();if(onCancel)onCancel();});
+  overlay.addEventListener('click',e=>{if(e.target===overlay&&!feito){feito=true;fechar();if(onCancel)onCancel();}});
+  setTimeout(()=>overlay.querySelector('._conf_ok')?.focus(),30);
+}
+
+// ─── TROCAR A PRÓPRIA SENHA (Configurações → Segurança) ───────────────────────
+function _traduzErroSenha(m){
+  m=String(m||'');
+  if(/different from the old/i.test(m)) return 'a nova senha precisa ser diferente da atual';
+  if(/weak|at least|characters/i.test(m)) return 'senha fraca — use pelo menos 6 caracteres';
+  if(/reauthenticat|nonce/i.test(m)) return 'por segurança, saia e entre de novo antes de trocar a senha';
+  return m;
+}
+let _trocandoSenha=false;
+async function alterarMinhaSenha(){
+  if(_trocandoSenha)return;
+  const atualEl=document.getElementById('seg-senha-atual'),novaEl=document.getElementById('seg-senha-nova'),confEl=document.getElementById('seg-senha-conf');
+  const atual=atualEl?.value||'',nova=novaEl?.value||'',conf=confEl?.value||'';
+  if(!atual){showToast('Informe a senha atual.','ti-alert-triangle','#d97706');return;}
+  if(nova.length<6){showToast('A nova senha precisa ter pelo menos 6 caracteres.','ti-alert-triangle','#d97706');return;}
+  if(nova!==conf){showToast('A confirmação não confere com a nova senha.','ti-alert-triangle','#dc2626');return;}
+  if(nova===atual){showToast('A nova senha precisa ser diferente da atual.','ti-alert-triangle','#d97706');return;}
+  const btn=document.getElementById('seg-btn-senha');
+  _trocandoSenha=true;
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>Alterando...';}
+  try{
+    let email=window._session?.user?.email;
+    if(!email){ const {data}=await window._sb.auth.getUser(); email=data?.user?.email; }
+    if(!email) throw new Error('sessão não encontrada — entre de novo');
+    // confere a senha atual antes de trocar
+    const {error:e1}=await window._sb.auth.signInWithPassword({email,password:atual});
+    if(e1){ showToast('Senha atual incorreta.','ti-alert-triangle','#dc2626'); return; }
+    const {error:e2}=await window._sb.auth.updateUser({password:nova});
+    if(e2) throw new Error(_traduzErroSenha(e2.message));
+    [atualEl,novaEl,confEl].forEach(el=>{if(el)el.value='';});
+    showToast('Senha alterada com sucesso!','ti-lock');
+  }catch(err){
+    showToast('Não foi possível alterar a senha: '+(err.message||err),'ti-alert-triangle','#dc2626');
+  }finally{
+    _trocandoSenha=false;
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-lock"></i>Alterar senha';}
+  }
 }
 
 // ─── INTEGRAÇÕES: estado e ações ──────────────────────────────────────────────
@@ -69,7 +121,10 @@ const GCAL_CLIENT_ID='646017395786-ihp6roomh1bbceoi68rd4r9qa2vlae0t.apps.googleu
 (function(){
   try{
     const h=window.location.hash;
-    if(h&&h.includes('access_token=')){
+    // Só trata o retorno do Google (o link de recuperação de senha do Supabase também
+    // traz access_token no endereço e não pode ser apagado daqui)
+    const ehGoogle=(()=>{try{const p=new URLSearchParams(h.slice(1));return !!p.get('access_token')&&(p.get('scope')||'').includes('googleapis.com')&&!p.get('refresh_token')&&!p.get('type');}catch(e){return false;}})();
+    if(h&&ehGoogle){
       const params=new URLSearchParams(h.slice(1));
       const tok=params.get('access_token');
       const expiresIn=parseInt(params.get('expires_in')||'3600');

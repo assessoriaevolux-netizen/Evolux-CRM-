@@ -10,11 +10,15 @@ function renderCalendario(){
   document.getElementById('cal-title').textContent=`${meses[calMonth]} ${calYear}`;
   // popular select de leads
   const ls=document.getElementById('cal-lead-sel');
-  if(ls) ls.innerHTML=`<option value="">Selecionar lead...</option>`+leads.map(l=>`<option value="${l.id}">${l.nome} · ${l.tipo}</option>`).join('');
-  // data padrão = hoje
-  const hoje=new Date();
+  if(ls){
+    const v=ls.value;
+    const vis=getVisiveisParaMim(), gestor=isGestor();
+    ls.innerHTML=`<option value="">Selecionar lead...</option>`+leads.filter(l=>gestor||vis.has(l.responsavelId)).map(l=>`<option value="${l.id}">${esc(l.nome)} · ${esc(l.tipo)}</option>`).join('');
+    ls.value=v;
+  }
+  // data padrão = hoje (no fuso local)
   const di=document.getElementById('cal-data');
-  if(di&&!di.value) di.value=hoje.toISOString().slice(0,10);
+  if(di&&!di.value) di.value=hojeISO();
   // renderizar células
   renderCalCells();
   renderCalAgenda();
@@ -40,13 +44,13 @@ function renderCalCells(){
     const tipoLabel={reuniao:'Reunião','followup':'Follow-up',lance:'Lance'};
     html+=`<div class="cal-cell${isHoje?' today':''}${!isThis?' other-month':''}" onclick="calSelectDay('${dStr}')">
       <div class="cal-day">${isThis?dayNum:''}</div>
-      ${evs.map(e=>`<div class="cal-event ${tipoClass[e.tipo]||'reuniao'}" title="${e.leadNome} - ${e.horaIni}" onclick="event.stopPropagation();calEditEvento(${e.id})">${tipoLabel[e.tipo]||''} ${e.horaIni}</div>`).join('')}
+      ${evs.map(e=>`<div class="cal-event ${tipoClass[e.tipo]||'reuniao'}" title="${esc(e.leadNome)} - ${esc(e.horaIni)}" onclick="event.stopPropagation();calEditEvento(${e.id})">${tipoLabel[e.tipo]||''} ${esc(e.horaIni)}</div>`).join('')}
     </div>`;
   }
   container.outerHTML=`<div id="cal-cells" style="display:contents">${html}</div>`;
 }
 function renderCalAgenda(){
-  const hoje=new Date().toISOString().slice(0,10);
+  const hoje=hojeISO();
   const prox=eventos.filter(e=>e.data>=hoje).sort((a,b)=>a.data.localeCompare(b.data)).slice(0,6);
   const cores={reuniao:'var(--g)',followup:'var(--b)',lance:'var(--y)'};
   const labels={reuniao:'Reunião',followup:'Follow-up',lance:'Lance'};
@@ -56,12 +60,18 @@ function renderCalAgenda(){
     <div class="cal-agenda-item">
       <div class="cal-agenda-dot" style="background:${cores[e.tipo]||'var(--g)'}"></div>
       <div>
-        <div class="cal-agenda-title">${e.leadNome}</div>
-        <div class="cal-agenda-sub">${labels[e.tipo]||''} · ${e.data.split('-').reverse().join('/')} ${e.horaIni}–${e.horaFim}</div>
-        ${e.obs?`<div class="cal-agenda-sub" style="margin-top:1px;font-style:italic">${e.obs}</div>`:''}
-        <button onclick="openProtocolo(${e.leadId},'${e.data}','${e.horaIni}','${e.horaFim}','${(e.obs||'').replace(/'/g,"\\'")}');event.stopPropagation()" style="margin-top:5px;background:var(--g);color:#fff;border:none;border-radius:5px;padding:3px 9px;font-size:10.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px"><i class="ti ti-file-text" style="font-size:11px"></i>Protocolo PDF</button>
+        <div class="cal-agenda-title">${esc(e.leadNome)}</div>
+        <div class="cal-agenda-sub">${labels[e.tipo]||''} · ${esc(e.data.split('-').reverse().join('/'))} ${esc(e.horaIni)}–${esc(e.horaFim)}</div>
+        ${e.obs?`<div class="cal-agenda-sub" style="margin-top:1px;font-style:italic">${esc(e.obs)}</div>`:''}
+        <button onclick="openProtocoloEvento(${e.id});event.stopPropagation()" style="margin-top:5px;background:var(--g);color:#fff;border:none;border-radius:5px;padding:3px 9px;font-size:10.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px"><i class="ti ti-file-text" style="font-size:11px"></i>Protocolo PDF</button>
       </div>
     </div>`).join(''):'<p style="font-size:12px;color:var(--tm)">Nenhum evento próximo.</p>';
+}
+// Protocolo a partir do evento (sem colocar textos digitados dentro do onclick)
+function openProtocoloEvento(id){
+  const e=eventos.find(ev=>ev.id===id);
+  if(!e)return;
+  openProtocolo(e.leadId,e.data,e.horaIni,e.horaFim,e.obs||'');
 }
 function calNav(dir){calMonth+=dir;if(calMonth>11){calMonth=0;calYear++;}if(calMonth<0){calMonth=11;calYear--;}renderCalendario();}
 function calToday(){calYear=new Date().getFullYear();calMonth=new Date().getMonth();renderCalendario();}

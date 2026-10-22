@@ -8,42 +8,45 @@ async function personalizeMod(){}
 let adminEditId=null; // id em edição no modal de grupos
 let adminGrupoEditIdx=null; // índice do grupo em edição
 
+function _podeGerenciarAdmins(){ return can('simulador_models'); }
 function renderAdminList(){
   const a=getAdmin();
   const chip=document.getElementById('admin-chip-nome');
   if(chip)chip.textContent=a?a.nome:'—';
   const panel=document.getElementById('admin-list');
   if(!panel)return;
+  const podeGerir=_podeGerenciarAdmins();
   if(!administradoras.length){
-    panel.innerHTML='<div style="text-align:center;padding:32px;color:var(--tm);font-size:13px"><i class="ti ti-building-bank" style="font-size:32px;display:block;margin-bottom:8px;opacity:.4"></i>Nenhuma administradora cadastrada.<br>Adicione a primeira abaixo.</div>';
+    panel.innerHTML=`<div style="text-align:center;padding:32px;color:var(--tm);font-size:13px"><i class="ti ti-building-bank" style="font-size:32px;display:block;margin-bottom:8px;opacity:.4"></i>Nenhuma administradora cadastrada.${podeGerir?'<br>Adicione a primeira acima.':''}</div>`;
     return;
   }
   panel.innerHTML=administradoras.map(ad=>{
     const grupos=ad.grupos||[];
-    const vagasTotal=grupos.reduce((s,g)=>s+(g.vagas||0),0);
+    const vagasTotal=grupos.reduce((s,g)=>s+(Number(g.vagas)||0),0);
     const isAtiva=ad.ativa;
     return `<div style="border:1.5px solid ${isAtiva?'var(--g)':'var(--card-border,#e8ecf0)'};border-radius:12px;padding:14px 16px;margin-bottom:8px;cursor:pointer;transition:all .15s;background:${isAtiva?'rgba(1,107,60,.04)':'var(--card-bg)'}" onclick="selectAdmin(${ad.id})">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:14px;font-weight:800;color:var(--tx)">${ad.nome}</span>
-            ${isAtiva?'<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:rgba(1,107,60,.12);color:var(--g);font-weight:700"><i class="ti ti-check" style="font-size:10px"></i> Ativa</span>':''}
+            <span style="font-size:14px;font-weight:800;color:var(--tx)">${esc(ad.nome)}</span>
+            ${isAtiva?'<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:rgba(1,107,60,.12);color:var(--g);font-weight:700"><i class="ti ti-check" style="font-size:10px"></i> Em uso no simulador</span>':''}
           </div>
-          <div style="font-size:11.5px;color:var(--tm);margin-top:3px">${ad.cnpj||''} ${ad.tipo?'· '+ad.tipo:''}</div>
+          <div style="font-size:11.5px;color:var(--tm);margin-top:3px">${esc(ad.cnpj||'')} ${ad.tipo?'· '+esc(ad.tipo):''}</div>
           <div style="display:flex;gap:12px;margin-top:6px;flex-wrap:wrap">
             <span style="font-size:12px;color:var(--ts);font-weight:600"><i class="ti ti-layers-subtract" style="font-size:11px"></i> ${grupos.length} grupo${grupos.length!==1?'s':''}</span>
             <span style="font-size:12px;color:${vagasTotal>0?'var(--gc)':'var(--tm)'};font-weight:600"><i class="ti ti-ticket" style="font-size:11px"></i> ${vagasTotal} vaga${vagasTotal!==1?'s':''} disponíveis</span>
           </div>
         </div>
-        <div style="display:flex;gap:6px;flex-shrink:0">
+        ${podeGerir?`<div style="display:flex;gap:6px;flex-shrink:0">
           <button onclick="event.stopPropagation();openAdminModal(${ad.id})" style="background:var(--c0);border:1px solid var(--c2);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px;color:var(--ts);font-weight:600"><i class="ti ti-pencil" style="font-size:12px"></i> Editar</button>
           <button onclick="event.stopPropagation();deleteAdmin(${ad.id})" style="background:var(--rs);border:1px solid var(--rb);border-radius:8px;padding:6px 8px;cursor:pointer;color:var(--r)"><i class="ti ti-trash" style="font-size:13px"></i></button>
-        </div>
+        </div>`:''}
       </div>
     </div>`;
   }).join('');
 }
 
+// Qual administradora o simulador usa é escolha de cada pessoa (não muda para os outros)
 function selectAdmin(id){
   administradoras.forEach(a=>a.ativa=a.id===id);
   renderAdminList();
@@ -51,13 +54,18 @@ function selectAdmin(id){
 }
 
 function deleteAdmin(id){
-  showConfirm('Remover esta administradora e todos os seus grupos? Esta ação não pode ser desfeita.',function(){
-    const _da=administradoras.find(a=>a.id===id);
-    if(_da?.sb_id&&window._sb) window._sb.from('administradoras').delete().eq('id',_da.sb_id).catch(e=>console.warn(e));
-    administradoras=administradoras.filter(a=>a.id!==id);
-    if(!administradoras.find(a=>a.ativa)&&administradoras.length)administradoras[0].ativa=true;
+  if(!_podeGerenciarAdmins()){showToast('Você não tem permissão para gerenciar administradoras.','ti-lock');return;}
+  const ad=administradoras.find(a=>a.id===id);
+  if(!ad)return;
+  showConfirm(`Remover a administradora ${ad.nome} e todos os seus grupos? Esta ação não pode ser desfeita.`,async function(){
+    const r=await window._deleteAdministradora(ad.sb_id);
+    if(r.error){showToast('Não foi possível remover: '+r.error.message,'ti-alert-triangle','#dc2626');return;}
+    const i=administradoras.indexOf(ad);
+    if(i!==-1) administradoras.splice(i,1);
+    if(!administradoras.find(a=>a.ativa)&&administradoras.length) administradoras[0].ativa=true;
     renderAdminList();
     syncSim();
+    showToast('Administradora removida.','ti-trash');
   });
 }
 
@@ -65,15 +73,20 @@ function saveTaxaFin(){const el=document.getElementById('eTaxaFin');if(!el)retur
 function applyAdmin(){if(document.getElementById('eTaxaFin'))saveTaxaFin();syncSim();}
 
 // ── MODAL DE ADMIN ────────────────────────────────────────────────────────────
+// Os grupos são editados numa cópia; só valem depois de "Salvar".
+let admTempGrupos=[];
 function openAdminModal(id){
+  if(!_podeGerenciarAdmins()){showToast('Você não tem permissão para gerenciar administradoras.','ti-lock');return;}
   adminEditId=id||null;
+  adminGrupoEditIdx=null;
   const ad=id?administradoras.find(a=>a.id===id):null;
+  admTempGrupos=ad?JSON.parse(JSON.stringify(ad.grupos||[])):[];
   document.getElementById('adm-modal-title').textContent=ad?'Editar administradora':'Nova administradora';
   document.getElementById('adm-nome').value=ad?ad.nome:'';
   document.getElementById('adm-cnpj').value=ad?ad.cnpj||'':'';
   document.getElementById('adm-tipo').value=ad?ad.tipo||'Imóvel':'Imóvel';
-  adminRenderGrupos(ad?ad.grupos||[]:[], false);
-  // Reset PDFs
+  const btnG=document.getElementById('adm-g-btn'); if(btnG) btnG.textContent='Adicionar';
+  adminRenderGrupos(admTempGrupos,false);
   admPdfDocs=[];admPdfViewerIdx=null;
   const pdfLista=document.getElementById('adm-pdfs-lista');if(pdfLista)pdfLista.style.display='none';
   const pdfViewer=document.getElementById('adm-pdf-viewer-wrap');if(pdfViewer)pdfViewer.style.display='none';
@@ -81,10 +94,11 @@ function openAdminModal(id){
   document.getElementById('adm-modal').style.display='flex';
   document.body.style.overflow='hidden';
 }
-function closeAdminModal(){document.getElementById('adm-modal').style.display='none';document.body.style.overflow='';}
+function closeAdminModal(){document.getElementById('adm-modal').style.display='none';document.body.style.overflow='';admTempGrupos=[];adminEditId=null;}
 
 function adminRenderGrupos(grupos, highlight){
   const container=document.getElementById('adm-grupos-list');
+  if(!container)return;
   if(!grupos.length){
     container.innerHTML='<div style="text-align:center;padding:20px;color:var(--tm);font-size:12.5px">Nenhum grupo cadastrado. Adicione abaixo ou importe via PDF.</div>';
     return;
@@ -102,18 +116,18 @@ function adminRenderGrupos(grupos, highlight){
     </tr></thead>
     <tbody>${grupos.map((g,i)=>{
       const bg=highlight&&i>=grupos.length-highlight?'rgba(1,107,60,.06)':'transparent';
-      const catHtml=g.categoria?'<span style="background:var(--gs);color:var(--g);font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px;white-space:nowrap">'+g.categoria+'</span>':'<span style="color:var(--tm);font-size:12px">—</span>';
+      const catHtml=g.categoria?'<span style="background:var(--gs);color:var(--g);font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px;white-space:nowrap">'+esc(g.categoria)+'</span>':'<span style="color:var(--tm);font-size:12px">—</span>';
       const entCor=g.entradaMin>0?'var(--y)':'var(--g)';
-      const entTxt=g.entradaMin>0?g.entradaMin+'%':'Não exige';
+      const entTxt=g.entradaMin>0?esc(g.entradaMin)+'%':'Não exige';
       const vagCor=g.vagas>0?'var(--gc)':'var(--r)';
       return '<tr style="border-bottom:1px solid var(--c2);background:'+bg+'">'
         +'<td style="padding:8px 10px">'+catHtml+'</td>'
-        +'<td style="padding:8px 10px;font-weight:700;color:var(--tx)">'+(g.numero||'—')+'</td>'
+        +'<td style="padding:8px 10px;font-weight:700;color:var(--tx)">'+esc(g.numero||'—')+'</td>'
         +'<td style="padding:8px 10px;text-align:right;color:var(--tx)">'+fmtR(g.credito||0)+'</td>'
-        +'<td style="padding:8px 10px;text-align:right;color:var(--ts)">'+(g.prazo||'—')+'</td>'
-        +'<td style="padding:8px 10px;text-align:right;color:var(--ts)">'+(g.taxa!=null?g.taxa+'%':'—')+'</td>'
+        +'<td style="padding:8px 10px;text-align:right;color:var(--ts)">'+esc(g.prazo||'—')+'</td>'
+        +'<td style="padding:8px 10px;text-align:right;color:var(--ts)">'+(g.taxa!=null?esc(g.taxa)+'%':'—')+'</td>'
         +'<td style="padding:8px 10px;text-align:right;color:'+entCor+';font-weight:700">'+entTxt+'</td>'
-        +'<td style="padding:8px 10px;text-align:center"><span style="font-weight:700;color:'+vagCor+'">'+(g.vagas!=null?g.vagas:'—')+'</span></td>'
+        +'<td style="padding:8px 10px;text-align:center"><span style="font-weight:700;color:'+vagCor+'">'+(g.vagas!=null?esc(g.vagas):'—')+'</span></td>'
         +'<td style="padding:8px 10px;text-align:center;white-space:nowrap">'
         +'<button onclick="admEditGrupo('+i+')" style="background:none;border:none;cursor:pointer;color:var(--tm);padding:2px 5px"><i class="ti ti-pencil" style="font-size:13px"></i></button>'
         +'<button onclick="admDeleteGrupo('+i+')" style="background:none;border:none;cursor:pointer;color:var(--r);padding:2px 5px"><i class="ti ti-trash" style="font-size:13px"></i></button>'
@@ -122,21 +136,11 @@ function adminRenderGrupos(grupos, highlight){
   </table></div>`;
 }
 
-function admGetCurrentGrupos(){
-  // pega grupos da admin em edição (em memória temporária via DOM não serve — usamos array em adminEditId)
-  if(adminEditId){const ad=administradoras.find(a=>a.id===adminEditId);return ad?[...ad.grupos||[]]:[]}
-  return admTempGrupos||[];
-}
-let admTempGrupos=[];
-
-function openAdminModalNew(){
-  admTempGrupos=[];
-  openAdminModal(null);
-}
+function admGetCurrentGrupos(){ return admTempGrupos.slice(); }
+function openAdminModalNew(){ openAdminModal(null); }
 
 function admEditGrupo(idx){
-  const grupos=adminEditId?administradoras.find(a=>a.id===adminEditId)?.grupos||[]:admTempGrupos;
-  const g=grupos[idx];
+  const g=admTempGrupos[idx];
   if(!g)return;
   document.getElementById('adm-g-categoria').value=g.categoria||'';
   document.getElementById('adm-g-numero').value=g.numero||'';
@@ -148,62 +152,57 @@ function admEditGrupo(idx){
   adminGrupoEditIdx=idx;
   document.getElementById('adm-g-btn').textContent='Atualizar grupo';
 }
-
 function admDeleteGrupo(idx){
-  if(adminEditId){
-    const ad=administradoras.find(a=>a.id===adminEditId);
-    if(ad){ad.grupos.splice(idx,1);adminRenderGrupos(ad.grupos,false);}
-  } else {
-    admTempGrupos.splice(idx,1);adminRenderGrupos(admTempGrupos,false);
-  }
+  admTempGrupos.splice(idx,1);
+  adminRenderGrupos(admTempGrupos,false);
   adminGrupoEditIdx=null;
+  document.getElementById('adm-g-btn').textContent='Adicionar';
 }
-
 function admAddGrupo(){
   const categoria=document.getElementById('adm-g-categoria').value.trim();
   const numero=document.getElementById('adm-g-numero').value.trim();
   const credito=unM(document.getElementById('adm-g-credito').value);
   const prazo=parseInt(document.getElementById('adm-g-prazo').value)||0;
-  const taxa=parseFloat(document.getElementById('adm-g-taxa').value);
-  const entradaMin=parseFloat(document.getElementById('adm-g-entrada').value);
+  const taxa=parseFloat(String(document.getElementById('adm-g-taxa').value).replace(',','.'));
+  const entradaMin=parseFloat(String(document.getElementById('adm-g-entrada').value).replace(',','.'));
   const vagas=parseInt(document.getElementById('adm-g-vagas').value);
   if(!credito||!prazo){showToast('Informe pelo menos o crédito e o prazo.','ti-alert-triangle','#d97706');return;}
   const grupo={categoria:categoria||null,numero:numero||('G'+Date.now()),credito,prazo,taxa:isNaN(taxa)?null:taxa,entradaMin:isNaN(entradaMin)?0:entradaMin,vagas:isNaN(vagas)?0:vagas};
-  if(adminEditId){
-    const ad=administradoras.find(a=>a.id===adminEditId);
-    if(ad){
-      if(adminGrupoEditIdx!==null){ad.grupos[adminGrupoEditIdx]=grupo;}
-      else{ad.grupos=ad.grupos||[];ad.grupos.push(grupo);}
-      adminRenderGrupos(ad.grupos, adminGrupoEditIdx===null?1:false);
-    }
-  } else {
-    if(adminGrupoEditIdx!==null){admTempGrupos[adminGrupoEditIdx]=grupo;}
-    else{admTempGrupos.push(grupo);}
-    adminRenderGrupos(admTempGrupos, adminGrupoEditIdx===null?1:false);
-  }
+  const novo=adminGrupoEditIdx===null;
+  if(novo) admTempGrupos.push(grupo); else admTempGrupos[adminGrupoEditIdx]=grupo;
+  adminRenderGrupos(admTempGrupos, novo?1:false);
   adminGrupoEditIdx=null;
   ['adm-g-categoria','adm-g-numero','adm-g-credito','adm-g-prazo','adm-g-taxa','adm-g-entrada','adm-g-vagas'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('adm-g-btn').textContent='Adicionar';
 }
 
-function saveAdminModal(){
+let _salvandoAdmin=false;
+async function saveAdminModal(){
+  if(_salvandoAdmin)return;
+  if(!_podeGerenciarAdmins()){showToast('Você não tem permissão para gerenciar administradoras.','ti-lock');return;}
   const nome=document.getElementById('adm-nome').value.trim();
   if(!nome){showToast('Informe o nome da administradora.','ti-alert-triangle','#d97706');return;}
   const cnpj=document.getElementById('adm-cnpj').value.trim();
   const tipo=document.getElementById('adm-tipo').value;
-  if(adminEditId){
-    const ad=administradoras.find(a=>a.id===adminEditId);
-    if(ad){ad.nome=nome;ad.cnpj=cnpj;ad.tipo=tipo;if(window._syncAdministradora) window._syncAdministradora(ad).catch(e=>console.warn(e));}
-  } else {
-    const grupos=[...admTempGrupos];
-    administradoras.push({id:nextAdminId++,nome,cnpj,tipo,grupos,ativa:administradoras.length===0});
-    if(window._syncAdministradora) window._syncAdministradora(administradoras[administradoras.length-1]).catch(e=>console.warn(e));
-    admTempGrupos=[];
+  const grupos=admTempGrupos.slice();
+  let ad=adminEditId?administradoras.find(a=>a.id===adminEditId):null;
+  const novo=!ad;
+  const antes=ad?{...ad,grupos:ad.grupos}:null;
+  if(novo){ ad={id:nextAdminId++,nome,cnpj,tipo,grupos,ativa:!administradoras.length,taxaFin}; administradoras.push(ad); }
+  else Object.assign(ad,{nome,cnpj,tipo,grupos});
+  _salvandoAdmin=true;
+  const ok=await window._syncAdministradora(ad);
+  _salvandoAdmin=false;
+  if(!ok){
+    if(novo){ const i=administradoras.indexOf(ad); if(i!==-1) administradoras.splice(i,1); }
+    else Object.assign(ad,antes);
+    return; // o modal continua aberto com o que foi digitado
   }
   closeAdminModal();
   renderAdminList();
   syncSim();
   cfgRenderSection();
+  showToast('Administradora salva.','ti-check');
 }
 
 // ── LEITOR DE PDF (múltiplos) ─────────────────────────────────────────────────
@@ -245,8 +244,8 @@ function admUploadPDFs(evt){
             if(!novos.length)novos=admParsePDFTextToGrupos(text);
             if(novos.length){
               totalImportados+=novos.length;
-              if(adminEditId){const ad=administradoras.find(a=>a.id===adminEditId);if(ad){ad.grupos=[...ad.grupos||[],...novos];adminRenderGrupos(ad.grupos,novos.length);}}
-              else{admTempGrupos=[...admTempGrupos,...novos];adminRenderGrupos(admTempGrupos,novos.length);}
+              admTempGrupos.push(...novos);
+              adminRenderGrupos(admTempGrupos,novos.length);
             } else {
               totalFailed++;
               // abre viewer para o primeiro PDF que falhou
@@ -280,7 +279,7 @@ function admPdfRenderLista(){
   items.innerHTML=admPdfDocs.map((d,i)=>`
     <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--w);border:1px solid var(--c2);border-radius:8px">
       <i class="ti ti-file-type-pdf" style="color:#e53e3e;font-size:16px;flex-shrink:0"></i>
-      <span style="flex:1;font-size:12px;font-weight:600;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.nome}</span>
+      <span style="flex:1;font-size:12px;font-weight:600;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.nome)}</span>
       <button onclick="admPdfShowViewer(admPdfDocs[${i}])" style="background:var(--bs);border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;font-weight:700;color:var(--b)" title="Ver PDF">
         <i class="ti ti-eye" style="font-size:12px"></i> Ver
       </button>

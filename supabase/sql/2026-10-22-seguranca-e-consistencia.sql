@@ -39,6 +39,9 @@ alter table public.empresas add column if not exists ativo boolean default true;
 alter table public.empresas add column if not exists plano text;
 alter table public.empresas add column if not exists obs text;
 alter table public.empresas add column if not exists etapas_labels jsonb;
+alter table public.empresas add column if not exists logo_url text;
+alter table public.empresas add column if not exists whatsapp text;
+alter table public.empresas add column if not exists email text;
 alter table public.empresas add column if not exists updated_at timestamptz;
 
 alter table public.equipes add column if not exists gestor_sb_id uuid;
@@ -402,6 +405,74 @@ end $$;
 drop trigger if exists crm_guarda_hierarquias on public.hierarquias;
 create trigger crm_guarda_hierarquias before insert or update or delete on public.hierarquias
   for each row execute function public.crm_guarda_hierarquias();
+
+-- Equipes: quem cuida só da própria equipe não troca os responsáveis dela e só
+-- adiciona pessoas abaixo do seu cargo que ainda não estão em outra equipe
+-- (senão bastaria "puxar" alguém para a equipe para ver os leads dela).
+create or replace function public.crm_guarda_equipes() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare v_nivel integer; v_emp text; m text;
+begin
+  if public.crm_confiavel() or public.crm_gestor() or public.crm_tem_perm('config_teams') then return coalesce(new, old); end if;
+  if tg_op = 'INSERT' then raise exception 'Somente o gestor cria equipes.'; end if;
+  if tg_op = 'DELETE' then return old; end if;
+  new.supervisor_sb_id := old.supervisor_sb_id;
+  new.representante_sb_id := old.representante_sb_id;
+  new.gestor_sb_id := old.gestor_sb_id;
+  new.empresa_id := old.empresa_id;
+  v_nivel := coalesce(public.crm_nivel_de(auth.uid()), 99);
+  v_emp := old.empresa_id::text;
+  for m in select jsonb_array_elements_text(public.crm_lista(new.membros_sb_ids))
+           except select jsonb_array_elements_text(public.crm_lista(old.membros_sb_ids)) loop
+    if m <> auth.uid()::text and (
+         not public.crm_membro_ativo(m, v_emp)
+         or coalesce((select public.crm_nivel_de(p.id) from public.profiles p where p.id::text = m), 0) <= v_nivel
+         or exists (select 1 from public.equipes e where e.empresa_id::text = v_emp and e.id::text <> old.id::text
+                      and public.crm_lista(e.membros_sb_ids) ? m)) then
+      raise exception 'Você só pode adicionar à sua equipe pessoas abaixo do seu cargo que não estejam em outra equipe.';
+    end if;
+  end loop;
+  return new;
+end $$;
+
+drop trigger if exists crm_guarda_equipes on public.equipes;
+create trigger crm_guarda_equipes before insert or update or delete on public.equipes
+  for each row execute function public.crm_guarda_equipes();
+
+-- Leads: cada alteração segue a permissão do cargo (cadastrar/importar, editar
+-- dados, mover no funil, transferir). Sem a permissão, o campo fica como estava.
+create or replace function public.crm_guarda_leads() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare v_novo jsonb; v_old jsonb; c text;
+begin
+  if public.crm_confiavel() or public.crm_eh_servico() or public.crm_gestor() then return new; end if;
+  if tg_op = 'INSERT' then
+    if not (public.crm_tem_perm('leads_create') or public.crm_tem_perm('leads_import')) then
+      raise exception 'Você não tem permissão para cadastrar leads.';
+    end if;
+    return new;
+  end if;
+  v_novo := to_jsonb(new);
+  v_old := to_jsonb(old);
+  v_novo := jsonb_set(v_novo, '{empresa_id}', coalesce(v_old -> 'empresa_id', 'null'::jsonb));
+  if not public.crm_tem_perm('leads_transfer') then
+    v_novo := jsonb_set(v_novo, '{responsavel_id}', coalesce(v_old -> 'responsavel_id', 'null'::jsonb));
+  end if;
+  if not public.crm_tem_perm('funil_move') then
+    v_novo := jsonb_set(v_novo, '{etapa}', coalesce(v_old -> 'etapa', 'null'::jsonb));
+  end if;
+  if not public.crm_tem_perm('leads_edit') then
+    foreach c in array array['nome','telefone','tipo','credito','origem','atendimento','obs','administradora','meta_id','data_criacao'] loop
+      if v_old ? c then v_novo := jsonb_set(v_novo, array[c], coalesce(v_old -> c, 'null'::jsonb)); end if;
+    end loop;
+  end if;
+  new := jsonb_populate_record(new, v_novo);
+  return new;
+end $$;
+
+drop trigger if exists crm_guarda_leads on public.leads;
+create trigger crm_guarda_leads before insert or update on public.leads
+  for each row execute function public.crm_guarda_leads();
 
 -- ─── 4. Consistência: funil ⇄ vendas ⇄ contadores ⇄ lances ─────────────────
 create or replace function public.crm_recalcular_contadores(p_user text) returns void
@@ -1132,6 +1203,22 @@ begin
 end $$;
 revoke all on public.convites from anon, authenticated;
 
+-- Tempo real nas tabelas que o CRM acompanha (inclusive equipes: a visibilidade
+-- muda quando alguém troca de equipe). As regras de acesso valem também aqui.
+do $$
+declare t text;
+begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then return; end if;
+  foreach t in array array['leads','lances','vendas','profiles','hierarquias','atividades','equipes'] loop
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
+      begin
+        execute format('alter publication supabase_realtime add table public.%I', t);
+      exception when others then null;
+      end;
+    end if;
+  end loop;
+end $$;
+
 -- ─── 8. Acerto dos dados existentes ─────────────────────────────────────────
 select set_config('crm.trusted', 'on', true);
 
@@ -1258,6 +1345,28 @@ begin
     n := n + 1;
   end loop;
   insert into crm_relatorio (item, valor) values ('Empresas que ganharam hierarquias padrão', n::text);
+end $$;
+
+-- 8.8 Leads de quem já saiu da empresa (responsável inexistente ou desativado)
+--     passam para o gestor mais antigo da empresa. Leads sem responsável ficam como estão.
+do $$
+declare n integer;
+begin
+  execute $q$
+    update public.leads l
+       set responsavel_id = g.gestor, updated_at = now()
+      from (select distinct on (p.empresa_id::text) p.empresa_id::text as emp, p.id as gestor
+              from public.profiles p
+             where lower(coalesce(p.role, '')) in ('gestor', 'admin', 'administrador') and coalesce(p.ativo, true)
+               and p.empresa_id is not null
+             order by p.empresa_id::text, (to_jsonb(p) ->> 'created_at') nulls last, p.id::text) g
+     where g.emp = l.empresa_id::text
+       and l.responsavel_id is not null
+       and not exists (select 1 from public.profiles p2
+                        where p2.id::text = l.responsavel_id::text and coalesce(p2.ativo, true)
+                          and p2.empresa_id::text = l.empresa_id::text) $q$;
+  get diagnostics n = row_count;
+  insert into crm_relatorio (item, valor) values ('Leads de pessoas que saíram passados para o gestor', n::text);
 end $$;
 
 select set_config('crm.trusted', '', true);

@@ -1,81 +1,112 @@
-// ─── TABELA ───────────────────────────────────────────────────────────────────
+// ─── SELECTS COMPARTILHADOS ───────────────────────────────────────────────────
+// Pessoas que podem receber/ser responsáveis por leads de quem está logado
+function pessoasAtribuiveis(){
+  const me=getMe();
+  if(isGestor(me)) return users.slice();
+  const vis=getVisiveisParaMim();
+  return users.filter(u=>vis.has(u.id));
+}
+// Cargos que quem está logado pode dar a outra pessoa (sempre abaixo do seu)
+function hierarquiasAtribuiveis(){
+  const me=getMe();
+  const ativas=hierarquias.filter(h=>h.status!=='inativa').sort((a,b)=>a.ordem-b.ordem);
+  if(isGestor(me)) return ativas;
+  const n=nivelDe(me);
+  return ativas.filter(h=>(h.ordem||99)>n&&slugToRole(h)!=='gestor');
+}
 function populateSelects(){
-  const fe=document.getElementById('fEtapa');if(fe)fe.innerHTML='<option value="">Todas as etapas</option>'+ETAPAS.map(e=>`<option value="${e}">${ETAPAS_LABEL[e]||e}</option>`).join('');
-  const fe2=document.getElementById('fEtapa2');if(fe2)fe2.innerHTML=ETAPAS.map(e=>`<option value="${e}">${ETAPAS_LABEL[e]||e}</option>`).join('');
-  const fr=document.getElementById('fResp');if(fr)fr.innerHTML=users.map(u=>`<option value="${u.id}">${u.nome} (${getHierLabel(u)})</option>`).join('');
-  // Filtro por consultor — visível apenas para gestor, representante, master e superadmin
+  const optEtapas=ETAPAS.map(e=>`<option value="${esc(e)}">${esc(etapaLabel(e))}</option>`).join('');
+  const fe=document.getElementById('fEtapa');if(fe){const v=fe.value;fe.innerHTML='<option value="">Todas as etapas</option>'+optEtapas;fe.value=v;}
+  const fe2=document.getElementById('fEtapa2');if(fe2)fe2.innerHTML=optEtapas;
+  const me=getMe();
+  const pessoas=pessoasAtribuiveis().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  const fr=document.getElementById('fResp');
+  if(fr){
+    fr.innerHTML=pessoas.map(u=>`<option value="${u.id}">${esc(u.nome)} (${esc(getHierLabel(u))})</option>`).join('');
+    if(me&&pessoas.some(u=>u.id===me.id)) fr.value=me.id;
+  }
+  // Filtro por consultor — para quem enxerga leads de outras pessoas
   const fConsSel=document.getElementById('fConsultor');
   if(fConsSel){
-    const me=getMe();
-    const rolesComAcesso=['gestor','master','superadmin','admin','representante'];
-    if(me&&rolesComAcesso.includes(me.role)){
-      const vis=getVisiveisParaMim();
-      const consultores=users.filter(u=>vis.has(u.id)&&['vendedor','supervisor','representante'].includes(u.role));
-      fConsSel.innerHTML='<option value="">Todos os consultores</option>'+consultores.map(u=>`<option value="${u.id}">${u.nome}</option>`).join('');
+    if(pessoas.length>1){
+      const v=fConsSel.value;
+      fConsSel.innerHTML='<option value="">Todos os consultores</option>'+pessoas.map(u=>`<option value="${u.id}">${esc(u.nome)}</option>`).join('');
+      fConsSel.value=v;
       fConsSel.style.display='';
     } else {
+      fConsSel.value='';
       fConsSel.style.display='none';
     }
   }
-  // vvend é populado exclusivamente por rankAtualizarSidebar() com as regras de permissão corretas — NÃO sobrescrever aqui
-  const _visLc=getVisiveisParaMim();
-  const _leadsLc=leads.filter(l=>_visLc.has(l.responsavelId));
-  const lc=document.getElementById('lCliente');if(lc)lc.innerHTML=_leadsLc.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');
-  const sl=document.getElementById('sLeadSel');if(sl)sl.innerHTML='<option value="">Selecionar lead existente...</option>'+_leadsLc.map(l=>`<option value="${l.id}">${l.nome} — ${l.tipo} · ${fmtR(l.credito)}</option>`).join('');
-  // Atualiza selects de hierarquia em todo o CRM
-  const hierOpts='<option value="">Hierarquia...</option>'+hierarquias.slice().sort((a,b)=>a.ordem-b.ordem).map(h=>`<option value="${h.id}">${h.nome}</option>`).join('');
-  const uHier=document.getElementById('uHierarquia');if(uHier)uHier.innerHTML=hierOpts;
-  // Selects de hierarquia na lista de usuários
-  document.querySelectorAll('.ulist-hier-sel').forEach(function(sel){
-    const uid=parseInt(sel.getAttribute('data-uid'));
-    const u=users.find(x=>x.id===uid);
-    sel.innerHTML='<option value="">Hierarquia...</option>'+hierarquias.slice().sort((a,b)=>a.ordem-b.ordem).map(h=>`<option value="${h.id}"${u&&(u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id)?' selected':''}>${h.nome}</option>`).join('');
-  });
+  // vvend é preenchido por rankAtualizarSidebar() (regras de venda) — não mexer aqui
+  const vis=getVisiveisParaMim();
+  const gestor=isGestor(me);
+  const leadsVis=leads.filter(l=>gestor||vis.has(l.responsavelId));
+  const lc=document.getElementById('lCliente');if(lc)lc.innerHTML=leadsVis.map(l=>`<option value="${l.id}">${esc(l.nome)}</option>`).join('');
+  const sl=document.getElementById('sLeadSel');if(sl)sl.innerHTML='<option value="">Selecionar lead existente...</option>'+leadsVis.map(l=>`<option value="${l.id}">${esc(l.nome)} — ${esc(l.tipo)} · ${fmtR(l.credito)}</option>`).join('');
+  // Cargos que a pessoa pode atribuir (cadastro de usuário)
+  const hierOpts='<option value="">Hierarquia...</option>'+hierarquiasAtribuiveis().map(h=>`<option value="${esc(h.sb_id||h.id)}">${esc(h.nome)}</option>`).join('');
+  const uHier=document.getElementById('uHierarquia');if(uHier){const v=uHier.value;uHier.innerHTML=hierOpts;uHier.value=v;}
 }
-// Paginação da tabela de leads
+
+// ─── TABELA DE LEADS ──────────────────────────────────────────────────────────
 const TABLE_PAGE_SIZE=50;
 let tableCurrentPage=0;
 let _rtTimer=null;
 
 function renderTable(){
-  tableCurrentPage=0; // reset ao filtrar
+  tableCurrentPage=0; // volta para a 1ª página ao filtrar
   if(_rtTimer)clearTimeout(_rtTimer);
   _rtTimer=setTimeout(_renderTableImediato,16);
 }
+function _nomeResponsavel(l,porId){
+  const r=porId.get(l.responsavelId);
+  if(r) return r.nome;
+  const ina=l.responsavelSbId&&window.usersInativos&&window.usersInativos[l.responsavelSbId];
+  return ina?`${ina.nome} (removido)`:'—';
+}
 function _renderTableImediato(){
-  const q=(document.getElementById('srch').value||'').toLowerCase();
-  const ft=document.getElementById('fTipo').value,fe=document.getElementById('fEtapa').value,fo=document.getElementById('fOrigem').value;
-  const fc=document.getElementById('fConsultor')?.value||'';
-  const vis=getVisiveisParaMim();
-  const fl=leads.filter(l=>vis.has(l.responsavelId)&&(!q||l.nome.toLowerCase().includes(q)||(l.tel||'').includes(q))&&(!ft||l.tipo===ft)&&(!fe||l.etapa===fe)&&(!fo||l.origem===fo)&&(!fc||l.responsavelId===fc));
   const tbody=document.getElementById('leads-body');
-  if(!fl.length){tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:22px;color:var(--tm)">Nenhum lead encontrado.</td></tr>`;
-    const pag=document.getElementById('table-paginacao');if(pag)pag.style.display='none';
+  if(!tbody)return;
+  const q=(document.getElementById('srch')?.value||'').trim().toLowerCase();
+  const qDig=q.replace(/\D/g,'');
+  const ft=document.getElementById('fTipo')?.value||'',fe=document.getElementById('fEtapa')?.value||'',fo=document.getElementById('fOrigem')?.value||'';
+  const fc=parseInt(document.getElementById('fConsultor')?.value)||0;
+  const vis=getVisiveisParaMim();
+  const gestor=isGestor();
+  const fl=leads.filter(l=>(gestor||vis.has(l.responsavelId))
+    &&(!q||l.nome.toLowerCase().includes(q)||(qDig.length>=3&&(l.tel||'').includes(qDig)))
+    &&(!ft||l.tipo===ft)&&(!fe||l.etapa===fe)&&(!fo||l.origem===fo)&&(!fc||l.responsavelId===fc));
+  const pag0=document.getElementById('table-paginacao');
+  if(!fl.length){
+    tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:22px;color:var(--tm)">Nenhum lead encontrado.</td></tr>`;
+    if(pag0)pag0.style.display='none';
     return;
   }
+  const totalPags=Math.ceil(fl.length/TABLE_PAGE_SIZE);
+  if(tableCurrentPage>=totalPags)tableCurrentPage=totalPags-1;
   const inicio=tableCurrentPage*TABLE_PAGE_SIZE;
   const pagina=fl.slice(inicio,inicio+TABLE_PAGE_SIZE);
+  const porId=new Map(users.map(u=>[u.id,u]));
+  const podeSim=can('simulador_view'), podeExcluir=can('leads_delete');
   tbody.innerHTML=pagina.map(l=>{
     const si=ETAPAS.indexOf(l.etapa);
-    const resp=users.find(u=>u.id===l.responsavelId);
     const isSel=selectedLeads.has(l.id);
     return `<tr class="${distribMode&&isSel?'lead-check-row sel':''}">
-      <td><div style="display:flex;align-items:center;gap:8px">${distribMode?`<input type="checkbox" ${isSel?'checked':''} onchange="toggleLeadSelect(${l.id})" style="accent-color:var(--g);width:14px;height:14px">`:''}<span style="font-weight:600">${l.nome}</span></div></td>
-      <td style="color:var(--tm)">${l.tel||'—'}</td>
-      <td><span class="tag ${TMAP[l.tipo]||'ts3'}">${l.tipo}</span></td>
+      <td><div style="display:flex;align-items:center;gap:8px">${distribMode?`<input type="checkbox" ${isSel?'checked':''} onchange="toggleLeadSelect(${l.id})" style="accent-color:var(--g);width:14px;height:14px">`:''}<span style="font-weight:600">${esc(l.nome)}</span></div></td>
+      <td style="color:var(--tm)">${esc(formatTelefone(l.tel)||'—')}</td>
+      <td><span class="tag ${TMAP[l.tipo]||'ts3'}">${esc(l.tipo)}</span></td>
       <td style="font-weight:700;color:var(--g)">${fmtR(l.credito)}</td>
-      <td><span class="ob">${l.origem||'—'}</span></td>
-      <td style="font-size:12px;color:var(--tm)">${resp?resp.nome:'—'}</td>
-      <td><span class="sb ${ES[si]||'s0'}">${l.etapa}</span></td>
-      <td style="color:var(--tm);font-size:12px">${l.data}</td>
+      <td><span class="ob">${esc(l.origem||'—')}</span></td>
+      <td style="font-size:12px;color:var(--tm)">${esc(_nomeResponsavel(l,porId))}</td>
+      <td><span class="sb ${ES[si]||'s0'}">${esc(etapaLabel(l.etapa))}</span></td>
+      <td style="color:var(--tm);font-size:12px">${esc(l.data)}</td>
       <td style="display:flex;gap:4px">
-        <button class="btn bsm" style="background:var(--c2);color:var(--tx);border:1px solid var(--c3)" onclick="openLeadDetalhe(${l.id})" title="Editar lead"><i class="ti ti-pencil"></i></button>
-        <button class="btn bg bsm" onclick="simFromLead(${l.id})" title="Simular"><i class="ti ti-calculator"></i></button>
-        <button class="btn bd bsm" onclick="removeLead(${l.id})" title="Remover"><i class="ti ti-trash"></i></button>
+        <button class="btn bsm" style="background:var(--c2);color:var(--tx);border:1px solid var(--c3)" onclick="openLeadDetalhe(${l.id})" title="Abrir lead"><i class="ti ti-pencil"></i></button>
+        ${podeSim?`<button class="btn bg bsm" onclick="simFromLead(${l.id})" title="Simular"><i class="ti ti-calculator"></i></button>`:''}
+        ${podeExcluir?`<button class="btn bd bsm" onclick="removeLead(${l.id})" title="Remover"><i class="ti ti-trash"></i></button>`:''}
       </td></tr>`;}).join('');
-  // Paginação
-  const totalPags=Math.ceil(fl.length/TABLE_PAGE_SIZE);
-  let pag=document.getElementById('table-paginacao');
+  let pag=pag0;
   if(!pag){
     pag=document.createElement('div');pag.id='table-paginacao';
     pag.style.cssText='display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;font-size:13px;color:var(--tm)';
@@ -89,40 +120,97 @@ function _renderTableImediato(){
     <button class="btn bsm" style="background:var(--c2);color:var(--tx);border:1px solid var(--c3)" ${tableCurrentPage>=totalPags-1?'disabled':''} onclick="tableIrPagina(${tableCurrentPage+1})"><i class="ti ti-chevron-right"></i></button>`;
 }
 function tableIrPagina(p){
-  tableCurrentPage=p;
+  tableCurrentPage=Math.max(0,p);
   _renderTableImediato();
-  document.querySelector('.tab-content[data-tab="lista"]')?.scrollIntoView({behavior:'smooth',block:'start'});
+  document.getElementById('tab-leads')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
-// ─── MODAL LEAD ───────────────────────────────────────────────────────────────
-function openModal(){populateSelects();document.getElementById('modal').classList.add('open');}
+// ─── NOVO LEAD ────────────────────────────────────────────────────────────────
+function openModal(etapa){
+  if(!can('leads_create')){showToast('Você não tem permissão para cadastrar leads.','ti-lock');return;}
+  populateSelects();
+  const fe2=document.getElementById('fEtapa2');
+  if(fe2) fe2.value=(typeof etapa==='string'&&ETAPAS.includes(etapa))?etapa:ETAPAS[0];
+  document.getElementById('modal').classList.add('open');
+  setTimeout(()=>document.getElementById('fNome')?.focus(),50);
+}
 function closeModal(){document.getElementById('modal').classList.remove('open');}
-function saveLead(){
-  const nome=document.getElementById('fNome').value.trim();if(!nome){showToast('Informe o nome do lead.','ti-alert-triangle','#d97706');return;}
-  const credito=unM(document.getElementById('fCredito').value);
-  const respId=parseInt(document.getElementById('fResp').value)||(getMe()||users[0]||{}).id||1;
-  const lead={id:nextLeadId++,nome,tel:document.getElementById('fTel').value,tipo:document.getElementById('fTipo2').value,credito,etapa:document.getElementById('fEtapa2').value,origem:document.getElementById('fOrigem2').value,responsavelId:respId,data:toDate(),obs:document.getElementById('fObs').value};
-  leads.push(lead);
-  if(window._syncLead) window._syncLead(lead).catch(e=>console.warn(e));
-  const resp=users.find(u=>u.id===respId);
-  if(window._saveAtividade)window._saveAtividade('ti-user-plus',`Novo lead: ${nome} → ${resp?resp.nome:'—'}`);
-  // Se cadastrado já como Fechado, atualiza stats do responsável
-  if(lead.etapa==='Fechado / Convertido'){
-    const rr=users.find(u=>u.id===respId);
-    if(rr){rr.vendas=(rr.vendas||0)+1;rr.credito=(rr.credito||0)+credito;if(window._syncUser) window._syncUser(rr).catch(e=>console.warn(e));}
-    if(window._registrarVenda) window._registrarVenda(lead,respId).catch(e=>console.warn(e));
-    if(window._saveAtividade)window._saveAtividade('ti-circle-check',`${nome} fechado — ${fmtR(credito)}`);
-    setTimeout(()=>alertarCadastroLance(nome, lead.id), 300);
+let _salvandoLead=false;
+async function saveLead(){
+  if(_salvandoLead)return;
+  if(!can('leads_create')){showToast('Você não tem permissão para cadastrar leads.','ti-lock');return;}
+  const nome=document.getElementById('fNome').value.trim();
+  if(!nome){showToast('Informe o nome do lead.','ti-alert-triangle','#d97706');return;}
+  const me=getMe();
+  const pessoas=pessoasAtribuiveis();
+  const resp=pessoas.find(u=>u.id===parseInt(document.getElementById('fResp').value))||me;
+  if(!resp){showToast('Escolha o responsável.','ti-alert-triangle','#d97706');return;}
+  const tel=normalizaTelefone(document.getElementById('fTel').value);
+  const chave=chaveTelefone(tel);
+  if(chave){
+    // telefone repetido? confere na tela e na empresa inteira (sem expor dados de outras equipes)
+    _salvandoLead=true;
+    let aviso=null;
+    const igual=leads.find(l=>chaveTelefone(l.tel)===chave);
+    if(igual) aviso=`Já existe um lead com este telefone: ${igual.nome}.`;
+    else{
+      const {data}=await window._rpc('crm_leads_existentes',{p_meta_ids:[],p_chaves:[chave]});
+      if(data&&data.length) aviso='Já existe um lead com este telefone na empresa (de outro consultor).';
+    }
+    _salvandoLead=false;
+    if(aviso){ showConfirm(`${aviso} Cadastrar mesmo assim?`,()=>_salvarNovoLead(nome,tel,resp)); return; }
   }
-  closeModal();['fNome','fTel','fObs'].forEach(id=>document.getElementById(id).value='');document.getElementById('fCredito').value='';
+  _salvarNovoLead(nome,tel,resp);
+}
+async function _salvarNovoLead(nome,tel,resp){
+  _salvandoLead=true;
+  const lead={id:nextLeadId++,nome,tel,tipo:document.getElementById('fTipo2').value,credito:unM(document.getElementById('fCredito').value),
+    etapa:document.getElementById('fEtapa2').value||ETAPAS[0],origem:document.getElementById('fOrigem2').value,
+    responsavelId:resp.id,data:toDate(),obs:document.getElementById('fObs').value,atendimento:''};
+  leads.unshift(lead);
+  closeModal();
+  renderKanban();renderTable();
+  const ok=await window._syncLead(lead);
+  _salvandoLead=false;
+  if(!ok&&!window._leadPendente(lead)){
+    const i=leads.indexOf(lead); if(i!==-1) leads.splice(i,1);
+    renderKanban();renderTable();
+    document.getElementById('modal').classList.add('open'); // devolve o formulário preenchido
+    return;
+  }
+  ['fNome','fTel','fObs'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const fc=document.getElementById('fCredito');if(fc)fc.value='';
+  if(window._saveAtividade)window._saveAtividade('ti-user-plus',`Novo lead: ${nome} → ${resp.nome}`);
+  if(lead.etapa==='Fechado / Convertido'){
+    // o banco registra a venda e o lance automático
+    if(window._saveAtividade)window._saveAtividade('ti-circle-check',`${nome} fechado — ${fmtR(lead.credito)}`);
+    _atualizarAposVenda();
+    setTimeout(()=>showCelebra(resp.nome,lead.credito),100);
+  }
   renderKanban();renderTable();renderDashboard();renderNotifPanel();
 }
-function removeLead(id){showConfirm('Remover este lead? Esta ação não pode ser desfeita.',function(){const _rl=leads.find(l=>l.id===id); if(_rl?.sb_id&&window._deleteLead) window._deleteLead(_rl.sb_id);const _rlIdx=leads.findIndex(l=>l.id===id);if(_rlIdx!==-1)leads.splice(_rlIdx,1);renderKanban();renderTable();renderDashboard();});}
+
+// ─── EXCLUIR LEAD ─────────────────────────────────────────────────────────────
+function removeLead(id,doDetalhe){
+  const l=leads.find(x=>x.id===id);
+  if(!l)return;
+  if(!can('leads_delete')||!_leadVisivel(l)){showToast('Você não tem permissão para excluir este lead.','ti-lock');return;}
+  showConfirm(`Remover o lead "${l.nome}"? Esta ação não pode ser desfeita.`,async function(){
+    const ok=await window._deleteLead(l.sb_id);
+    if(!ok){showToast('Não foi possível excluir: sem permissão ou sem conexão.','ti-alert-triangle','#dc2626');return;}
+    const i=leads.indexOf(l); if(i!==-1) leads.splice(i,1);
+    if(doDetalhe) closeLeadDetalhe();
+    if(window._saveAtividade)window._saveAtividade('ti-trash',`Lead excluído: ${l.nome}`);
+    if(l.etapa==='Fechado / Convertido') _atualizarAposVenda();
+    renderKanban();renderTable();renderDashboard();renderNotifPanel();
+    showToast('Lead removido.','ti-trash','#e53e3e');
+  });
+}
 function simFromLead(id){
-  showTab('simulador',document.querySelectorAll('.nb')[3]);
+  if(!podeAba('simulador')){showToast('Você não tem acesso ao Simulador.','ti-lock');return;}
+  showTab('simulador');
   setTimeout(()=>{
     const sl=document.getElementById('sLeadSel');
     if(sl){sl.value=id;simLoadLead();}
   },50);
 }
-

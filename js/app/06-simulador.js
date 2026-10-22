@@ -11,37 +11,17 @@ function syncSim(){
   if(sadm){
     sadm.innerHTML='<option value="">Selecionar administradora...</option><option value="__manual__">✏️ Digitar nome manualmente</option>'+
       (!administradoras.length?'<option value="" disabled>— nenhuma cadastrada —</option>':'')+
-      administradoras.map(ad=>`<option value="${ad.id}"${ad.ativa?' selected':''}>${ad.nome}</option>`).join('');
+      administradoras.map(ad=>`<option value="${ad.id}"${ad.ativa?' selected':''}>${esc(ad.nome)}</option>`).join('');
     if(a)sadm.value=a.id;
   }
   simPopulateTabelas(a);
   const sl=document.getElementById('sLeadSel');
   if(sl){
-    const me=getMe();
-    let leadsVisiveis=leads;
-    if(me){
-      const role=me.role||'vendedor';
-      if(role==='master'||role==='gestor'||role==='superadmin'){
-        // Gestor vê todos da empresa
-        leadsVisiveis=leads;
-      } else if(role==='representante'){
-        // Representante vê leads de todos os membros de todas as suas equipes
-        const minhasEquipes=equipes.filter(e=>(e.membroIds||[]).includes(me.id));
-        const ids=new Set([me.id]);
-        minhasEquipes.forEach(e=>(e.membroIds||[]).forEach(mid=>ids.add(mid)));
-        leadsVisiveis=leads.filter(l=>ids.has(l.responsavelId));
-      } else if(role==='supervisor'){
-        // Supervisor vê leads dos membros das equipes que ele supervisiona
-        const minhasEquipes=equipes.filter(e=>e.supervisorId===me.id);
-        const ids=new Set([me.id]);
-        minhasEquipes.forEach(e=>(e.membroIds||[]).forEach(mid=>ids.add(mid)));
-        leadsVisiveis=leads.filter(l=>ids.has(l.responsavelId));
-      } else {
-        // Vendedor vê só os próprios
-        leadsVisiveis=leads.filter(l=>l.responsavelId===me.id);
-      }
-    }
-    sl.innerHTML='<option value="">Selecionar lead cadastrado...</option>'+leadsVisiveis.map(l=>`<option value="${l.id}">${l.nome} — ${l.tipo} · ${fmtR(l.credito)}</option>`).join('');
+    const vis=getVisiveisParaMim();
+    const leadsVisiveis=isGestor()?leads:leads.filter(l=>vis.has(l.responsavelId));
+    const v=sl.value;
+    sl.innerHTML='<option value="">Selecionar lead cadastrado...</option>'+leadsVisiveis.map(l=>`<option value="${l.id}">${esc(l.nome)} — ${esc(l.tipo)} · ${fmtR(l.credito)}</option>`).join('');
+    sl.value=v;
   }
 }
 
@@ -85,7 +65,7 @@ function simPopulateTabelas(a){
   });
   const lista=Object.values(tabelas);
   st.innerHTML='<option value="">Selecionar tabela...</option>'+
-    lista.map((t,i)=>`<option value="${i}">${t.nome}${t.tipoBem?' — '+t.tipoBem:''}</option>`).join('');
+    lista.map((t,i)=>`<option value="${i}">${esc(t.nome)}${t.tipoBem?' — '+esc(t.tipoBem):''}</option>`).join('');
   if(!lista.length)st.innerHTML='<option value="">Nenhuma tabela cadastrada</option>';
   window._simTabelas=lista;
   // Limpa dependentes
@@ -323,10 +303,10 @@ function calcSim(parcelaOverride){
   const catLabel=tabelaNome?` · ${tabelaNome}`:'';
 
   document.getElementById('sim-output').innerHTML=`
-    ${nome?`<div style="font-size:12px;color:var(--tm);margin-bottom:10px;padding:8px 12px;background:var(--c0);border-radius:var(--rad)">Cliente: <b style="color:var(--tx)">${nome}</b>${tipo?' · '+tipo:''}</div>`:''}
+    ${nome?`<div style="font-size:12px;color:var(--tm);margin-bottom:10px;padding:8px 12px;background:var(--c0);border-radius:var(--rad)">Cliente: <b style="color:var(--tx)">${esc(nome)}</b>${tipo?' · '+esc(tipo):''}</div>`:''}
     <div class="res-grid">
       <div class="rc2 c">
-        <div class="rct g"><i class="ti ti-circle-check"></i>Crédito — ${adminNome}${catLabel}</div>
+        <div class="rct g"><i class="ti ti-circle-check"></i>Crédito — ${esc(adminNome)}${esc(catLabel)}</div>
         <div class="rcrow"><span class="rcl">Crédito contratado</span><span class="rcv" style="color:var(--g);font-size:15px;font-weight:700">${fmtR(valor)}</span></div>
         ${primeiraParcela&&primeiraParcela!==parcelaCons?`<div class="rcrow" style="background:var(--ys);border-radius:6px;padding:6px 8px;margin:4px 0"><span class="rcl" style="font-weight:700">1ª Parcela <span style="font-size:10px;color:var(--y)">(entrada diferenciada)</span></span><span class="rcv" style="color:var(--y);font-weight:700;font-size:15px">${fmtR(primeiraParcela)}</span></div>`:''}
         <div class="rcrow"><span class="rcl">Parcelas mensais <span style="font-size:10px;color:var(--tm)">${usouModoManual?'(manual)':usouTabelaReal?'(tabela oficial)':'(estimado)'}</span></span><span class="rcv" style="color:var(--g);font-weight:700;font-size:15px">${fmtR(parcelaCons)}</span></div>
@@ -526,14 +506,14 @@ function downloadSimPDF(comDados){
     consultorHTML=`
     <div class="consultor-card">
       ${fotoSrc
-        ?`<img src="${fotoSrc}" class="consultor-foto" alt="Foto">`
+        ?`<img src="${safeUrl(fotoSrc)}" class="consultor-foto" alt="Foto">`
         :`<div class="consultor-foto-ph">👤</div>`}
       <div style="flex:1">
-        <div class="consultor-nome">${accNomeVal||'Consultor Evolux'}</div>
+        <div class="consultor-nome">${esc(accNomeVal||'Consultor Evolux')}</div>
         <div class="consultor-cargo">Consultor de Crédito</div>
         <div class="consultor-contatos">
-          ${insta?`<span class="consultor-contato"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;margin-right:4px"><rect x="2" y="2" width="20" height="20" rx="5.5" stroke="#e1306c" stroke-width="2"/><circle cx="12" cy="12" r="4.5" stroke="#e1306c" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.2" fill="#e1306c"/></svg>${insta}</span>`:''}
-          ${wa?`<span class="consultor-contato"><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><path fill="#25d366" d="M12 2C6.48 2 2 6.48 2 12c0 1.85.5 3.58 1.37 5.07L2 22l5.1-1.34A9.93 9.93 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm4.93 13.57c-.21.58-1.22 1.11-1.68 1.18-.43.06-.97.09-1.56-.1-.36-.11-.82-.27-1.41-.52-2.47-1.07-4.08-3.56-4.21-3.73-.12-.17-.99-1.32-.99-2.52s.63-1.79.85-2.04c.22-.25.48-.31.64-.31l.46.01c.15 0 .35-.06.54.41l.76 1.91c.06.15.03.32-.05.46l-.34.45c-.1.12-.2.25-.09.48.12.23.52.86 1.12 1.39.77.69 1.42.9 1.62.99.2.09.32.07.44-.04l.49-.58c.13-.16.25-.12.42-.07l1.9.89c.18.08.3.13.33.2.03.07.03.42-.18 1z"/></svg>${wa}</span>`:''}
+          ${insta?`<span class="consultor-contato"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;margin-right:4px"><rect x="2" y="2" width="20" height="20" rx="5.5" stroke="#e1306c" stroke-width="2"/><circle cx="12" cy="12" r="4.5" stroke="#e1306c" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.2" fill="#e1306c"/></svg>${esc(insta)}</span>`:''}
+          ${wa?`<span class="consultor-contato"><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><path fill="#25d366" d="M12 2C6.48 2 2 6.48 2 12c0 1.85.5 3.58 1.37 5.07L2 22l5.1-1.34A9.93 9.93 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm4.93 13.57c-.21.58-1.22 1.11-1.68 1.18-.43.06-.97.09-1.56-.1-.36-.11-.82-.27-1.41-.52-2.47-1.07-4.08-3.56-4.21-3.73-.12-.17-.99-1.32-.99-2.52s.63-1.79.85-2.04c.22-.25.48-.31.64-.31l.46.01c.15 0 .35-.06.54.41l.76 1.91c.06.15.03.32-.05.46l-.34.45c-.1.12-.2.25-.09.48.12.23.52.86 1.12 1.39.77.69 1.42.9 1.62.99.2.09.32.07.44-.04l.49-.58c.13-.16.25-.12.42-.07l1.9.89c.18.08.3.13.33.2.03.07.03.42-.18 1z"/></svg>${esc(wa)}</span>`:''}
         </div>
       </div>
     </div>`;
@@ -545,7 +525,7 @@ function downloadSimPDF(comDados){
 
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>Proposta — ${nome} — ${valorStr}</title>
+  <title>Proposta — ${esc(nome)} — ${esc(valorStr)}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>${estilos}</style></head><body>
@@ -556,7 +536,7 @@ function downloadSimPDF(comDados){
         <div class="pdf-top-left">
           <div class="pdf-tag">Simulação de Crédito</div>
           <div class="pdf-title">Proposta Personalizada</div>
-          ${nome!=='Cliente'?`<div class="pdf-client">Para: <strong style="color:#fff">${nome}</strong>${cpfCliente?` <span style="font-size:11px;opacity:.75;font-weight:400">· CPF ${cpfCliente}</span>`:''}${telCliente?` <span style="font-size:11px;opacity:.75;font-weight:400">· ${telCliente}</span>`:''}</div>`:''}
+          ${nome!=='Cliente'?`<div class="pdf-client">Para: <strong style="color:#fff">${esc(nome)}</strong>${cpfCliente?` <span style="font-size:11px;opacity:.75;font-weight:400">· CPF ${esc(cpfCliente)}</span>`:''}${telCliente?` <span style="font-size:11px;opacity:.75;font-weight:400">· ${esc(telCliente)}</span>`:''}</div>`:''}
           <div class="pdf-credit-pill">
             <small>Crédito</small>
             <span>${valorStr}</span>
@@ -565,7 +545,7 @@ function downloadSimPDF(comDados){
         <div class="pdf-logo-badge">
           <div class="pdf-logo-icon">${logoSVG}</div>
           <div class="pdf-meta-pill">
-            <div>${adminNomeSim}</div>
+            <div>${esc(adminNomeSim)}</div>
             <div>${data}</div>
           </div>
         </div>
@@ -575,9 +555,9 @@ function downloadSimPDF(comDados){
     <div class="pdf-body">
       <!-- INFO STRIP -->
       <div class="info-strip">
-        ${tipoBemStr?`<div class="info-cell"><div class="info-lbl">Tipo de bem</div><div class="info-val">${tipoBemStr}</div></div>`:''}
+        ${tipoBemStr?`<div class="info-cell"><div class="info-lbl">Tipo de bem</div><div class="info-val">${esc(tipoBemStr)}</div></div>`:''}
         <div class="info-cell"><div class="info-lbl">Crédito</div><div class="info-val">${valorStr}</div></div>
-        <div class="info-cell"><div class="info-lbl">Administradora</div><div class="info-val">${adminNomeSim}</div></div>
+        <div class="info-cell"><div class="info-lbl">Administradora</div><div class="info-val">${esc(adminNomeSim)}</div></div>
       </div>
 
       <!-- CONSULTOR -->
@@ -602,13 +582,25 @@ function downloadSimPDF(comDados){
   a.href=URL.createObjectURL(blob);
   a.download=nomeArquivo;
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
-function convertToLead(nome,tipo,credito){
+let _convertendoSim=false;
+async function convertToLead(nome,tipo,credito){
+  if(_convertendoSim)return;
+  nome=String(nome||'').trim();
   if(!nome){showToast('Preencha o nome do cliente.','ti-alert-triangle','#d97706');return;}
-  leads.push({id:nextLeadId++,nome,tel:'',tipo,credito,etapa:'Novo lead',origem:'Simulador',responsavelId:(getMe()||users[0]||{}).id||1,data:toDate(),obs:'Convertido via simulador.'});
-  const _cl=leads[leads.length-1]; if(window._syncLead) window._syncLead(_cl).catch(e=>console.warn(e));
-  if(window._saveAtividade)window._saveAtividade('ti-calculator',`${nome} convertido via simulador — ${fmtR(credito)}`);
-  showTab('leads',document.querySelectorAll('.nb')[2]);
+  if(!can('leads_create')){showToast('Você não tem permissão para cadastrar leads.','ti-lock');return;}
+  const me=getMe();
+  if(!me){showToast('Sessão não identificada. Recarregue a página.','ti-alert-triangle','#dc2626');return;}
+  const tel=normalizaTelefone(document.getElementById('sTelCliente')?.value||'');
+  const lead={id:nextLeadId++,nome,tel,tipo:tipo||'Imóvel',credito:Number(credito)||0,etapa:'Novo lead',origem:'Simulador',responsavelId:me.id,data:toDate(),obs:'Convertido via simulador.',atendimento:''};
+  _convertendoSim=true;
+  leads.unshift(lead);
+  const ok=await window._syncLead(lead);
+  _convertendoSim=false;
+  if(!ok&&!window._leadPendente(lead)){ const i=leads.indexOf(lead); if(i!==-1) leads.splice(i,1); return; }
+  if(window._saveAtividade)window._saveAtividade('ti-calculator',`${nome} convertido via simulador — ${fmtR(lead.credito)}`);
+  showToast(`${nome} agora é um lead no funil.`,'ti-user-plus');
+  if(podeAba('leads')) showTab('leads'); else if(podeAba('funil')) showTab('funil');
 }
 

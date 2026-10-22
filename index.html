@@ -400,64 +400,92 @@ const SUPABASE_URL = 'https://uekeeutycmqsswrhspwv.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_nJ-BnFkD8sG8mv4f7Uc-Uw_v87ZOIl9';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Detecta convite na URL
+// Convite: o link traz um código secreto (?convite=...), com validade e limite de uso.
+// O cargo e a empresa vêm do convite e são aplicados pelo servidor.
 const _urlParams = new URLSearchParams(window.location.search);
-const _conviteEmpresaId = _urlParams.get('convite');
-const _conviteEmpresaNome = _urlParams.get('empresa');
+const _conviteToken = (_urlParams.get('convite') || '').trim();
+let _conviteValido = false;
 
-// Sempre exibe a tela de login — faz signOut de qualquer sessão ativa
+function _avisoLogin(msg){
+  if(!msg) return;
+  document.addEventListener('DOMContentLoaded', ()=>showErr('login-err', msg));
+  if(document.readyState !== 'loading') showErr('login-err', msg);
+}
+(function(){
+  const motivo = _urlParams.get('motivo');
+  if(motivo === 'desativado') _avisoLogin('Seu acesso ao CRM foi removido pelo gestor da sua empresa.');
+  else if(motivo === 'inatividade') _avisoLogin('Sua sessão foi encerrada por inatividade. Entre novamente.');
+})();
+
 (async()=>{
-  // Se vier com convite, mostra tela de cadastro
-  if(_conviteEmpresaId){
+  if(_conviteToken){
     showView('convite');
     const label = document.getElementById('convite-empresa-label');
-    if(label && _conviteEmpresaNome) label.innerHTML = `Você foi convidado para acessar o CRM da <strong>${decodeURIComponent(_conviteEmpresaNome)}</strong>.`;
+    let info = null;
+    try{ const r = await sb.rpc('crm_info_convite', {p_token: _conviteToken}); info = r.data; }catch(e){}
+    if(info && info.valido){
+      _conviteValido = true;
+      if(label){
+        label.textContent = '';
+        label.append('Você foi convidado para acessar o CRM da ');
+        const b = document.createElement('strong'); b.textContent = info.empresa_nome || 'empresa'; label.append(b);
+        label.append('.');
+      }
+    } else {
+      if(label) label.textContent = 'Este convite é inválido ou já expirou. Peça um novo link para quem te convidou.';
+      const btn = document.getElementById('btn-convite'); if(btn) btn.disabled = true;
+    }
     return;
   }
-  // Encerra qualquer sessão ativa para forçar o login manual
+  // Sem convite: encerra qualquer sessão ativa para forçar o login manual
   try { await sb.auth.signOut(); } catch(e) {}
 })();
 
+async function _aceitarConvite(){
+  if(!_conviteToken) return {ok:true};
+  const {error} = await sb.rpc('crm_aceitar_convite', {p_token: _conviteToken});
+  return error ? {error} : {ok:true};
+}
+
 async function fazerCadastroConvite(){
   const nome = document.getElementById('c-nome').value.trim();
-  const email = document.getElementById('c-email').value.trim();
+  const email = document.getElementById('c-email').value.trim().toLowerCase();
   const senha = document.getElementById('c-senha').value;
   const btn = document.getElementById('btn-convite');
   hideErr('convite-err');
+  if(!_conviteValido){ showErr('convite-err','Este convite é inválido ou já expirou. Peça um novo link.'); return; }
   if(!nome){ showErr('convite-err','Informe seu nome.'); return; }
   if(!email){ showErr('convite-err','Informe seu e-mail.'); return; }
   if(!senha||senha.length<6){ showErr('convite-err','A senha deve ter pelo menos 6 caracteres.'); return; }
   setLoading(btn, true);
-
-  // Verifica se já existe alguém nessa empresa — primeiro usuário vira gestor
-  let roleNovo = 'vendedor';
-  if(_conviteEmpresaId){
-    const {data: existentes} = await sb.from('profiles').select('id').eq('empresa_id', _conviteEmpresaId).limit(1);
-    if(!existentes || existentes.length === 0){
-      roleNovo = 'gestor'; // primeiro da empresa = gestor
-    }
-  }
-
-  // Cria usuário no Supabase Auth
   const {data, error} = await sb.auth.signUp({
-    email,
-    password: senha,
-    options: { data: { nome, empresa_id: _conviteEmpresaId, role: roleNovo } }
+    email, password: senha,
+    options: { data: { nome, convite_token: _conviteToken }, emailRedirectTo: new URL('crm.html', window.location.href).href }
   });
-
-  if(error){
+  const jaExiste = (error && /registered|already/i.test(error.message)) || (data && data.user && Array.isArray(data.user.identities) && !data.user.identities.length);
+  if(jaExiste){
     setLoading(btn, false);
-    showErr('convite-err', error.message==='User already registered' ? 'Este e-mail já está cadastrado. Use a opção "Já tenho conta".' : 'Erro ao criar conta: '+error.message);
+    showErr('convite-err','Este e-mail já tem conta. Clique em "Já tenho conta" e entre com sua senha — o convite é aceito no login.');
     return;
   }
-
-  // Atualiza perfil com role e empresa corretos (sobrescreve o que a trigger criou)
-  await sb.from('profiles').update({
-    nome,
-    role: roleNovo,
-    empresa_id: _conviteEmpresaId
-  }).eq('id', data.user.id);
-
+  if(error){
+    setLoading(btn, false);
+    showErr('convite-err','Erro ao criar conta: '+error.message);
+    return;
+  }
+  if(!data.session){
+    // Supabase pediu confirmação por e-mail: o convite é aceito no primeiro login
+    setLoading(btn, false);
+    btn.querySelector('.btn-text').textContent = '✓  Confira seu e-mail';
+    showErr('convite-err','Enviamos um link de confirmação para '+email+'. Depois de confirmar, entre com seu e-mail e senha.');
+    return;
+  }
+  const r = await _aceitarConvite();
+  if(r.error){
+    setLoading(btn, false);
+    showErr('convite-err', r.error.message);
+    return;
+  }
   btn.querySelector('.btn-text').textContent = '✓  Conta criada!';
   btn.style.background = 'linear-gradient(135deg,#14532d,#16a34a)';
   setTimeout(()=>{ window.location.href = 'crm.html?from=login'; }, 800);
@@ -532,8 +560,21 @@ async function fazerLogin(){
 
   if(error){
     setLoading(btn, false);
-    showErr('login-err', 'E-mail ou senha incorretos.');
+    const m = String(error.message||'');
+    if(/banned/i.test(m)) showErr('login-err', 'Seu acesso ao CRM foi desativado. Fale com o gestor da sua empresa.');
+    else if(/not confirmed/i.test(m)) showErr('login-err', 'Confirme seu e-mail pelo link que enviamos antes de entrar.');
+    else showErr('login-err', 'E-mail ou senha incorretos.');
     return;
+  }
+  // Entrou pelo link de convite com uma conta que já existia: aceita agora
+  if(_conviteToken && _conviteValido){
+    const r = await _aceitarConvite();
+    if(r.error){
+      setLoading(btn, false);
+      showErr('login-err', r.error.message);
+      setTimeout(()=>{ window.location.href = 'crm.html?from=login'; }, 3500);
+      return;
+    }
   }
 
   btn.querySelector('.btn-text').textContent = '✓  Entrando...';
@@ -550,7 +591,7 @@ async function enviarReset(){
   setLoading(btn, true);
 
   const {error} = await sb.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin + '/crm.html'
+    redirectTo: new URL('crm.html', window.location.href).href
   });
 
   setLoading(btn, false);
