@@ -15,6 +15,11 @@
 --  5. Empresa desativada fica bloqueada.
 --  6. Vendas sempre coerentes com o funil (sem duplicar), contadores do ranking
 --     recalculados pelo banco e lances automáticos criados pelo banco.
+--  7. Leads: cadastrar/importar, editar, mover no funil e transferir seguem as
+--     permissões do cargo; leads de quem já saiu da empresa vão para o gestor.
+--
+-- No final aparece um relatório. Confira a linha "Contas com acesso de
+-- plataforma": ali só devem aparecer as contas da Evolux.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
