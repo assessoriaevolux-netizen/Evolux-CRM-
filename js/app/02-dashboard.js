@@ -1,0 +1,77 @@
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+function _abrevR(v){ v=Number(v)||0; return v>=1000000?'R$'+Math.round(v/100000)/10+'M':v>=1000?'R$'+Math.round(v/1000)+'k':'R$'+Math.round(v); }
+
+// Total vendido no mês (somado no servidor; gestor vê a empresa, os demais a própria equipe)
+window._dashVendasCache=null;
+let _dashPedido=0;
+async function _dashTotalVendidoMes(){
+  const el=document.getElementById('hero-credito');
+  if(!el) return;
+  const hoje=new Date();
+  const de=hojeISO(new Date(hoje.getFullYear(),hoje.getMonth(),1)), ate=hojeISO(hoje);
+  const chave=de+'|'+ate;
+  let porUser=window._dashVendasCache&&window._dashVendasCache.chave===chave?window._dashVendasCache.porUser:null;
+  if(!porUser){
+    const pedido=++_dashPedido;
+    const {data,error}=await window._rpc('crm_ranking_vendas',{p_de:de,p_ate:ate});
+    if(error||pedido!==_dashPedido) return;
+    porUser={};
+    (data||[]).forEach(r=>{ if(r.user_id) porUser[r.user_id]=Number(r.credito)||0; });
+    window._dashVendasCache={chave,porUser};
+  }
+  const me=getMe();
+  let total=0;
+  if(isGestor(me)) total=Object.values(porUser).reduce((s,v)=>s+v,0);
+  else{
+    const vis=getVisiveisParaMim();
+    users.filter(u=>vis.has(u.id)).forEach(u=>{ total+=porUser[u.sb_id]||0; });
+  }
+  el.textContent=_abrevR(total);
+}
+
+function renderDashboard(){
+  if(!document.getElementById('metrics-row')) return;
+  const vis=getVisiveisParaMim();
+  const me=getMe();
+  const leadsD=isGestor(me)?leads:leads.filter(l=>vis.has(l.responsavelId));
+  const t=leadsD.length,f=leadsD.filter(l=>l.etapa==='Fechado / Convertido').length;
+  const p=leadsD.filter(l=>l.etapa==='Perdido').length,a=t-f-p;
+  const tx=t?Math.round(f/t*100):0;
+  const hr=new Date().getHours();
+  const saud=hr<12?'Bom dia':hr<18?'Boa tarde':'Boa noite';
+  const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const meses=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  const nd=new Date();
+  const meNome=me?me.nome.split(' ')[0]:'';
+  const admin=getAdmin();
+  document.getElementById('hero-greeting-txt').textContent=`${saud}${meNome?', '+meNome:''} 👋`;
+  document.getElementById('hero-date-txt').textContent=`${dias[nd.getDay()]}, ${nd.getDate()} de ${meses[nd.getMonth()]} de ${nd.getFullYear()}${admin?` · ${admin.nome}`:''}`;
+  const pipVal=leadsD.filter(l=>!['Fechado / Convertido','Perdido'].includes(l.etapa)).reduce((s,l)=>s+(l.credito||0),0);
+  document.getElementById('hero-pipeline').textContent=_abrevR(pipVal);
+  document.getElementById('hero-conversao').textContent=tx+'%';
+  _dashTotalVendidoMes();
+  const spark=(color,pts)=>{const w=80,h=32;const path=pts.map((y,i)=>`${i===0?'M':'L'}${Math.round(i*(w/(pts.length-1)))},${Math.round(h-y*(h/Math.max(...pts,1)))}`).join(' ');return `<svg class="mc2-spark" viewBox="0 0 ${w} ${h}" width="80" height="32" fill="none"><path d="${path}" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;};
+  document.getElementById('metrics-row').innerHTML=`
+    <div class="mc2 cn"><div class="mc2-icon"><i class="ti ti-users"></i></div><div class="mc2-body"><div class="mc2-lbl">Total de leads</div><div class="mc2-val">${t}</div><div class="mc2-sub">no pipeline</div></div>${spark('#6366f1',[10,14,12,18,15,22,19,26,24])}</div>
+    <div class="mc2 cb"><div class="mc2-icon"><i class="ti ti-activity"></i></div><div class="mc2-body"><div class="mc2-lbl">Em andamento</div><div class="mc2-val">${a}</div><div class="mc2-sub">leads ativos</div></div>${spark('#3b82f6',[8,12,10,16,14,18,16,22,20])}</div>
+    <div class="mc2 cg"><div class="mc2-icon"><i class="ti ti-circle-check"></i></div><div class="mc2-body"><div class="mc2-lbl">Convertidos</div><div class="mc2-val">${f}</div><div class="mc2-sub">fechamentos</div></div>${spark('#1db954',[6,10,8,14,12,18,16,22,20])}</div>
+    <div class="mc2 cy"><div class="mc2-icon"><i class="ti ti-chart-bar"></i></div><div class="mc2-body"><div class="mc2-lbl">Taxa de conversão</div><div class="mc2-val">${tx}%</div><div class="mc2-sub">do total de leads</div></div>${spark('#f59e0b',[12,10,14,12,18,16,22,20,24])}</div>`;
+  const BADGE_MAP={'ti-user-plus':['Novo lead','bdg-nl'],'ti-circle-check':['Venda realizada','bdg-vr'],'ti-message':['Primeiro contato','bdg-pc'],'ti-brand-whatsapp':['WhatsApp','bdg-pc'],'ti-arrows-right-left':['Movido','bdg-gen'],'ti-phone':['Ligação','bdg-gen'],'ti-user-edit':['Perfil atualizado','bdg-gen'],'ti-upload':['Importação','bdg-nl']};
+  const AV_MAP={'ti-user-plus':'ti-user','ti-circle-check':'ti-currency-dollar','ti-message':'ti-brand-whatsapp','ti-brand-whatsapp':'ti-brand-whatsapp','ti-arrows-right-left':'ti-arrows-right-left','ti-upload':'ti-upload'};
+  const AV_CLS={'ti-brand-whatsapp':'av-wa','ti-message':'av-wa','ti-circle-check':'av-cash'};
+  const feed=document.getElementById('activity-feed');
+  const acts=can('notif_view')?_atividadesVisiveis():[];
+  feed.innerHTML=acts.length?acts.slice(0,5).map(act=>{
+    const[badgeTxt,badgeCls]=BADGE_MAP[act.icon]||['Atividade','bdg-gen'];
+    const avIcon=AV_MAP[act.icon]||'ti-user';
+    const avCls=AV_CLS[act.icon]||'';
+    const txt=String(act.text||'');
+    const match=txt.match(/^([^:—–]+?)(?:\s+(?:entrou|fechou|—|:|fez|realizou|foi|atualizou))/i);
+    const nome=match?match[1].trim():txt.split(' ').slice(0,2).join(' ');
+    const desc=txt.slice(nome.length).replace(/^[\s:—–]+/,'');
+    return `<div class="act2-item"><div class="act2-av ${avCls}"><i class="ti ${avIcon}"></i></div><div class="act2-body"><div class="act2-name"><strong>${esc(nome)}</strong>${desc?' '+esc(desc):''}</div><div class="act2-time">${esc(act.time)}</div></div><span class="act2-badge ${badgeCls}">${badgeTxt}</span><button class="act2-menu"><i class="ti ti-dots-vertical"></i></button></div>`;
+  }).join(''):'<p style="color:var(--tm);font-size:12.5px;padding:12px 0">Nenhuma atividade ainda.</p>';
+  const porEtapa=ETAPAS.map(e=>leadsD.filter(l=>l.etapa===e).length);
+  const max=Math.max(...porEtapa,1);
+  document.getElementById('dash-etapas').innerHTML=ETAPAS.map((e,i)=>`<div class="br"><span class="brl">${esc(etapaLabel(e))}</span><div class="brt"><div class="brf" style="width:${Math.round(porEtapa[i]/max*100)}%;background:${EC[i]}"></div></div><span class="brv">${porEtapa[i]}</span></div>`).join('');
+}

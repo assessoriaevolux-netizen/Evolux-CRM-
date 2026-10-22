@@ -1,119 +1,90 @@
+// create-user — cadastra (ou reativa) um usuário da empresa de quem está logado.
+// Todas as regras de permissão e de hierarquia ficam no banco
+// (função crm_srv_criar_membro): quem chama só cria cargos ABAIXO do seu,
+// sempre na própria empresa, e nunca cargos de plataforma.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
+const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function json(status: number, body: Record<string, unknown>) {
+  return new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
+}
+
+function traduz(msg: string) {
+  const m = (msg || '').toLowerCase()
+  if (m.includes('already') || m.includes('exists') || m.includes('registered')) return 'Este e-mail já está cadastrado.'
+  if (m.includes('password')) return 'Senha inválida (mínimo 6 caracteres).'
+  if (m.includes('email')) return 'E-mail inválido.'
+  return msg
+}
+
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
 
   try {
-    // Cliente admin com service role (ignora RLS, pode criar usuários)
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    )
-
-    // Verifica token do usuário que está fazendo a requisição
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Não autorizado' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    const token = authHeader.replace('Bearer ', '')
-    const supabaseUser = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-    )
-    const { data: { user }, error: userError } = await supabaseUser.auth.getUser(token)
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Token inválido ou sessão expirada. Faça login novamente.' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Busca perfil do usuário que está criando
-    const { data: callerProfile } = await supabaseAdmin
-      .from('profiles')
-      .select('role, empresa_id')
-      .eq('id', user.id)
-      .single()
-
-    const rolesPermitidos = ['master', 'superadmin', 'administrador', 'gestor', 'admin', 'representante', 'supervisor']
-    if (!callerProfile || !rolesPermitidos.includes(callerProfile.role)) {
-      return new Response(JSON.stringify({ error: 'Sem permissão para cadastrar usuários' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    const body = await req.json()
-    const { email, senha, nome, role, meta, hierarquia_id, equipe_id } = body
-
-    if (!email || !senha || !nome) {
-      return new Response(JSON.stringify({ error: 'email, senha e nome são obrigatórios' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Cria o usuário no Auth do Supabase
-    const { data: newAuth, error: authErr } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password: senha,
-      email_confirm: true, // confirma o email automaticamente
-      user_metadata: { nome, role }
+    const url = Deno.env.get('SUPABASE_URL') ?? ''
+    const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+    const anon = createClient(url, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
+      auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    if (authErr) {
-      return new Response(JSON.stringify({ error: authErr.message }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    const token = (req.headers.get('Authorization') || '').replace('Bearer ', '').trim()
+    if (!token) return json(401, { error: 'Não autorizado.' })
+    const { data: { user }, error: userErr } = await anon.auth.getUser(token)
+    if (userErr || !user) return json(401, { error: 'Sessão expirada. Entre novamente no CRM.' })
+
+    const body = await req.json().catch(() => ({}))
+    const email = String(body.email || '').trim().toLowerCase()
+    const senha = String(body.senha || '')
+    const nome = String(body.nome || '').trim()
+    const hierarquia = body.hierarquia_id ? String(body.hierarquia_id) : null
+    const equipe = body.equipe_id ? String(body.equipe_id) : null
+    const meta = Number(body.meta) || 0
+
+    if (!nome) return json(400, { error: 'Informe o nome.' })
+    if (!email || !email.includes('@')) return json(400, { error: 'E-mail inválido.' })
+    if (senha.length < 6) return json(400, { error: 'A senha deve ter pelo menos 6 caracteres.' })
+    if (!hierarquia) return json(400, { error: 'Selecione a hierarquia.' })
+
+    const params = { p_caller: user.id, p_email: email, p_nome: nome, p_hierarquia: hierarquia, p_equipe: equipe, p_meta: meta }
+
+    // 1) Confere as permissões antes de criar qualquer coisa
+    const pre = await admin.rpc('crm_srv_criar_membro', { ...params, p_user: null, p_validar_apenas: true })
+    if (pre.error) return json(403, { error: pre.error.message })
+
+    // 2) E-mail de alguém que foi removido antes? Reativa em vez de duplicar.
+    const { data: existentes } = await admin.from('profiles').select('id, ativo').eq('email', email).limit(1)
+    const existente = existentes && existentes[0]
+    let userId: string
+    if (existente) {
+      if (existente.ativo !== false) return json(409, { error: 'Este e-mail já está cadastrado.' })
+      const { error } = await admin.auth.admin.updateUserById(existente.id, {
+        password: senha, ban_duration: 'none', user_metadata: { nome },
       })
-    }
-
-    const newUserId = newAuth.user?.id
-    if (!newUserId) {
-      return new Response(JSON.stringify({ error: 'Usuário criado sem ID retornado' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      if (error) return json(400, { error: traduz(error.message) })
+      userId = existente.id
+    } else {
+      const { data, error } = await admin.auth.admin.createUser({
+        email, password: senha, email_confirm: true, user_metadata: { nome },
       })
+      if (error || !data?.user?.id) return json(400, { error: traduz(error?.message || 'Erro ao criar usuário.') })
+      userId = data.user.id
     }
 
-    // Cria/atualiza o perfil na tabela profiles
-    const profilePayload: Record<string, unknown> = {
-      id: newUserId,
-      nome,
-      email,
-      role: role || 'vendedor',
-      empresa_id: callerProfile.empresa_id,
-      meta: meta || 0,
-      updated_at: new Date().toISOString(),
-    }
-    if (hierarquia_id) profilePayload.hierarquia_id = hierarquia_id
-    if (equipe_id) profilePayload.equipe_id = equipe_id
-
-    const { error: profileErr } = await supabaseAdmin
-      .from('profiles')
-      .upsert(profilePayload)
-
-    if (profileErr) {
-      // Usuário foi criado no auth mas perfil falhou — tenta deletar do auth
-      await supabaseAdmin.auth.admin.deleteUser(newUserId).catch(() => {})
-      return new Response(JSON.stringify({ error: 'Erro ao criar perfil: ' + profileErr.message }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
+    // 3) Grava o perfil com cargo, empresa e equipe (o banco valida tudo de novo)
+    const r = await admin.rpc('crm_srv_criar_membro', { ...params, p_user: userId, p_validar_apenas: false })
+    if (r.error) {
+      if (!existente) await admin.auth.admin.deleteUser(userId).catch(() => {})
+      return json(400, { error: r.error.message })
     }
 
-    return new Response(JSON.stringify({ id: newUserId, ok: true }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    })
-
+    return json(200, { ok: true, id: userId, reativado: !!existente })
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    })
+    return json(500, { error: String(err) })
   }
 })
