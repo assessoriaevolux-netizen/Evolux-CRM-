@@ -1228,17 +1228,19 @@ end $$;
 select set_config('crm.trusted', 'on', true);
 
 -- 8.1 Vendas duplicadas para o mesmo lead (mantém a mais antiga)
-create temp table crm_dup_antes as select count(*) as n from public.vendas;
-with dup as (
-  select v.id from (
-    select id, row_number() over (partition by lead_id::text order by created_at nulls last, id::text) as rn
-      from public.vendas where lead_id is not null) v
-  where v.rn > 1)
-delete from public.vendas where id in (select id from dup);
-
-insert into crm_relatorio (item, valor)
-select 'Vendas duplicadas removidas', ((select n from crm_dup_antes) - (select count(*) from public.vendas))::text;
-drop table crm_dup_antes;
+do $$
+declare antes integer; depois integer;
+begin
+  select count(*) into antes from public.vendas;
+  with dup as (
+    select v.id from (
+      select id, row_number() over (partition by lead_id::text order by created_at nulls last, id::text) as rn
+        from public.vendas where lead_id is not null) v
+    where v.rn > 1)
+  delete from public.vendas where id in (select id from dup);
+  select count(*) into depois from public.vendas;
+  insert into crm_relatorio (item, valor) values ('Vendas duplicadas removidas', (antes - depois)::text);
+end $$;
 create unique index if not exists crm_vendas_lead_unico on public.vendas (lead_id) where lead_id is not null;
 
 -- 8.2 Leads fechados sem venda registrada
