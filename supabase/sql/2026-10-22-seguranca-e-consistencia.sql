@@ -24,8 +24,12 @@
 
 begin;
 
-create temp table if not exists crm_relatorio (ordem serial, item text, valor text);
-truncate crm_relatorio;
+-- Relatório final. Tabela comum (não temporária) para funcionar em qualquer modo
+-- de execução do editor; fica sem acesso pela API (RLS ativo, sem regras).
+drop table if exists public.crm_migracao_log;
+create table public.crm_migracao_log (ordem serial, item text, valor text);
+alter table public.crm_migracao_log enable row level security;
+revoke all on public.crm_migracao_log from anon, authenticated;
 
 -- ─── 1. Colunas necessárias ─────────────────────────────────────────────────
 alter table public.profiles add column if not exists ativo boolean not null default true;
@@ -1239,7 +1243,7 @@ begin
     where v.rn > 1)
   delete from public.vendas where id in (select id from dup);
   select count(*) into depois from public.vendas;
-  insert into crm_relatorio (item, valor) values ('Vendas duplicadas removidas', (antes - depois)::text);
+  insert into public.crm_migracao_log (item, valor) values ('Vendas duplicadas removidas', (antes - depois)::text);
 end $$;
 create unique index if not exists crm_vendas_lead_unico on public.vendas (lead_id) where lead_id is not null;
 
@@ -1256,7 +1260,7 @@ begin
        and not exists (select 1 from public.vendas v where v.lead_id::text = l.id::text)
     on conflict (lead_id) where lead_id is not null do nothing $q$;
   get diagnostics n = row_count;
-  insert into crm_relatorio (item, valor) values ('Vendas criadas para leads fechados sem venda', n::text);
+  insert into public.crm_migracao_log (item, valor) values ('Vendas criadas para leads fechados sem venda', n::text);
 end $$;
 
 -- 8.3 Lance automático para leads fechados sem nenhum lance
@@ -1270,9 +1274,9 @@ begin
    where l.etapa = 'Fechado / Convertido'
      and not exists (select 1 from public.lances x where x.lead_id::text = l.id::text);
   get diagnostics n = row_count;
-  insert into crm_relatorio (item, valor) values ('Lances automáticos criados', n::text);
+  insert into public.crm_migracao_log (item, valor) values ('Lances automáticos criados', n::text);
 exception when others then
-  insert into crm_relatorio (item, valor) values ('Lances automáticos', 'não criados: ' || sqlerrm);
+  insert into public.crm_migracao_log (item, valor) values ('Lances automáticos', 'não criados: ' || sqlerrm);
 end $$;
 
 -- 8.4 Contadores do ranking recalculados a partir das vendas reais
@@ -1286,7 +1290,7 @@ begin
            group by p2.id) s
    where p.id = s.id and (p.vendas is distinct from s.qtd or p.credito is distinct from s.total);
   get diagnostics n = row_count;
-  insert into crm_relatorio (item, valor) values ('Contadores de vendas corrigidos (pessoas)', n::text);
+  insert into public.crm_migracao_log (item, valor) values ('Contadores de vendas corrigidos (pessoas)', n::text);
 end $$;
 
 -- 8.5 Telefones padronizados (55 + DDD + número)
@@ -1296,7 +1300,7 @@ begin
   update public.leads set telefone = public.crm_tel_normalizado(telefone)
    where telefone is not null and telefone is distinct from public.crm_tel_normalizado(telefone);
   get diagnostics n = row_count;
-  insert into crm_relatorio (item, valor) values ('Telefones padronizados', n::text);
+  insert into public.crm_migracao_log (item, valor) values ('Telefones padronizados', n::text);
 end $$;
 
 -- 8.6 Permissões que antes não tinham efeito: mantém o que cada cargo já via,
@@ -1339,7 +1343,7 @@ begin
     execute format('update public.hierarquias set perms = %L where id::text = %L', p::text, r.id);
     n := n + 1;
   end loop;
-  insert into crm_relatorio (item, valor) values ('Cargos com permissões ajustadas', n::text);
+  insert into public.crm_migracao_log (item, valor) values ('Cargos com permissões ajustadas', n::text);
 end $$;
 
 -- 8.7 Empresas sem hierarquia ganham as padrão
@@ -1351,7 +1355,7 @@ begin
     perform public.crm_garantir_hierarquias_empresa(r.id);
     n := n + 1;
   end loop;
-  insert into crm_relatorio (item, valor) values ('Empresas que ganharam hierarquias padrão', n::text);
+  insert into public.crm_migracao_log (item, valor) values ('Empresas que ganharam hierarquias padrão', n::text);
 end $$;
 
 -- 8.8 Leads de quem já saiu da empresa (responsável inexistente ou desativado)
@@ -1373,22 +1377,22 @@ begin
                         where p2.id::text = l.responsavel_id::text and coalesce(p2.ativo, true)
                           and p2.empresa_id::text = l.empresa_id::text) $q$;
   get diagnostics n = row_count;
-  insert into crm_relatorio (item, valor) values ('Leads de pessoas que saíram passados para o gestor', n::text);
+  insert into public.crm_migracao_log (item, valor) values ('Leads de pessoas que saíram passados para o gestor', n::text);
 end $$;
 
 select set_config('crm.trusted', '', true);
 
 -- Conferência
-insert into crm_relatorio (item, valor)
+insert into public.crm_migracao_log (item, valor)
 select 'Contas com acesso de plataforma (confira se são só suas)',
        coalesce(string_agg(coalesce(email, id::text) || ' (' || role || ')', ', '), 'nenhuma')
   from public.profiles where lower(coalesce(role, '')) in ('master', 'superadmin');
-insert into crm_relatorio (item, valor)
+insert into public.crm_migracao_log (item, valor)
 select 'Contas cadastradas sem empresa (ficam sem acesso até receberem convite)', count(*)::text
   from public.profiles where empresa_id is null and lower(coalesce(role, '')) not in ('master', 'superadmin');
-insert into crm_relatorio (item, valor)
+insert into public.crm_migracao_log (item, valor)
 select 'Regras de acesso ativas', count(*)::text from pg_policies where schemaname = 'public' and policyname like 'crm\_%';
 
 commit;
 
-select item as "Resultado", valor as "Valor" from crm_relatorio order by ordem;
+select item as "Resultado", valor as "Valor" from public.crm_migracao_log order by ordem;
