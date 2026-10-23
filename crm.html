@@ -6,13 +6,13 @@
 <title>Evolux CRM</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.0/dist/tabler-icons.min.css">
-<link rel="stylesheet" href="css/crm.css?v=20261022b">
+<link rel="stylesheet" href="css/crm.css?v=20261023a">
 
 <!-- ═══════════════════════════════════════════════════════════
      SUPABASE — Auth guard + sincronização em tempo real
      ═══════════════════════════════════════════════════════════ -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="js/dados.js?v=20261022b"></script>
+<script src="js/dados.js?v=20261023a"></script>
 </head>
 <body>
 
@@ -37,11 +37,13 @@
     <button class="nb" onclick="showTab('ranking',this)" title="Ranking"><i class="ti ti-trophy"></i><span class="nb-label">Ranking</span></button>
     <button class="nb" onclick="showTab('relatorios',this)" title="Relatórios"><i class="ti ti-chart-bar"></i><span class="nb-label">Relatórios</span></button>
     <button class="nb" onclick="showTab('whatsapp',this)" title="WhatsApp"><i class="ti ti-brand-whatsapp"></i><span class="nb-label">WhatsApp</span></button>
+    <button class="nb" onclick="showTab('ia',this)" title="IA de atendimento"><i class="ti ti-robot"></i><span class="nb-label">IA</span></button>
+    <button class="nb" onclick="showTab('anuncios',this)" title="Gerenciador de Anúncios"><i class="ti ti-chart-arrows-vertical"></i><span class="nb-label">Anúncios</span></button>
     <button class="nb" onclick="showTab('calendario',this)" title="Calendário"><i class="ti ti-calendar"></i><span class="nb-label">Calendário</span></button>
     <button class="nb sb-superadmin-only" onclick="showTab('empresas',this)" style="display:none" title="Empresas"><i class="ti ti-building-plus"></i><span class="nb-label">Empresas</span></button>
     <button class="nb" onclick="showTab('configuracoes',this)" title="Configurações"><i class="ti ti-settings"></i><span class="nb-label">Configurações</span></button>
   </nav>
-  <div class="sb-user" onclick="showTab('configuracoes',document.querySelectorAll('.nb')[9])" title="Configurações" style="cursor:pointer">
+  <div class="sb-user" onclick="showTab('configuracoes')" title="Configurações" style="cursor:pointer">
     <div class="sb-av" id="sb-av">E</div>
     <div class="sb-user-info">
       <div class="sb-user-name" id="sb-user-name">Erick</div>
@@ -76,7 +78,7 @@
         <div class="notif-footer" onclick="markAllRead()">Limpar notificações</div>
       </div>
     </div>
-    <div class="tp-user-wrap" onclick="showTab('configuracoes',document.querySelectorAll('.nb')[9])" title="Configurações">
+    <div class="tp-user-wrap" onclick="showTab('configuracoes')" title="Configurações">
       <div class="tp-user">
         <div class="tp-av" id="tp-av">E</div>
       </div>
@@ -158,7 +160,7 @@
   <!-- Barra de filtros funil -->
   <div id="funil-filtros-bar" style="display:none;padding:10px 16px;background:var(--c0);border-bottom:1px solid var(--c2);display:none;flex-wrap:wrap;gap:8px;align-items:center">
     <select id="ff-consultor" class="tfield" onchange="renderKanban()" style="flex:1;min-width:130px"><option value="">Todos os consultores</option></select>
-    <select id="ff-origem" class="tfield" onchange="renderKanban()" style="flex:1;min-width:130px"><option value="">Todas as origens</option><option>Meta Ads</option><option>Indicação</option><option>Orgânico</option></select>
+    <select id="ff-origem" class="tfield" onchange="renderKanban()" style="flex:1;min-width:130px"><option value="">Todas as origens</option><option>Meta Ads</option><option>WhatsApp</option><option>Indicação</option><option>Orgânico</option></select>
     <select id="ff-tipo" class="tfield" onchange="renderKanban()" style="flex:1;min-width:130px"><option value="">Todos os tipos</option><option>Imóvel</option><option>Automóvel</option><option>Moto</option><option>Serviço</option></select>
     <select id="ff-atendimento" class="tfield" onchange="renderKanban()" style="flex:1;min-width:130px">
       <option value="">Todos os status</option>
@@ -206,7 +208,7 @@
       </div>
       <div class="g2">
         <div class="field" style="margin:0"><label>Etapa</label><select id="ld-etapa" class="fi"></select></div>
-        <div class="field" style="margin:0"><label>Origem</label><select id="ld-origem" class="fi"><option>Meta Ads</option><option>Indicação</option><option>Orgânico</option><option>Referência</option><option>Outro</option></select></div>
+        <div class="field" style="margin:0"><label>Origem</label><select id="ld-origem" class="fi"><option>Meta Ads</option><option>WhatsApp</option><option>Indicação</option><option>Orgânico</option><option>Referência</option><option>Outro</option></select></div>
       </div>
       <div class="g2">
         <div class="field" style="margin:0"><label>Responsável</label><select id="ld-resp" class="fi"></select></div>
@@ -216,6 +218,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn bp" id="btn-save-lead-det" onclick="saveLeadDetalhe()"><i class="ti ti-check"></i>Salvar alterações</button>
+      <button class="btn bg" id="btn-wa-lead-det" onclick="waAbrirDoLeadDetalhe()" style="display:none"><i class="ti ti-brand-whatsapp" style="color:#25d366"></i>WhatsApp</button>
       <button class="btn bd" id="btn-rem-lead-det" onclick="removeLeadDetalhe()"><i class="ti ti-trash"></i>Remover</button>
       <button class="btn bg" onclick="closeLeadDetalhe()">Cancelar</button>
     </div>
@@ -228,7 +231,7 @@
     <input type="text" id="srch" class="tfield" placeholder="Buscar por nome ou telefone..." oninput="renderTable()">
     <select id="fTipo" class="tfield" onchange="renderTable()"><option value="">Todos os tipos</option><option>Imóvel</option><option>Automóvel</option><option>Moto</option><option>Serviço</option></select>
     <select id="fEtapa" class="tfield" onchange="renderTable()"><option value="">Todas as etapas</option></select>
-    <select id="fOrigem" class="tfield" onchange="renderTable()"><option value="">Todas as origens</option><option>Meta Ads</option><option>Indicação</option><option>Orgânico</option></select>
+    <select id="fOrigem" class="tfield" onchange="renderTable()"><option value="">Todas as origens</option><option>Meta Ads</option><option>WhatsApp</option><option>Indicação</option><option>Orgânico</option></select>
     <select id="fConsultor" class="tfield" style="display:none" onchange="renderTable()"><option value="">Todos os consultores</option></select>
     <button class="btn bp" data-perm="leads_create" onclick="openModal()"><i class="ti ti-plus"></i>Novo lead</button>
     <button class="btn bg" id="btn-distrib" data-perm="leads_transfer" onclick="toggleDistrib()"><i class="ti ti-arrows-exchange"></i>Distribuir leads</button>
@@ -260,7 +263,7 @@
             <option value="">Selecionar administradora...</option>
             <option value="__manual__">✏️ Digitar nome manualmente</option>
           </select>
-          <span style="font-size:11px;font-weight:700;cursor:pointer;color:var(--ge);white-space:nowrap" onclick="showTab('configuracoes',document.querySelectorAll('.nb')[9])">Gerenciar →</span>
+          <span style="font-size:11px;font-weight:700;cursor:pointer;color:var(--ge);white-space:nowrap" onclick="showTab('configuracoes')">Gerenciar →</span>
         </div>
         <div id="sAdminManualWrap" style="display:none;margin-top:6px">
           <input type="text" id="sAdminManualNome" class="fi" placeholder="Nome da administradora..." oninput="simAdminManualChange()" style="font-size:13px;font-weight:700">
@@ -597,87 +600,14 @@
   </div>
 </div>
 
-<!-- WHATSAPP -->
-<div id="tab-whatsapp" class="content">
-  <div class="wa-demo-banner">
-    <i class="ti ti-flask" style="font-size:15px"></i>
-    Modo demonstração — integração real com WhatsApp Business API será ativada em breve. Funcionalidades de disparo ficam visíveis para apresentação aos clientes.
-  </div>
-  <div class="wa-layout">
-    <!-- Coluna esquerda: conexões -->
-    <div>
-      <div class="wa-panel">
-        <h3><i class="ti ti-brand-whatsapp" style="color:#25d366"></i>Números conectados</h3>
-        <p>Cada usuário conecta seu próprio WhatsApp. Apenas ele (e seu superior na hierarquia) acessa as conversas.</p>
-        <div class="wa-num-list" id="wa-num-list"></div>
-        <button class="btn bp" style="width:100%;justify-content:center" onclick="openWaConnect()">
-          <i class="ti ti-plus"></i>Conectar novo número
-        </button>
-      </div>
-      <div class="wa-panel" style="margin-top:14px">
-        <h3><i class="ti ti-lock" style="color:var(--b)"></i>Permissões de visualização</h3>
-        <p>Defina quem pode ver as conversas de cada número conectado. Padrão: somente o dono e superiores na hierarquia.</p>
-        <div id="wa-perms-list"></div>
-      </div>
-    </div>
-    <!-- Coluna direita: disparo -->
-    <div class="wa-main">
-      <div class="wa-card">
-        <div class="wa-card-title"><i class="ti ti-list-check" style="color:var(--g)"></i>1. Selecione os leads para disparar</div>
-        <div class="wa-sel-bar" id="wa-sel-bar">
-          <i class="ti ti-users"></i><span id="wa-sel-count">0 leads selecionados</span>
-          <span id="wa-sel-credits"></span>
-          <button class="btn bg bsm" onclick="waSelectAll()" style="margin-left:auto">Selecionar todos</button>
-          <button class="btn bg bsm" onclick="waSelectNone()">Limpar</button>
-        </div>
-        <div class="wa-leads-grid" id="wa-leads-grid"></div>
-      </div>
-      <div class="wa-card">
-        <div class="wa-card-title"><i class="ti ti-message" style="color:var(--b)"></i>2. Escreva a mensagem</div>
-        <p style="font-size:11.5px;color:var(--tm);margin-bottom:8px">Use variáveis para personalizar automaticamente cada mensagem:</p>
-        <div class="wa-vars">
-          <span class="wa-var" onclick="insertVar('{{nome}}')">{​{nome}}</span>
-          <span class="wa-var" onclick="insertVar('{{tipo}}')">{​{tipo}}</span>
-          <span class="wa-var" onclick="insertVar('{{credito}}')">{​{crédito}}</span>
-          <span class="wa-var" onclick="insertVar('{{etapa}}')">{​{etapa}}</span>
-        </div>
-        <textarea class="wa-msg-area" id="wa-msg" placeholder="Olá {{nome}}, tudo bem? Estou entrando em contato sobre seu consórcio de {{tipo}} no valor de {{crédito}}..." oninput="waPreview()"></textarea>
-      </div>
-      <div class="wa-card">
-        <div class="wa-card-title"><i class="ti ti-eye" style="color:var(--y)"></i>3. Prévia da mensagem</div>
-        <div class="wa-preview" id="wa-preview">Escreva a mensagem acima para ver a prévia aqui com os dados do primeiro lead selecionado.</div>
-      </div>
-      <button class="wa-send-btn" onclick="waDemoSend()">
-        <i class="ti ti-brand-whatsapp" style="font-size:17px"></i>
-        Disparar mensagem para <span id="wa-send-count">0</span> lead(s)
-      </button>
-    </div>
-  </div>
-</div>
+<!-- WHATSAPP (preenchido por js/app/14-whatsapp.js) -->
+<div id="tab-whatsapp" class="content"></div>
 
-<!-- MODAL CONECTAR WHATSAPP -->
-<div class="overlay" id="wa-modal">
-  <div class="modal" style="max-width:360px;text-align:center">
-    <div class="mtit" style="justify-content:center"><i class="ti ti-brand-whatsapp" style="color:#25d366"></i>Conectar WhatsApp</div>
-    <div class="wa-connect-box">
-      <div class="wa-qr"><i class="ti ti-qrcode"></i></div>
-      <p style="font-size:12px;color:var(--ts);margin-bottom:8px">Em produção, escaneie o QR code com o WhatsApp do celular para conectar.</p>
-      <div class="wa-status demo"><i class="ti ti-flask"></i> Modo demo — sem conexão real</div>
-    </div>
-    <div class="field" style="text-align:left">
-      <label>Nome do usuário</label>
-      <select id="wa-user-sel" class="fi"></select>
-    </div>
-    <div class="field" style="text-align:left">
-      <label>Número (apenas para registro demo)</label>
-      <input type="text" id="wa-phone" class="fi" placeholder="(11) 99999-0000">
-    </div>
-    <div class="ma">
-      <button class="bcn" onclick="closeWaModal()">Cancelar</button>
-      <button class="bsv" onclick="saveWaConnect()">Registrar (demo)</button>
-    </div>
-  </div>
-</div>
+<!-- IA DE ATENDIMENTO (js/app/27-ia.js) -->
+<div id="tab-ia" class="content"></div>
+
+<!-- GERENCIADOR DE ANÚNCIOS (js/app/26-anuncios.js) -->
+<div id="tab-anuncios" class="content"></div>
 
 <!-- CALENDÁRIO -->
 <div id="tab-calendario" class="content">
@@ -821,7 +751,7 @@
     <div class="mg">
       <div class="field full"><label>Nome completo *</label><input type="text" id="fNome" class="fi" placeholder="Ex: João da Silva"></div>
       <div class="field"><label>Telefone / WhatsApp</label><input type="text" id="fTel" class="fi" placeholder="(11) 99999-0000"></div>
-      <div class="field"><label>Origem</label><select id="fOrigem2" class="fi"><option>Meta Ads</option><option>Indicação</option><option>Orgânico</option></select></div>
+      <div class="field"><label>Origem</label><select id="fOrigem2" class="fi"><option>Meta Ads</option><option>WhatsApp</option><option>Indicação</option><option>Orgânico</option></select></div>
       <div class="field"><label>Tipo de consórcio</label><select id="fTipo2" class="fi"><option>Imóvel</option><option>Automóvel</option><option>Moto</option><option>Serviço</option></select></div>
       <div class="field"><label>Crédito desejado (R$)</label><input type="text" id="fCredito" class="fi" placeholder="Ex: 200.000" oninput="maskM(this)"></div>
       <div class="field"><label>Responsável</label><select id="fResp" class="fi"></select></div>
@@ -1227,30 +1157,33 @@
 </div>
 
 <!-- Scripts do CRM (em ordem de execução) -->
-<script src="js/app/01-base.js?v=20261022b"></script>
-<script src="js/app/02-dashboard.js?v=20261022b"></script>
-<script src="js/app/03-funil.js?v=20261022b"></script>
-<script src="js/app/04-importacao.js?v=20261022b"></script>
-<script src="js/app/05-leads.js?v=20261022b"></script>
-<script src="js/app/06-simulador.js?v=20261022b"></script>
-<script src="js/app/07-lances.js?v=20261022b"></script>
-<script src="js/app/08-ranking.js?v=20261022b"></script>
-<script src="js/app/09-administradoras.js?v=20261022b"></script>
-<script src="js/app/10-usuarios.js?v=20261022b"></script>
-<script src="js/app/11-configuracoes.js?v=20261022b"></script>
-<script src="js/app/12-relatorios.js?v=20261022b"></script>
-<script src="js/app/13-calendario.js?v=20261022b"></script>
-<script src="js/app/14-whatsapp.js?v=20261022b"></script>
-<script src="js/app/15-diversos.js?v=20261022b"></script>
-<script src="js/app/16-empresas.js?v=20261022b"></script>
-<script src="js/app/17-equipes.js?v=20261022b"></script>
-<script src="js/app/18-ui.js?v=20261022b"></script>
-<script src="js/app/19-minhas-vendas.js?v=20261022b"></script>
-<script src="js/app/20-init.js?v=20261022b"></script>
-<script src="js/app/21-hierarquia.js?v=20261022b"></script>
-<script src="js/app/22-protocolo.js?v=20261022b"></script>
-<script src="js/app/23-eventos.js?v=20261022b"></script>
-<script src="js/app/24-nova-senha.js?v=20261022b"></script>
-<script src="js/app/99-inicio.js?v=20261022b"></script>
+<script src="js/app/01-base.js?v=20261023a"></script>
+<script src="js/app/02-dashboard.js?v=20261023a"></script>
+<script src="js/app/03-funil.js?v=20261023a"></script>
+<script src="js/app/04-importacao.js?v=20261023a"></script>
+<script src="js/app/05-leads.js?v=20261023a"></script>
+<script src="js/app/06-simulador.js?v=20261023a"></script>
+<script src="js/app/07-lances.js?v=20261023a"></script>
+<script src="js/app/08-ranking.js?v=20261023a"></script>
+<script src="js/app/09-administradoras.js?v=20261023a"></script>
+<script src="js/app/10-usuarios.js?v=20261023a"></script>
+<script src="js/app/11-configuracoes.js?v=20261023a"></script>
+<script src="js/app/12-relatorios.js?v=20261023a"></script>
+<script src="js/app/13-calendario.js?v=20261023a"></script>
+<script src="js/app/14-whatsapp.js?v=20261023a"></script>
+<script src="js/app/15-diversos.js?v=20261023a"></script>
+<script src="js/app/16-empresas.js?v=20261023a"></script>
+<script src="js/app/17-equipes.js?v=20261023a"></script>
+<script src="js/app/18-ui.js?v=20261023a"></script>
+<script src="js/app/19-minhas-vendas.js?v=20261023a"></script>
+<script src="js/app/20-init.js?v=20261023a"></script>
+<script src="js/app/21-hierarquia.js?v=20261023a"></script>
+<script src="js/app/22-protocolo.js?v=20261023a"></script>
+<script src="js/app/23-eventos.js?v=20261023a"></script>
+<script src="js/app/24-nova-senha.js?v=20261023a"></script>
+<script src="js/app/25-integracoes.js?v=20261023a"></script>
+<script src="js/app/26-anuncios.js?v=20261023a"></script>
+<script src="js/app/27-ia.js?v=20261023a"></script>
+<script src="js/app/99-inicio.js?v=20261023a"></script>
 </body>
 </html>
