@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exclusão de Dados — Evolux CRM</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<style>
+:root{--bg:#f4f6f9;--card:#ffffff;--tx:#0d1b35;--tm:#3a4a6a;--linha:#e2e6ef;--g:#17a348;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0a0f1a;--card:#111824;--tx:#e8f0ff;--tm:#9aa8c4;--linha:#1c2540;--g:#1db954;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.7 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding-block:40px 64px;padding-inline:16px}
+.cab{display:flex;align-items:center;gap:10px;margin-bottom:24px;font-weight:800;font-size:18px}
+article{background:var(--card);border:1px solid var(--linha);border-radius:14px;padding:28px clamp(18px,4vw,40px)}
+h1{font-size:26px;line-height:1.25;margin:0 0 6px;text-wrap:balance}
+h2{font-size:17px;margin:28px 0 6px}
+p,li{color:var(--tm);max-width:68ch}
+ol{padding-left:22px}
+.data{font-size:13px;color:var(--tm);margin:0 0 18px}
+a{color:var(--g)}
+strong{color:var(--tx)}
+</style>
+</head>
+<body>
+<main>
+  <div class="cab"><svg viewBox="0 0 56 56" width="24" height="24" aria-hidden="true"><polygon points="8,36 28,16 48,36 42,36 28,22 14,36" fill="#1db954"/><polygon points="8,48 28,28 48,48 42,48 28,34 14,48" fill="#1db954" opacity="0.6"/></svg>Evolux CRM</div>
+  <article>
+    <h1>Como pedir a exclusão dos seus dados</h1>
+    <p class="data">Atualizada em 23 de outubro de 2026</p>
+
+    <h2>Se você é cliente de uma empresa que usa o Evolux CRM</h2>
+    <ol>
+      <li>Para parar de receber mensagens automáticas no WhatsApp, responda à conversa pedindo para não receber mais (por exemplo, “SAIR”).</li>
+      <li>Para apagar seus dados, peça à empresa que atendeu você ou escreva para a Evolux pelo e-mail <strong class="contato">informado pela empresa que atendeu você</strong>, com o seu nome e telefone.</li>
+      <li>Confirmamos o pedido e apagamos os dados em até 15 dias.</li>
+    </ol>
+
+    <h2>Se você conectou sua conta do Facebook ao Evolux CRM</h2>
+    <ol>
+      <li>No Evolux CRM, vá em Configurações → Meta / Facebook Ads e clique em <strong>Desconectar</strong>: o acesso é removido na hora.</li>
+      <li>No Facebook, vá em Configurações e privacidade → Configurações → Integrações comerciais (ou Apps e sites), encontre <strong>Evolux CRM</strong> e clique em Remover.</li>
+      <li>Para apagar também o histórico guardado no CRM, escreva para o e-mail acima. Apagamos em até 15 dias.</li>
+    </ol>
+
+    <p>Mais detalhes na <a href="privacidade.html">Política de Privacidade</a>.</p>
+  </article>
+</main>
+<script>
+  // Mesmo e-mail da página de privacidade
+  const EMAIL_CONTATO = '';
+  if (EMAIL_CONTATO) document.querySelectorAll('.contato').forEach((c) => { c.textContent = EMAIL_CONTATO; });
+</script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Política de Privacidade — Evolux CRM</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<style>
+:root{--bg:#f4f6f9;--card:#ffffff;--tx:#0d1b35;--tm:#3a4a6a;--linha:#e2e6ef;--g:#17a348;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0a0f1a;--card:#111824;--tx:#e8f0ff;--tm:#9aa8c4;--linha:#1c2540;--g:#1db954;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.7 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding-block:40px 64px;padding-inline:16px}
+.cab{display:flex;align-items:center;gap:10px;margin-bottom:24px;font-weight:800;font-size:18px}
+.cab svg{flex-shrink:0}
+article{background:var(--card);border:1px solid var(--linha);border-radius:14px;padding:28px clamp(18px,4vw,40px)}
+h1{font-size:26px;line-height:1.25;margin:0 0 6px;text-wrap:balance}
+h2{font-size:17px;margin:28px 0 6px}
+p,li{color:var(--tm);max-width:68ch}
+ul{padding-left:20px}
+.data{font-size:13px;color:var(--tm);margin:0 0 18px}
+a{color:var(--g)}
+strong{color:var(--tx)}
+</style>
+</head>
+<body>
+<main>
+  <div class="cab"><svg viewBox="0 0 56 56" width="24" height="24" aria-hidden="true"><polygon points="8,36 28,16 48,36 42,36 28,22 14,36" fill="#1db954"/><polygon points="8,48 28,28 48,48 42,48 28,34 14,48" fill="#1db954" opacity="0.6"/></svg>Evolux CRM</div>
+  <article>
+    <h1>Política de Privacidade</h1>
+    <p class="data">Atualizada em 23 de outubro de 2026</p>
+
+    <p>O Evolux CRM é um sistema de gestão de vendas usado por empresas de consórcio (as “empresas clientes”). Esta política explica quais dados o Evolux CRM trata, para quê, com quem são compartilhados e como pedir a exclusão, de acordo com a Lei Geral de Proteção de Dados (LGPD, Lei 13.709/2018).</p>
+
+    <h2>Quem é responsável</h2>
+    <p>A Evolux opera o Evolux CRM. Para os dados dos clientes de cada empresa cliente (leads), quem decide o uso é a própria empresa cliente; a Evolux trata esses dados em nome dela, só para fazer o sistema funcionar.</p>
+
+    <h2>Quais dados tratamos</h2>
+    <ul>
+      <li><strong>Usuários do sistema:</strong> nome, e-mail, cargo e equipe, para login e permissões.</li>
+      <li><strong>Leads:</strong> nome, telefone, e-mail, interesse (tipo de bem e valor), etapa no funil e observações, cadastrados pela empresa cliente ou recebidos das integrações que ela autorizou.</li>
+      <li><strong>Formulários de anúncios da Meta (Facebook e Instagram):</strong> as respostas que a pessoa enviou no formulário do anúncio da empresa cliente.</li>
+      <li><strong>WhatsApp Business:</strong> as mensagens trocadas entre a pessoa e o número de WhatsApp da empresa cliente, com data e situação de entrega.</li>
+      <li><strong>Anúncios:</strong> números das campanhas da conta de anúncios conectada (investimento, impressões, cliques, leads).</li>
+    </ul>
+
+    <h2>Para que usamos</h2>
+    <ul>
+      <li>Organizar o atendimento e as vendas da empresa cliente (funil, agenda, relatórios).</li>
+      <li>Enviar e receber mensagens de WhatsApp em nome da empresa cliente, inclusive por um assistente virtual que responde seguindo o roteiro definido por ela.</li>
+      <li>Mostrar à empresa cliente o desempenho dos próprios anúncios.</li>
+    </ul>
+    <p>Não vendemos dados e não os usamos para publicidade própria.</p>
+
+    <h2>Com quem compartilhamos</h2>
+    <ul>
+      <li><strong>Meta Platforms</strong> (Facebook, Instagram e WhatsApp): para receber os leads dos formulários, ler os números dos anúncios e enviar e receber mensagens, sempre com a autorização da empresa cliente.</li>
+      <li><strong>OpenAI</strong>: quando o assistente virtual está ligado, o texto da conversa e os dados básicos do lead (nome, interesse) são enviados para gerar a resposta. Pela política da OpenAI para a API, esses dados não são usados para treinar os modelos.</li>
+      <li><strong>Supabase</strong> (banco de dados e servidores) e <strong>Vercel</strong> (hospedagem do site), que guardam e processam os dados com criptografia.</li>
+    </ul>
+    <p>Os dados recebidos da Meta são usados só para as funções descritas acima.</p>
+
+    <h2>Por quanto tempo guardamos</h2>
+    <p>Enquanto a empresa cliente usar o Evolux CRM. Quando ela encerra a conta ou pede a exclusão, os dados são apagados em até 30 dias, salvo o que a lei obrigar a manter. Registros técnicos das integrações são apagados automaticamente após 30 dias.</p>
+
+    <h2>Seus direitos</h2>
+    <p>Você pode pedir acesso, correção, anonimização ou exclusão dos seus dados, e saber com quem eles foram compartilhados. Se você recebeu mensagens de uma empresa que usa o Evolux CRM, pode responder pedindo para não receber mais: o sistema registra e para de mandar mensagens automáticas. Veja também <a href="exclusao-de-dados.html">como pedir a exclusão dos seus dados</a>.</p>
+
+    <h2>Contato</h2>
+    <p>Fale com a Evolux pelo e-mail <strong id="contato">informado pela empresa que atendeu você</strong>.</p>
+  </article>
+</main>
+<script>
+  // E-mail de contato da Evolux exibido nas páginas de privacidade
+  const EMAIL_CONTATO = '';
+  if (EMAIL_CONTATO) { const c = document.getElementById('contato'); c.textContent = EMAIL_CONTATO; }
+</script>
+</body>
+</html>

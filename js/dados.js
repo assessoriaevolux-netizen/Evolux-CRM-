@@ -937,6 +937,10 @@
       canal('vendas-sync','vendas','*',()=>{ _recarregarRanking(); _recarregarPerfis(); });
       canal('atividades-sync','atividades','INSERT',()=>_recarregarAtividades());
       canal('equipes-sync','equipes','*',()=>_recarregarEquipes());
+      // Integrações: mensagens do WhatsApp, conversas da IA e disparos
+      canal('wa-sync','wa_mensagens','*',p=>window._integRealtime&&window._integRealtime('wa_mensagens',p));
+      canal('ia-conv-sync','ia_conversas','*',p=>window._integRealtime&&window._integRealtime('ia_conversas',p));
+      canal('wa-disp-sync','wa_disparos','*',p=>window._integRealtime&&window._integRealtime('wa_disparos',p));
     };
     if(window._empresaIdDireto){
       _subscribeRealtime();

@@ -16,7 +16,7 @@ const EC=['#1a6e3c','#c8870a','#5b3db0','#1e3a6e','#a06010','#22954f','#c0392b']
 const ES=['s0','s1','s2','s3','s4','s5','s6'];
 const TMAP={Imóvel:'ti',Automóvel:'ta',Moto:'tm3','Serviço':'ts3'};
 const TC={Imóvel:'#1a6e3c',Automóvel:'#1e3a6e',Moto:'#b8720a','Serviço':'#5b3db0'};
-const OC={'Meta Ads':'#1a6e3c',Indicação:'#1e3a6e',Orgânico:'#5b3db0'};
+const OC={'Meta Ads':'#1a6e3c',Indicação:'#1e3a6e',Orgânico:'#5b3db0',WhatsApp:'#128c7e'};
 // RL e RC são agora funções dinâmicas — consultam hierarquias em tempo real
 // Mantemos o objeto legado como fallback para compatibilidade com código existente
 const RL_STATIC={gestor:'Gestor',representante:'Representante',supervisor:'Supervisor',vendedor:'Vendedor'};
@@ -99,7 +99,16 @@ const HPERM_MODULES=[
     {id:'lances_edit',label:'Editar, marcar ofertado e remover lances'},
   ]},
   {id:'whatsapp',label:'WhatsApp',perms:[
-    {id:'whatsapp_view',label:'Ver a aba WhatsApp'},
+    {id:'whatsapp_view',label:'Ver a aba WhatsApp (conversas dos leads que pode ver)'},
+    {id:'whatsapp_send',label:'Enviar mensagens pelo CRM'},
+    {id:'whatsapp_bulk',label:'Fazer disparo em massa'},
+  ]},
+  {id:'ia',label:'IA de atendimento',perms:[
+    {id:'ia_view',label:'Ver a aba IA e as conversas da IA'},
+    {id:'ia_manage',label:'Editar, ligar e testar os roteiros da IA'},
+  ]},
+  {id:'anuncios',label:'Anúncios',perms:[
+    {id:'anuncios_view',label:'Ver o Gerenciador de Anúncios'},
   ]},
   {id:'agenda',label:'Calendário',perms:[
     {id:'agenda_view',label:'Ver o Calendário'},
@@ -124,7 +133,7 @@ function allHPermIds(){return HPERM_MODULES.flatMap(m=>m.perms.map(p=>p.id));}
 // Permissões padrão (iguais às do banco: crm_garantir_hierarquias_empresa)
 const _PERMS_VEND=['dashboard_view','leads_view','leads_create','leads_edit','funil_view','funil_move','simulador_view',
   'lances_view','lances_create','lances_edit','ranking_view','ranking_team','ranking_all','vendas_view','vendas_create','notif_view'];
-const _PERMS_REP=[..._PERMS_VEND,'leads_import','leads_transfer','notif_team','whatsapp_view','agenda_view'];
+const _PERMS_REP=[..._PERMS_VEND,'leads_import','leads_transfer','notif_team','whatsapp_view','whatsapp_send','ia_view','agenda_view'];
 const _PERMS_SUP=[..._PERMS_REP,'simulador_models','config_view','equipe_view','equipe_view_sellers','equipe_add','equipe_edit','equipe_remove'];
 function _permsDe(lista){return Object.fromEntries(allHPermIds().map(id=>[id,lista.includes(id)]));}
 const HPERM_DEFAULTS={
@@ -152,6 +161,8 @@ function _permsPadraoRole(role){
   if(r==='supervisor'||r==='representante')return _permsDe([..._PERMS_REP,'config_view']);
   return _permsDe(_PERMS_VEND);
 }
+// Permissões novas que, quando o cargo ainda não tem a chave, seguem outra (igual ao banco: integ_tem_perm_de)
+const PERM_SEGUE={whatsapp_send:'whatsapp_view',ia_view:'whatsapp_view'};
 // Pode fazer X? (gestor e plataforma podem tudo; o resto segue o cargo)
 function can(perm,u){
   u=u||getMe();
@@ -160,6 +171,7 @@ function can(perm,u){
   const h=u.hierarquiaId?getHier(u.hierarquiaId):null;
   const p=h&&h.perms;
   if(p&&typeof p[perm]==='boolean')return p[perm];
+  if(PERM_SEGUE[perm])return can(PERM_SEGUE[perm],u);
   return !!_permsPadraoRole(u.role)[perm];
 }
 window.can=can;
@@ -244,8 +256,6 @@ window.lances = lances; // mesma referência — window.lances === lances
 let nextLanceId=1;
 window.nextLanceId = nextLanceId;
 let dragId=null;
-let waNumbers=[];
-let waSelected=new Set();
 let nextWaId=1;
 let rankPeriodo='mes';
 let relPeriodo='mes';
@@ -451,7 +461,7 @@ function toggleSidebar(){
 // Aba → permissão necessária (null = qualquer pessoa logada)
 const TAB_PERM={dashboard:'dashboard_view',funil:'funil_view',leads:'leads_view',simulador:'simulador_view',
   lances:'lances_view',minhasvendas:'vendas_view',ranking:'ranking_view',relatorios:'relatorios_view',
-  whatsapp:'whatsapp_view',calendario:'agenda_view',configuracoes:null,empresas:'__plataforma'};
+  whatsapp:'whatsapp_view',ia:'ia_view',anuncios:'anuncios_view',calendario:'agenda_view',configuracoes:null,empresas:'__plataforma'};
 function podeAba(id,me){
   me=me||getMe();
   if(!me)return false;
@@ -461,7 +471,7 @@ function podeAba(id,me){
   return can(p,me);
 }
 function primeiraAbaPermitida(){
-  return ['dashboard','funil','leads','minhasvendas','ranking','simulador','lances','calendario','whatsapp','relatorios','configuracoes']
+  return ['dashboard','funil','leads','minhasvendas','ranking','simulador','lances','calendario','whatsapp','ia','anuncios','relatorios','configuracoes']
     .find(id=>podeAba(id))||'configuracoes';
 }
 function showTab(id,btn){
@@ -478,7 +488,7 @@ function showTab(id,btn){
   if(btn) btn.classList.add('active');
   // Persiste aba ativa para restaurar após reload
   try{localStorage.setItem('evolux_last_tab',id);}catch(e){}
-  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,simulador:()=>{syncSim();calcSim();},lances:renderLances,minhasvendas:()=>renderMinhasVendas(),ranking:()=>{_invalidarRanking();_aplicarFiltroVendas();},relatorios:renderRelatorios,whatsapp:renderWhatsapp,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
+  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,simulador:()=>{syncSim();calcSim();},lances:renderLances,minhasvendas:()=>renderMinhasVendas(),ranking:()=>{_invalidarRanking();_aplicarFiltroVendas();},relatorios:renderRelatorios,whatsapp:renderWhatsapp,ia:renderIA,anuncios:renderAnuncios,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
 }
 // Mostra/esconde abas e botões conforme as permissões da pessoa logada.
 // Botões fixos do HTML usam data-perm="chave" (ou várias separadas por "|": basta uma).

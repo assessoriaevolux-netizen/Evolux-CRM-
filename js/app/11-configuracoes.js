@@ -6,7 +6,7 @@ const CFG_SECTIONS=[
   {id:'equipes',label:'Equipes',icon:'ti-users-group',group:null},
   {id:'hierarquia',label:'Hierarquia',icon:'ti-sitemap',group:null},
   {id:'integracoes',label:'Integrações',icon:'ti-plug',group:'INTEGRAÇÕES'},
-  {id:'facebook',label:'Meta / Facebook Ads',icon:'ti-brand-facebook',group:null},
+  {id:'facebook',label:'Meta / Facebook Ads',icon:'ti-brand-meta',group:null},
   {id:'whatsapp-cfg',label:'WhatsApp Business',icon:'ti-brand-whatsapp',group:null},
   {id:'google',label:'Google Agenda',icon:'ti-brand-google',group:null},
   {id:'notificacoes',label:'Notificações',icon:'ti-bell',group:'SISTEMA'},
@@ -214,59 +214,34 @@ function cfgRenderSection(){
     </div>`,
 
     integracoes:`<div class="cfg-card">
-      <div class="cfg-card-title"><i class="ti ti-plug" style="color:var(--g)"></i>Integrações disponíveis</div>
-      <div class="cfg-card-sub">Conecte o Evolux CRM com suas ferramentas para automatizar o fluxo de leads.</div>
+      <div class="cfg-card-title"><i class="ti ti-plug" style="color:var(--g)"></i>Integrações</div>
+      <div class="cfg-card-sub">Conecte o Evolux CRM com a Meta, o WhatsApp e a IA para os leads chegarem sozinhos e serem atendidos na hora.</div>
       <div class="integ-grid">
         ${[
-          {id:'facebook',icon:'ti-brand-facebook',bg:'#e7f0fd',ic:'#1877f2',name:'Meta / Facebook Ads',desc:'Leads dos anúncios caem direto no CRM automaticamente.'},
-          {id:'whatsapp-cfg',icon:'ti-brand-whatsapp',bg:'#e8f8f0',ic:'#25d366',name:'WhatsApp Business',desc:'Disparo em massa e conversas integradas ao funil.'},
-          {id:'google',icon:'ti-brand-google',bg:'#fef3e2',ic:'#4285f4',name:'Google Agenda',desc:'Reuniões sincronizadas com seu Google Calendar.'},
+          {id:'facebook',st:'integ-st-meta',icon:'ti-brand-meta',bg:'#e7f0fd',ic:'#1877f2',name:'Meta / Facebook Ads',desc:'Leads dos formulários caem direto no funil e as campanhas aparecem no Gerenciador de Anúncios.',acao:"cfgShow('facebook')"},
+          {id:'whatsapp-cfg',st:'integ-st-wa',icon:'ti-brand-whatsapp',bg:'#e8f8f0',ic:'#25d366',name:'WhatsApp Business',desc:'Conversas com os leads dentro do CRM, modelos aprovados e disparo em massa.',acao:"cfgShow('whatsapp-cfg')"},
+          {id:'ia',st:'integ-st-ia',icon:'ti-robot',bg:'#f3e8fd',ic:'#7c3aed',name:'IA de atendimento',desc:'Primeiro atendimento e pós-venda automáticos pelo WhatsApp, seguindo o roteiro da empresa.',acao:"showTab('ia')",perm:'ia_view'},
+          {id:'google',st:null,icon:'ti-brand-google',bg:'#fef3e2',ic:'#4285f4',name:'Google Agenda',desc:'Reuniões sincronizadas com seu Google Calendar.',acao:"cfgShow('google')"},
           {id:null,icon:'ti-webhook',bg:'#f3e8fd',ic:'#7c3aed',name:'Webhook personalizado',desc:'Envie dados de leads para qualquer sistema via URL.'},
-          {id:null,icon:'ti-mail',bg:'#fde8e8',ic:'#c0392b',name:'E-mail marketing',desc:'Integre com Mailchimp, RD Station ou ActiveCampaign.'},
           {id:null,icon:'ti-api',bg:'#e8f4fd',ic:'#0077b5',name:'API pública',desc:'Acesse seus dados via API REST para integrações customizadas.'},
-        ].map(c=>`<div class="integ-card"${c.id?` onclick="cfgShow('${c.id}')"`:''} style="${c.id?'cursor:pointer':''}">
-          <div class="integ-card-head"><div class="integ-icon" style="background:${c.bg}"><i class="ti ${c.icon}" style="color:${c.ic};font-size:22px"></i></div><div><div class="integ-name">${c.name}</div><span class="integ-status demo"><i class="ti ti-flask"></i>Em breve</span></div></div>
+        ].filter(c=>!c.perm||can(c.perm)).map(c=>`<div class="integ-card"${c.acao?` onclick="${c.acao}"`:''} style="${c.acao?'cursor:pointer':''}">
+          <div class="integ-card-head"><div class="integ-icon" style="background:${c.bg}"><i class="ti ${c.icon}" style="color:${c.ic};font-size:22px"></i></div><div><div class="integ-name">${c.name}</div>${c.st?`<span class="integ-status off" id="${c.st}"><i class="ti ti-loader-2"></i>…</span>`:(c.id?'':`<span class="integ-status demo"><i class="ti ti-clock"></i>Em breve</span>`)}</div></div>
           <div class="integ-desc">${c.desc}</div>
-          <button class="btn bp bsm" style="width:100%;justify-content:center">${c.id?'Configurar →':'Em breve'}</button>
+          <button class="btn bp bsm" style="width:100%;justify-content:center"${c.acao?'':' disabled'}>${c.acao?'Abrir →':'Em breve'}</button>
         </div>`).join('')}
       </div>
     </div>`,
 
     facebook:`<div class="cfg-card">
-      <div class="cfg-card-title"><i class="ti ti-brand-facebook" style="color:#1877f2"></i>Meta / Facebook Ads</div>
-      <div class="cfg-card-sub">Leads dos seus formulários de Lead Ads caem <strong>automaticamente</strong> no CRM, na etapa "Novo lead", atribuídos ao vendedor responsável pela campanha.</div>
-      ${demoBanner}
-      <div style="font-size:12.5px;font-weight:700;color:var(--tx);margin-bottom:12px">Como funciona</div>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px">
-        ${[['1','#1877f2','ti-ad','Crie um formulário Lead Ad no Meta','O formulário captura nome, telefone e e-mail direto no Facebook/Instagram.'],
-           ['2','#1877f2','ti-plug','Conecte sua conta Meta aqui','Cole o Token de Acesso da sua página abaixo.'],
-           ['3','#1877f2','ti-user-check','Lead entra direto no CRM','Aparece automaticamente no funil em "Novo lead" com dados preenchidos.'],
-           ['4','#1877f2','ti-bell','Notificação em tempo real','O responsável recebe alerta imediatamente — sem planilha.']
-          ].map(([n,c,ic,t,s])=>`<div style="display:flex;gap:10px;padding:10px 12px;border:1px solid var(--c2);border-radius:var(--rad);background:var(--c0)">
-            <div style="width:26px;height:26px;border-radius:50%;background:${c};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0">${n}</div>
-            <div><div style="font-size:12.5px;font-weight:700;color:var(--tx);margin-bottom:1px"><i class="ti ${ic}" style="margin-right:4px"></i>${t}</div><div style="font-size:11.5px;color:var(--tm)">${s}</div></div>
-          </div>`).join('')}
-      </div>
-      <div class="cfg-divider"></div>
-      <div class="field"><label>Token de acesso da página (Page Access Token)</label><input type="text" class="fi" placeholder="EAAxxxxx..."></div>
-      <div class="field"><label>ID do formulário de Lead Ad</label><input type="text" class="fi" placeholder="Ex: 1234567890123456"></div>
-      <div class="field"><label>Atribuir leads para</label><select class="fi">${users.map(u=>`<option>${esc(u.nome)} (${esc(getHierLabel(u))})</option>`).join('')}</select></div>
-      <div class="field"><label>Etapa inicial no funil</label><select class="fi">${ETAPAS.slice(0,5).map(e=>`<option>${esc(etapaLabel(e))}</option>`).join('')}</select></div>
-      <div class="cfg-divider"></div>
-      <div style="font-size:12.5px;font-weight:700;color:var(--tx);margin-bottom:8px">URL do Webhook</div>
-      <div class="wh-row"><div class="wh-url" id="meta-webhook-url">${window.location.origin}/api/meta-webhook</div><span class="wh-badge">POST</span><button class="btn bg bsm" onclick="var u=document.getElementById('meta-webhook-url')?.textContent||window.location.origin+'/api/meta-webhook';navigator.clipboard?.writeText(u).then(()=>showToast('URL copiada!','ti-copy')).catch(()=>showToast('Copie manualmente','ti-copy'))"><i class="ti ti-copy"></i></button></div>
-      <div style="font-size:11px;color:var(--tm);margin-bottom:14px"><i class="ti ti-info-circle"></i> Cole esta URL nos Webhooks do seu app no Meta for Developers.</div>
-      <button class="btn bp" onclick="integConectar('meta')"><i class="ti ti-brand-facebook"></i>Conectar conta Meta</button>
+      <div class="cfg-card-title"><i class="ti ti-brand-meta" style="color:#1877f2"></i>Meta / Facebook Ads</div>
+      <div class="cfg-card-sub">Conexão da empresa com a Meta: leads dos formulários do Facebook e do Instagram, contas de anúncio e WhatsApp Business.</div>
+      <div id="integ-meta-painel"></div>
     </div>`,
 
     'whatsapp-cfg':`<div class="cfg-card">
-      <div class="cfg-card-title"><i class="ti ti-brand-whatsapp" style="color:#25d366"></i>WhatsApp Business API</div>
-      <div class="cfg-card-sub">Configure a integração oficial para disparos em massa e conversas centralizadas.</div>
-      ${demoBanner}
-      <div class="field"><label>Token da API WhatsApp Business</label><input type="text" class="fi" placeholder="Bearer EAAxxxxx..."></div>
-      <div class="field"><label>Phone Number ID</label><input type="text" class="fi" placeholder="Ex: 123456789012345"></div>
-      <div class="field"><label>WABA ID</label><input type="text" class="fi" placeholder="Ex: 987654321098765"></div>
-      <button class="btn bp" onclick="integConectar('whatsapp')"><i class="ti ti-brand-whatsapp"></i>Salvar configuração</button>
+      <div class="cfg-card-title"><i class="ti ti-brand-whatsapp" style="color:#25d366"></i>WhatsApp Business</div>
+      <div class="cfg-card-sub">Números oficiais da empresa (Cloud API da Meta). As mensagens ficam no histórico de cada lead e cada pessoa vê só as conversas dos leads que já pode ver.</div>
+      <div id="integ-wa-painel"></div>
     </div>`,
 
     google:(()=>{
@@ -508,6 +483,9 @@ function cfgRenderSection(){
       card.addEventListener('mouseleave',function(){this.style.borderColor='';this.style.transform='';});
     });
   }
+  if(cfgActive==='integracoes') integAtualizarCartoes();
+  if(cfgActive==='facebook') integRenderMeta();
+  if(cfgActive==='whatsapp-cfg') integRenderWhats();
   if(cfgActive==='admins'){renderAdminList();const eF=document.getElementById('eTaxaFin');if(eF)eF.value=taxaFin;}
   if(cfgActive==='usuarios'){
     renderUserList();

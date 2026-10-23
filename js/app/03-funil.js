@@ -334,6 +334,8 @@ function openLeadDetalhe(id){
   const btnRem=document.getElementById('btn-rem-lead-det');
   if(btnSave)btnSave.style.display=(podeEd||podeMov||podeTransf)?'':'none';
   if(btnRem)btnRem.style.display=(can('leads_delete')&&(isGestor()||vis.has(l.responsavelId)))?'':'none';
+  const btnWa=document.getElementById('btn-wa-lead-det');
+  if(btnWa)btnWa.style.display=(can('whatsapp_view')&&l.sb_id&&integNumeros().length)?'':'none';
   document.getElementById('modal-lead-detalhe').classList.add('open');
 }
 function closeLeadDetalhe(){
