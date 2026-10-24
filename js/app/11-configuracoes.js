@@ -291,6 +291,18 @@ function cfgRenderSection(){
       <div class="cfg-card-sub">Personalize a interface do CRM. A preferência fica salva no navegador.</div>
       <div class="cfg-toggle-row">
         <div>
+          <div class="cfg-toggle-label">Design novo <span style="font-size:10.5px;font-weight:700;color:var(--g);background:var(--gb);padding:2px 7px;border-radius:99px;margin-left:4px">NOVO</span></div>
+          <div class="cfg-toggle-sub">Visual atualizado e painel novo: tema claro em verde e tema escuro em laranja. Dá para voltar quando quiser.</div>
+        </div>
+        <label class="cfg-toggle">
+          <input type="checkbox" id="design-novo-toggle"
+            ${document.documentElement.classList.contains('design-novo')?'checked':''}
+            onchange="toggleDesignNovo(this.checked)">
+          <span class="cfg-toggle-slider"></span>
+        </label>
+      </div>
+      <div class="cfg-toggle-row">
+        <div>
           <div class="cfg-toggle-label">Tema escuro</div>
           <div class="cfg-toggle-sub">Ativa fundo escuro em toda a interface</div>
         </div>
