@@ -1421,3 +1421,11 @@ html[data-theme="dark"]{--wa-saida:rgba(29,185,84,.16);--wa-saida-borda:rgba(29,
   .wa2-msg{max-width:88%}
 }
 @media (max-width:560px){.ads2-tiles{grid-template-columns:minmax(0,1fr)}.ads2-tile-v{font-size:21px}.content{padding:14px}.g2{grid-template-columns:minmax(0,1fr)}}
+
+/* WhatsApp: escolha de como conectar */
+.integ2-wa-opcoes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:12px}
+.integ2-wa-opcao{position:relative;display:flex;flex-direction:column;gap:8px;padding:16px;border:1.5px solid var(--c2);border-radius:var(--radl);background:var(--w);min-width:0}
+.integ2-wa-opcao.rec{border-color:var(--g)}
+.integ2-wa-opcao-tag{align-self:flex-start;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--g);background:rgba(37,211,102,.12);padding:2px 8px;border-radius:99px}
+.integ2-wa-opcao-tit{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;color:var(--tx)}
+.integ2-wa-opcao .btn{align-self:flex-start;margin-top:auto}

@@ -165,6 +165,50 @@ async function garantirAssinaturaApp(objeto: 'page' | 'whatsapp_business_account
     params: { object: objeto, callback_url: URL_WEBHOOK, fields: campos, verify_token: await tokenVerificacao(), include_values: 'true' },
   })
 }
+// WhatsApp: mensagens + o que vem do app do celular (coexistência). Se a Meta não aceitar os campos extras, fica só com mensagens.
+async function assinarAppWhatsApp() {
+  const r = await garantirAssinaturaApp('whatsapp_business_account', 'messages,smb_message_echoes,history')
+  return r.ok ? r : garantirAssinaturaApp('whatsapp_business_account', 'messages')
+}
+
+// Deixa o número pronto para a Cloud API: registra sozinho (número novo) ou reconhece a coexistência
+// (número que continua no app WhatsApp Business do celular) e pede o histórico das conversas.
+async function prepararNumero(pnid: string, token: string): Promise<string | null> {
+  const { data: linha } = await admin.from('integ_wa_numeros').select('*').eq('phone_number_id', pnid).maybeSingle()
+  if (!linha) return null
+  const n: any = linha
+  const info = await graph(pnid, { token, params: { fields: 'display_phone_number,status,platform_type,is_on_biz_app,code_verification_status' } })
+  if (!info.ok) return `Número ${n.numero || pnid}: ${info.erro}`
+  const d = info.data || {}
+  const mud: Record<string, unknown> = { status_api: d.status || null, atualizado_em: new Date().toISOString() }
+  let aviso: string | null = null
+  if (d.is_on_biz_app === true && d.platform_type === 'CLOUD_API') {
+    // Coexistência: já está registrado pela Meta; não chamar /register
+    Object.assign(mud, { coexistencia: true, registro_erro: null })
+    if (!n.historico_pedido_em) {
+      const h = await graph(`${pnid}/smb_app_data`, { metodo: 'POST', token, corpo: { messaging_product: 'whatsapp', sync_type: 'history' } })
+      if (h.ok) mud.historico_pedido_em = new Date().toISOString()
+      else console.error('[historico]', pnid, h.erro)
+    }
+  } else if (d.status !== 'CONNECTED' || d.platform_type !== 'CLOUD_API') {
+    const pin = /^\d{6}$/.test(String(n.pin || '')) ? String(n.pin) : String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, '0')
+    const r = await graph(`${pnid}/register`, { metodo: 'POST', token, corpo: { messaging_product: 'whatsapp', pin } })
+    if (r.ok) Object.assign(mud, { pin, status_api: 'CONNECTED', registro_erro: null, coexistencia: false })
+    else {
+      const bruto = String(r.data?.error?.message || '')
+      let motivo = r.erro || 'erro na Meta'
+      if (/terms/i.test(bruto)) motivo = 'falta aceitar os termos da Cloud API do WhatsApp na Meta (refaça a conexão do WhatsApp até o fim).'
+      else if (r.codigo === 133005 || /pin/i.test(bruto)) motivo = 'o número tem confirmação em duas etapas com outro PIN. Desative a confirmação em duas etapas no WhatsApp Manager e clique em "Tentar ativar".'
+      else if (d.code_verification_status && d.code_verification_status !== 'VERIFIED') motivo = 'o número ainda não foi verificado com o código por SMS ou ligação.'
+      mud.registro_erro = motivo
+      aviso = `Número ${n.numero || pnid} não foi ativado: ${motivo}`
+    }
+  } else {
+    Object.assign(mud, { registro_erro: null, coexistencia: false })
+  }
+  await admin.from('integ_wa_numeros').update(mud).eq('phone_number_id', pnid)
+  return aviso
+}
 
 // ─── Banco ───────────────────────────────────────────────────────────────────
 async function rpc(nome: string, params: Record<string, unknown>) {
@@ -735,6 +779,38 @@ async function processarWhatsApp(v: any) {
   }
   await Promise.all(respostas)
 }
+// Coexistência: o que o cliente manda pelo app do celular aparece na conversa do CRM
+async function processarEcos(v: any) {
+  const numeroId = String(v?.metadata?.phone_number_id || '')
+  if (!numeroId) return
+  for (const m of v?.message_echoes || []) {
+    const { tipo, conteudo, midia } = conteudoDaMensagem(m)
+    if (tipo === 'reacao' || !m?.to) continue
+    await rpc('integ_srv_wa_app', {
+      p_numero: numeroId, p_contato: String(m.to), p_wa_id: m.id || null, p_direcao: 'saida', p_tipo: tipo, p_conteudo: conteudo,
+      p_midia: midia, p_em: m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : null, p_pausar_ia: true,
+    }).catch(console.error)
+  }
+}
+// Coexistência: histórico das conversas do app (até 6 meses), só para quem já é lead
+async function processarHistorico(v: any) {
+  const numeroId = String(v?.metadata?.phone_number_id || '')
+  if (!numeroId) return
+  for (const h of v?.history || []) {
+    for (const t of h?.threads || []) {
+      const contato = String(t?.id || '')
+      if (!contato) continue
+      for (const m of t?.messages || []) {
+        const { tipo, conteudo, midia } = conteudoDaMensagem(m)
+        if (tipo === 'reacao') continue
+        await rpc('integ_srv_wa_app', {
+          p_numero: numeroId, p_contato: contato, p_wa_id: m.id || null, p_direcao: String(m.from || '') === contato ? 'entrada' : 'saida',
+          p_tipo: tipo, p_conteudo: conteudo, p_midia: midia, p_em: m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : null, p_pausar_ia: false,
+        }).catch(console.error)
+      }
+    }
+  }
+}
 async function processarEvento(corpo: any, eventoId: string | null) {
   let erro: string | null = null
   try {
@@ -742,6 +818,8 @@ async function processarEvento(corpo: any, eventoId: string | null) {
       for (const ch of entry?.changes || []) {
         if (corpo.object === 'page' && ch?.field === 'leadgen') await processarLeadgen(ch.value)
         else if (corpo.object === 'whatsapp_business_account' && ch?.field === 'messages') await processarWhatsApp(ch.value)
+        else if (corpo.object === 'whatsapp_business_account' && ch?.field === 'smb_message_echoes') await processarEcos(ch.value)
+        else if (corpo.object === 'whatsapp_business_account' && ch?.field === 'history') await processarHistorico(ch.value)
       }
     }
   } catch (e) {
@@ -858,6 +936,13 @@ const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>
     const state = await assinarState({ e: ctx.empresa_id, u: ctx.user_id, r: retorno, x: Math.floor(Date.now() / 1000) + 900, n: crypto.randomUUID() })
     const p = new URLSearchParams({ client_id: APP_ID, redirect_uri: URL_CALLBACK, state, response_type: 'code' })
     if (LOGIN_CONFIG_ID) { p.set('config_id', LOGIN_CONFIG_ID); p.set('override_default_response_type', 'true') } else p.set('scope', ESCOPOS.join(','))
+    // WhatsApp: "coexistencia" conecta o app WhatsApp Business do celular por QR code; "novo" cadastra um número só para o CRM
+    if (c.modo === 'coexistencia' || c.modo === 'novo') {
+      if (!LOGIN_CONFIG_ID) throw new Falha(400, 'Falta o segredo META_LOGIN_CONFIG_ID (configuração de Cadastro Incorporado do WhatsApp) no Supabase.')
+      const extras: Record<string, unknown> = { setup: {}, sessionInfoVersion: '3' }
+      if (c.modo === 'coexistencia') extras.featureType = 'whatsapp_business_app_onboarding'
+      p.set('extras', JSON.stringify(extras))
+    }
     return { url: `${DIALOGO_BASE}/${GRAPH_VERSAO}/dialog/oauth?${p}` }
   },
   async meta_atualizar(ctx) {
@@ -934,8 +1019,14 @@ const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>
       if (!sub.ok) avisos.push(`Avisos do WhatsApp (${w.nome}): ${sub.erro}`)
     }
     if (wabas.length) {
-      const app = await garantirAssinaturaApp('whatsapp_business_account', 'messages')
+      const app = await assinarAppWhatsApp()
       if (!app.ok) avisos.push('Assinatura dos avisos do WhatsApp no app: ' + app.erro)
+      // Registra sozinho os números novos (ou reconhece a coexistência com o app do celular)
+      const { data: daqui } = await admin.from('integ_wa_numeros').select('phone_number_id,token').eq('empresa_id', emp).eq('ativo', true)
+      for (const n of (daqui || []) as any[]) {
+        const a = await prepararNumero(n.phone_number_id, n.token || token)
+        if (a) avisos.push(a)
+      }
     }
     return { ok: true, contas: listaContas.length, paginas: paginas.ok ? (paginas.data?.data || []).length : 0, numeros_novos: novosNumeros, wabas: wabas.length, avisos }
   },
@@ -1063,7 +1154,7 @@ const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>
     const avisos: string[] = []
     const sub = await graph(`${waba}/subscribed_apps`, { metodo: 'POST', token })
     if (!sub.ok) avisos.push('Não consegui ligar os avisos do WhatsApp nesta conta: ' + sub.erro)
-    const app = await garantirAssinaturaApp('whatsapp_business_account', 'messages')
+    const app = await assinarAppWhatsApp()
     if (!app.ok) avisos.push('Assinatura dos avisos do WhatsApp no app: ' + app.erro)
     const { count } = await admin.from('integ_wa_numeros').select('id', { count: 'exact', head: true }).eq('empresa_id', emp)
     const linha: any = {
@@ -1075,7 +1166,19 @@ const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>
     if (!existente) linha.padrao = !count
     await admin.from('integ_wa_numeros').upsert(linha, { onConflict: 'phone_number_id' })
     cacheModelos.delete(waba)
+    const ativ = await prepararNumero(pnid, token)
+    if (ativ) avisos.push(ativ)
     return { ok: true, numero: linha.numero, nome: linha.nome_verificado, avisos }
+  },
+  async wa_numero_ativar(ctx, c) {
+    exigirGestor(ctx)
+    const emp = ctx.empresa_id as string
+    const { data: n } = await admin.from('integ_wa_numeros').select('phone_number_id,token').eq('id', String(c.id || '')).eq('empresa_id', emp).maybeSingle()
+    if (!n) throw new Falha(404, 'Número não encontrado.')
+    const token = (n as any).token || (await conexaoMeta(emp))?.token
+    if (!token) throw new Falha(400, 'Conecte a Meta primeiro.')
+    const aviso = await prepararNumero((n as any).phone_number_id, token)
+    return { ok: !aviso, erro: aviso || undefined }
   },
   async wa_numero_atualizar(ctx, c) {
     exigirGestor(ctx)

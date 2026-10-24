@@ -175,7 +175,7 @@ function _waRenderChat(){
       const d=new Date(m.criado_em).toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'});
       const sep=d!==dia?`<div class="wa2-dia"><span>${esc(d)}</span></div>`:'';
       dia=d;
-      const quem=m.direcao==='saida'?(m.ia?'<span class="wa2-quem ia"><i class="ti ti-robot"></i>IA</span>':(m.enviado_por?`<span class="wa2-quem">${esc(_waPrimeiroNome(integNomeUser(m.enviado_por)))}</span>`:'')):'';
+      const quem=m.direcao==='saida'?(m.ia?'<span class="wa2-quem ia"><i class="ti ti-robot"></i>IA</span>':(m.enviado_por?`<span class="wa2-quem">${esc(_waPrimeiroNome(integNomeUser(m.enviado_por)))}</span>`:(m.disparo_id||m.tipo==='template'?'':'<span class="wa2-quem"><i class="ti ti-device-mobile"></i>celular</span>'))):'';
       return `${sep}<div class="wa2-msg ${m.direcao==='saida'?'saida':'entrada'}${m.status==='falhou'?' falhou':''}">
         ${m.tipo==='template'?`<div class="wa2-modelo-tag"><i class="ti ti-template"></i>${esc(m.template_nome||'modelo')}</div>`:''}
         <div class="wa2-msg-txt">${esc(m.conteudo||'')}</div>
