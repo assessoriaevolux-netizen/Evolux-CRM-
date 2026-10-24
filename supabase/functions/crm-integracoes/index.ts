@@ -21,6 +21,8 @@ const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const APP_ID = (Deno.env.get('META_APP_ID') ?? '').trim()
 const APP_SECRET = (Deno.env.get('META_APP_SECRET') ?? '').trim()
 const LOGIN_CONFIG_ID = (Deno.env.get('META_LOGIN_CONFIG_ID') ?? '').trim()
+// Configuração do tipo "Cadastro incorporado do WhatsApp" (QR code / número novo); sem ela, usa a geral
+const WA_CONFIG_ID = (Deno.env.get('META_WA_CONFIG_ID') ?? '').trim() || LOGIN_CONFIG_ID
 const OPENAI_KEY = (Deno.env.get('OPENAI_API_KEY') ?? '').trim()
 const MODELO_PADRAO = (Deno.env.get('OPENAI_MODEL') ?? '').trim() || 'gpt-6-luna'
 const GRAPH_VERSAO = (Deno.env.get('META_GRAPH_VERSION') ?? '').trim() || 'v25.0'
@@ -938,7 +940,8 @@ const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>
     if (LOGIN_CONFIG_ID) { p.set('config_id', LOGIN_CONFIG_ID); p.set('override_default_response_type', 'true') } else p.set('scope', ESCOPOS.join(','))
     // WhatsApp: "coexistencia" conecta o app WhatsApp Business do celular por QR code; "novo" cadastra um número só para o CRM
     if (c.modo === 'coexistencia' || c.modo === 'novo') {
-      if (!LOGIN_CONFIG_ID) throw new Falha(400, 'Falta o segredo META_LOGIN_CONFIG_ID (configuração de Cadastro Incorporado do WhatsApp) no Supabase.')
+      if (!WA_CONFIG_ID) throw new Falha(400, 'Falta o segredo META_WA_CONFIG_ID (configuração de Cadastro incorporado do WhatsApp) no Supabase.')
+      p.set('config_id', WA_CONFIG_ID); p.set('override_default_response_type', 'true'); p.delete('scope')
       const extras: Record<string, unknown> = { setup: {}, sessionInfoVersion: '3' }
       if (c.modo === 'coexistencia') extras.featureType = 'whatsapp_business_app_onboarding'
       p.set('extras', JSON.stringify(extras))
