@@ -87,7 +87,7 @@ function _atualizarContagemSel(){
   document.getElementById('funil-sel-count').textContent=`${n} lead${n!==1?'s':''} selecionado${n!==1?'s':''}`;
 }
 function toggleFunilSelMode(){
-  if(!funilSelMode&&!can('leads_transfer')&&!can('leads_delete')&&!can('whatsapp_bulk')){
+  if(!funilSelMode&&!can('leads_transfer')&&!can('leads_delete')&&!can('leads_edit')&&!can('whatsapp_bulk')){
     showToast('Você não tem permissão para transferir, excluir ou disparar para leads.','ti-lock');
     return;
   }
@@ -106,6 +106,9 @@ function toggleFunilSelMode(){
   const bt=document.getElementById('btn-funil-transferir'); if(bt) bt.style.display=podeTransf?'':'none';
   const bx=document.getElementById('btn-funil-excluir'); if(bx) bx.style.display=can('leads_delete')?'':'none';
   const bw=document.getElementById('btn-funil-wa'); if(bw) bw.style.display=can('whatsapp_bulk')?'':'none';
+  const podeEditar=can('leads_edit');
+  const st=document.getElementById('funil-tipo-dest'); if(st){ st.style.display=podeEditar?'':'none'; st.value=''; }
+  const bt2=document.getElementById('btn-funil-tipo'); if(bt2) bt2.style.display=podeEditar?'':'none';
   renderKanban();
 }
 function cancelarSelecaoFunil(){funilSelMode=false;funilSelected.clear();document.getElementById('funil-transfer-bar').style.display='none';renderKanban();}
@@ -167,6 +170,34 @@ async function transferirSelecionados(){
   cancelarSelecaoFunil();
   showToast(`${n} lead${n!==1?'s':''} transferido${n!==1?'s':''} para ${dest.nome}.`,'ti-check','#1db954');
   renderKanban();renderDashboard();renderTable();renderNotifPanel();
+}
+// Troca o tipo (Imóvel, Automóvel…) dos leads marcados — ex.: importação que veio com o tipo errado
+async function alterarTipoSelecionados(){
+  if(!can('leads_edit')){showToast('Sem permissão para editar leads.','ti-lock');return;}
+  const tipo=document.getElementById('funil-tipo-dest')?.value||'';
+  if(!tipo){showToast('Escolha o novo tipo.','ti-alert-triangle','#d97706');return;}
+  if(funilSelected.size===0){showToast('Selecione ao menos um lead.','ti-alert-triangle','#d97706');return;}
+  const alvo=[...funilSelected].map(id=>leads.find(x=>x.id===id)).filter(l=>l&&l.tipo!==tipo);
+  if(!alvo.length){showToast(`Os leads selecionados já são ${tipo}.`,'ti-info-circle');return;}
+  const qtd=alvo.length;
+  showConfirm(`Mudar ${qtd} lead${qtd!==1?'s':''} para ${tipo}?`,async function(){
+    const b=document.getElementById('btn-funil-tipo'); if(b){b.disabled=true;b.innerHTML='<i class="ti ti-loader-2"></i>Alterando…';}
+    const sbIds=alvo.filter(l=>l.sb_id).map(l=>l.sb_id);
+    const ok=new Set();
+    for(let i=0;i<sbIds.length;i+=200){
+      const {data,error}=await window._sb.from('leads').update({tipo,updated_at:new Date().toISOString()}).in('id',sbIds.slice(i,i+200)).select('id');
+      if(error){showToast('Erro ao alterar: '+error.message,'ti-alert-triangle','#dc2626');break;}
+      (data||[]).forEach(r=>ok.add(r.id));
+    }
+    let n=0;
+    alvo.forEach(l=>{ if(!l.sb_id||ok.has(l.sb_id)){ l.tipo=tipo; n++; } });
+    if(b){b.disabled=false;b.innerHTML='<i class="ti ti-replace"></i>Alterar tipo';}
+    cancelarSelecaoFunil();
+    if(n<qtd) showToast(`${n} alterado${n!==1?'s':''}; ${qtd-n} sem permissão.`,'ti-alert-triangle','#d97706');
+    else showToast(`${n} lead${n!==1?'s':''} agora ${n!==1?'são':'é'} ${tipo}.`,'ti-check','#1db954');
+    if(window._saveAtividade&&n) window._saveAtividade('ti-replace',`${n} lead${n!==1?'s':''} mudado${n!==1?'s':''} para ${tipo}`);
+    renderKanban();renderDashboard();renderTable();
+  });
 }
 function excluirSelecionados(){
   if(!can('leads_delete')){showToast('Sem permissão para excluir leads.','ti-lock');return;}
