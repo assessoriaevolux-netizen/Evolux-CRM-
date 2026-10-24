@@ -164,25 +164,32 @@ function renderDashNovo(){
     const vend=credMes||0, pct=Math.min(100,Math.round(vend/meta*100)), falta=Math.max(0,meta-vend);
     hero=`<div class="dn-hero"><div class="dn-lbl">Meta de ${mesNome} · ${gestor?'empresa':'sua visão'}</div>
       <div class="dn-grande dn-num">${credMes===null?'…':_dnCompacto(vend)} <small>de ${_dnCompacto(meta)}</small></div>
-      <div class="dn-meta-txt">${falta?`Faltam ${_dnCompacto(falta)} em ${dias} dia${dias!==1?'s':''} úte${dias!==1?'is':'il'}${dias?` — média de ${_dnCompacto(falta/dias)} por dia`:''}`:'Meta batida! 🎉'}</div>
+      <div style="opacity:.85">${falta?`Faltam ${_dnCompacto(falta)} em ${dias} dia${dias!==1?'s':''} úte${dias!==1?'is':'il'}${dias?` — média de ${_dnCompacto(falta/dias)} por dia`:''}`:'Meta batida! 🎉'}</div>
       <div class="dn-barra"><span style="width:${pct}%"></span></div>
       <div class="dn-lin"><div>Vendido no mês<b class="dn-num">${credMes===null?'…':_dnCompacto(vend)}</b></div><div>Pipeline em aberto<b class="dn-num">${_dnCompacto(pipeline)}</b></div><div>Vendas<b class="dn-num">${vendasMes===null?'…':vendasMes}</b></div><div>Atingido<b class="dn-num">${pct}%</b></div></div></div>`;
   } else {
     hero=`<div class="dn-hero"><div class="dn-lbl">Meta de ${mesNome}</div>
       <div class="dn-grande dn-num">${credMes===null?'…':_dnCompacto(credMes)} <small>vendidos no mês</small></div>
-      <div class="dn-meta-txt">Nenhuma meta definida ainda. Com a meta, este cartão mostra quanto falta e a média por dia útil.</div>
+      <div style="opacity:.85">Nenhuma meta definida ainda. Com a meta, este cartão mostra quanto falta e a média por dia útil.</div>
       <div class="dn-lin"><div>Pipeline em aberto<b class="dn-num">${_dnCompacto(pipeline)}</b></div><div>Vendas<b class="dn-num">${vendasMes===null?'…':vendasMes}</b></div><div>Dias úteis restantes<b class="dn-num">${dias}</b></div></div>
       ${can('ranking_view')?`<button class="dn-btn dn-hero-btn" onclick="showTab('ranking')"><i class="ti ti-target-arrow"></i>Definir metas</button>`:''}</div>`;
   }
-  // Funil em faixa (clica e abre o funil)
+  // Funil
   const etapas=ETAPAS.filter(e=>e!=='Perdido');
   const cont=etapas.map(e=>leadsD.filter(l=>l.etapa===e).length);
   const max=Math.max(...cont,1);
-  const podeFunil=can('funil_view');
-  const funil=`<div class="dn-card dn-funil"><h3><i class="ti ti-layout-kanban"></i>Funil de vendas${podeFunil?`<button class="dn-mais" onclick="showTab('funil')">Abrir funil</button>`:''}</h3>
-    <div class="dn-etapas">${etapas.map((e,i)=>`<button class="dn-etapa" ${podeFunil?`onclick="showTab('funil')"`:'disabled'} title="${esc(etapaLabel(e))}"><div class="dn-e-nome">${esc(etapaLabel(e))}</div><div class="dn-e-n dn-num">${cont[i]}</div><div class="dn-e-bar"><span style="width:${Math.round(cont[i]/max*100)}%"></span></div></button>`).join('')}</div></div>`;
+  const funil=`<div class="dn-card dn-funil"><h3><i class="ti ti-layout-kanban"></i>Funil de vendas${can('funil_view')?`<button class="dn-mais" onclick="showTab('funil')">Abrir funil</button>`:''}</h3>
+    ${etapas.map((e,i)=>`<div class="dn-f-l"><span class="dn-muted">${esc(etapaLabel(e))}</span><div class="dn-fb"><span style="width:${Math.round(cont[i]/max*100)}%;opacity:${(1-i*.12).toFixed(2)}"></span></div><span class="dn-n dn-num">${cont[i]}</span></div>`).join('')}</div>`;
+  // Últimos leads
+  const ult=leadsD.map((l,i)=>({l,d:datas[i],i})).sort((a,b)=>((b.d||0)-(a.d||0))||(a.i-b.i)).slice(0,6);
+  const tabela=`<div class="dn-card dn-leads"><h3><i class="ti ti-users"></i>Últimos leads${can('leads_view')?`<button class="dn-mais" onclick="showTab('leads')">Ver todos</button>`:''}</h3>
+    ${ult.length?`<div class="dn-tab"><table><thead><tr><th>Lead</th><th>Tipo</th><th>Crédito</th><th>Origem</th><th>Etapa</th><th>Chegou</th></tr></thead><tbody>${ult.map(({l,d},i)=>`<tr class="dn-lnk" onclick="openLeadDetalhe(${l.id})">
+      <td><div class="dn-pessoa">${_dnAvatar(null,l.nome,i+1)}<div>${esc(l.nome)}<small>${esc(l.tel?formatTelefone(l.tel):'sem telefone')}</small></div></div></td>
+      <td>${esc(l.tipo||'—')}</td><td class="dn-num" style="font-weight:600">${l.credito?fmtR(l.credito):'—'}</td><td class="dn-muted">${esc(l.origem||'—')}</td>
+      <td><span class="dn-chip ${_DN_CHIP[l.etapa]||'b'}">${esc(etapaLabel(l.etapa))}</span></td><td class="dn-muted">${_dnChegou(d)}</td></tr>`).join('')}</tbody></table></div>`
+    :'<div class="dn-vazio">Nenhum lead ainda.</div>'}</div>`;
   // Ranking
-  const rk=V?usersD.map(u=>({u,c:(V.mes[u.sb_id]||{}).credito||0,n:(V.mes[u.sb_id]||{}).vendas||0})).filter(x=>x.c>0).sort((a,b)=>b.c-a.c).slice(0,4):[];
+  const rk=V?usersD.map(u=>({u,c:(V.mes[u.sb_id]||{}).credito||0,n:(V.mes[u.sb_id]||{}).vendas||0})).filter(x=>x.c>0).sort((a,b)=>b.c-a.c).slice(0,5):[];
   const rank=`<div class="dn-card dn-rank"><h3><i class="ti ti-trophy" style="color:#f5b301"></i>Ranking do mês${can('ranking_view')?`<button class="dn-mais" onclick="showTab('ranking')">Ver ranking</button>`:''}</h3>
     ${!V?'<div class="dn-vazio">Carregando…</div>':rk.length?rk.map((x,i)=>{const m=Number(x.u.meta)||0;return `<div class="dn-r-item"><span class="dn-r-pos">${i===0?'<i class="ti ti-crown" style="color:#f5b301;font-size:18px"></i>':i+1}</span>${_dnAvatar(x.u,x.u.nome,i)}<div style="min-width:0"><div class="dn-r-nome">${esc(x.u.nome)}</div><div class="dn-muted" style="font-size:11.5px">${x.n} venda${x.n!==1?'s':''}</div></div><div class="dn-r-val dn-num">${_dnCompacto(x.c)}${m?`<small>${Math.round(x.c/m*100)}% da meta</small>`:''}</div></div>`;}).join('')
     :'<div class="dn-vazio">As vendas do mês aparecem aqui assim que forem registradas.</div>'}</div>`;
@@ -192,6 +199,6 @@ function renderDashNovo(){
     ${kpi('circle-check','Vendas no mês',vendasMes===null?'…':vendasMes,variacao(vendasMes,vendasAnt,'abs'))}
     ${kpi('coin','Crédito vendido',credMes===null?'…':_dnCompacto(credMes),variacao(credMes,credAnt,'pct'))}
     ${kpi('percentage','Conversão',conv.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%','<span>leads que viraram venda</span>')}
-    ${hero}${rank}${funil}`;
+    ${hero}${funil}${tabela}${rank}`;
   if(!V||Date.now()-V.em>60000) _dnCarregarVendas().then(r=>{ if(r&&designNovoAtivo()) renderDashNovo(); }).catch(()=>{});
 }
