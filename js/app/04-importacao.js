@@ -483,7 +483,7 @@ async function _impConfirmar(){
     let resp=fila[i%fila.length];
     if(modo==='coluna') resp=(r.respNome&&_impAcharPessoa(r.respNome,pessoas))||me;
     return {id:nextLeadId++,nome:r.nome,tel:r.tel,tipo:_impTipoFinal(r,tipoSel),credito:r.credito,etapa:r.etapa,
-      origem:r.origem,responsavelId:resp.id,atendimento:r.atendimento,data:r.data,obs:r.obs,metaId:r.metaId||undefined};
+      origem:r.origem,responsavelId:resp.id,atendimento:r.atendimento,data:r.data,entrada:hojeISO(),obs:r.obs,metaId:r.metaId||undefined};
   });
 
   _importando=true;

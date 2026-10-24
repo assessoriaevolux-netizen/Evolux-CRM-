@@ -417,6 +417,8 @@
       admin: row.administradora || null,
       metaId: row.meta_id || null,
       data: row.data_criacao ? String(row.data_criacao).slice(0,10).split('-').reverse().join('/') : '',
+      // dia em que o lead entrou no CRM (importado hoje aparece em "Hoje", mesmo com data antiga na planilha)
+      entrada: row.created_at ? (()=>{const d=new Date(row.created_at);return isNaN(d)?'':`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;})() : (existing&&existing.entrada)||'',
       responsavelId: resp ? resp.id : null,
       responsavelSbId: row.responsavel_id || null,
     };
