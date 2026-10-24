@@ -199,7 +199,7 @@ async function _salvarNovoLead(nome,tel,resp){
   _salvandoLead=true;
   const lead={id:nextLeadId++,nome,tel,tipo:document.getElementById('fTipo2').value,credito:unM(document.getElementById('fCredito').value),
     etapa:document.getElementById('fEtapa2').value||ETAPAS[0],origem:document.getElementById('fOrigem2').value,
-    responsavelId:resp.id,data:toDate(),obs:document.getElementById('fObs').value,atendimento:''};
+    responsavelId:resp.id,data:toDate(),entrada:hojeISO(),obs:document.getElementById('fObs').value,atendimento:''};
   leads.unshift(lead);
   closeModal();
   renderKanban();renderTable();

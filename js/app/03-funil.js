@@ -201,8 +201,9 @@ function applyFunilFilter(l,f,vis){
   // Filtro de período
   const range=_funilDateRange();
   if(range){
-    const dataLead=_leadDataISO(l);
-    if(!dataLead||dataLead<range.de||dataLead>range.ate)return false;
+    // vale a data do lead (formulário/planilha) OU o dia em que ele entrou no CRM
+    const noPeriodo=d=>!!d&&d>=range.de&&d<=range.ate;
+    if(!noPeriodo(_leadDataISO(l))&&!noPeriodo(l.entrada))return false;
   }
   return true;
 }
