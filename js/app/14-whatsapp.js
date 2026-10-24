@@ -423,7 +423,7 @@ function _waDispResumo(){
   const nums=integNumeros();
   box.innerHTML=`<div class="wa2-resumo">
       <div><strong>${comTel.length}</strong> mensage${comTel.length!==1?'ns':'m'} serão enviadas${sel.length-comTel.length?` · ${sel.length-comTel.length} sem telefone (ficam de fora)`:''}</div>
-      ${m?`<div class="integ2-mini">Custo estimado na Meta: cerca de ${fmtR(Math.ceil(comTel.length*preco))} (${m.categoria==='MARKETING'?'marketing':'utilidade'}). Quem pediu para não receber mensagens fica de fora.</div>`:''}
+      ${m?`<div class="integ2-mini">Custo estimado: cerca de ${fmtR(Math.ceil(comTel.length*preco))} (${m.categoria==='MARKETING'?'marketing':'utilidade'}), cobrado pela Meta direto na forma de pagamento da conta do WhatsApp Business da sua empresa. Quem pediu para não receber mensagens fica de fora.</div>`:''}
     </div>
     ${nums.length>1?`<div class="field" style="max-width:340px"><label>Enviar pelo número</label><select class="fi" id="wa2-d-num">${nums.map(n=>`<option value="${esc(n.phone_number_id)}"${n.padrao?' selected':''}>${esc(n.numero||n.phone_number_id)}</option>`).join('')}</select></div>`:''}
     ${WA.disp.confirmando?`<div class="wa2-confirma"><i class="ti ti-alert-triangle"></i><span>Confirma o envio para <strong>${comTel.length}</strong> lead${comTel.length!==1?'s':''}? Não dá para desfazer.</span>
