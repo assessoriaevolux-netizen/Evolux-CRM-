@@ -7,6 +7,10 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="css/crm.css?v=20261024b">
+<link rel="stylesheet" href="css/design-novo.css?v=20261024a">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<script>try{if(localStorage.getItem('evolux-design')==='novo')document.documentElement.classList.add('design-novo');if(localStorage.getItem('evolux-theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
 
 <!-- ═══════════════════════════════════════════════════════════
      SUPABASE — Auth guard + sincronização em tempo real
@@ -28,6 +32,7 @@
     <div class="sb-logo-text">Evolux <span>CRM</span></div>
   </div>
   <nav class="sb-nav">
+    <div class="sb-sec">Vendas</div>
     <button class="nb active" onclick="showTab('dashboard',this)" title="Painel"><i class="ti ti-layout-dashboard"></i><span class="nb-label">Painel</span></button>
     <button class="nb" onclick="showTab('funil',this)" title="Funil"><i class="ti ti-layout-kanban"></i><span class="nb-label">Funil</span></button>
     <button class="nb" onclick="showTab('leads',this)" title="Leads"><i class="ti ti-users"></i><span class="nb-label">Leads</span></button>
@@ -36,6 +41,7 @@
     <button class="nb" onclick="showTab('minhasvendas',this)" title="Minhas Vendas"><i class="ti ti-receipt"></i><span class="nb-label">Minhas Vendas</span></button>
     <button class="nb" onclick="showTab('ranking',this)" title="Ranking"><i class="ti ti-trophy"></i><span class="nb-label">Ranking</span></button>
     <button class="nb" onclick="showTab('relatorios',this)" title="Relatórios"><i class="ti ti-chart-bar"></i><span class="nb-label">Relatórios</span></button>
+    <div class="sb-sec">Atendimento</div>
     <button class="nb" onclick="showTab('whatsapp',this)" title="WhatsApp"><i class="ti ti-brand-whatsapp"></i><span class="nb-label">WhatsApp</span></button>
     <button class="nb" onclick="showTab('ia',this)" title="IA de atendimento"><i class="ti ti-robot"></i><span class="nb-label">IA</span></button>
     <button class="nb" onclick="showTab('anuncios',this)" title="Gerenciador de Anúncios"><i class="ti ti-chart-arrows-vertical"></i><span class="nb-label">Anúncios</span></button>
@@ -88,6 +94,7 @@
 
 <!-- PAINEL -->
 <div id="tab-dashboard" class="content active">
+  <div id="dash-novo"></div>
   <div class="hero-strip">
     <div class="hero-greeting">
       <h2 id="hero-greeting-txt"></h2>
@@ -1159,7 +1166,7 @@
 
 <!-- Scripts do CRM (em ordem de execução) -->
 <script src="js/app/01-base.js?v=20261024a"></script>
-<script src="js/app/02-dashboard.js?v=20261023a"></script>
+<script src="js/app/02-dashboard.js?v=20261024c"></script>
 <script src="js/app/03-funil.js?v=20261024a"></script>
 <script src="js/app/04-importacao.js?v=20261023a"></script>
 <script src="js/app/05-leads.js?v=20261023a"></script>
@@ -1168,11 +1175,11 @@
 <script src="js/app/08-ranking.js?v=20261023a"></script>
 <script src="js/app/09-administradoras.js?v=20261023a"></script>
 <script src="js/app/10-usuarios.js?v=20261023a"></script>
-<script src="js/app/11-configuracoes.js?v=20261023a"></script>
+<script src="js/app/11-configuracoes.js?v=20261024c"></script>
 <script src="js/app/12-relatorios.js?v=20261023a"></script>
 <script src="js/app/13-calendario.js?v=20261023a"></script>
 <script src="js/app/14-whatsapp.js?v=20261024b"></script>
-<script src="js/app/15-diversos.js?v=20261023a"></script>
+<script src="js/app/15-diversos.js?v=20261024c"></script>
 <script src="js/app/16-empresas.js?v=20261023a"></script>
 <script src="js/app/17-equipes.js?v=20261023a"></script>
 <script src="js/app/18-ui.js?v=20261023a"></script>

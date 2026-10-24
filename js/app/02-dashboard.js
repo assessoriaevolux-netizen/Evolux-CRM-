@@ -30,6 +30,7 @@ async function _dashTotalVendidoMes(){
 }
 
 function renderDashboard(){
+  if(designNovoAtivo()) renderDashNovo();
   if(!document.getElementById('metrics-row')) return;
   const vis=getVisiveisParaMim();
   const me=getMe();
@@ -74,4 +75,130 @@ function renderDashboard(){
   const porEtapa=ETAPAS.map(e=>leadsD.filter(l=>l.etapa===e).length);
   const max=Math.max(...porEtapa,1);
   document.getElementById('dash-etapas').innerHTML=ETAPAS.map((e,i)=>`<div class="br"><span class="brl">${esc(etapaLabel(e))}</span><div class="brt"><div class="brf" style="width:${Math.round(porEtapa[i]/max*100)}%;background:${EC[i]}"></div></div><span class="brv">${porEtapa[i]}</span></div>`).join('');
+}
+
+// ─── PAINEL DO DESIGN NOVO (Configurações → Aparência → Design novo) ──────────
+function designNovoAtivo(){ return document.documentElement.classList.contains('design-novo'); }
+function _dnCompacto(v){
+  v=Number(v)||0;
+  if(v>=1e6) return 'R$ '+(Math.round(v/1e5)/10).toLocaleString('pt-BR')+' mi';
+  if(v>=1e3) return 'R$ '+Math.round(v/1e3).toLocaleString('pt-BR')+' mil';
+  return 'R$ '+Math.round(v).toLocaleString('pt-BR');
+}
+function _dnData(l){ const m=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(l&&l.data||''); return m?new Date(+m[3],+m[2]-1,+m[1]):null; }
+function _dnChegou(d){
+  if(!d) return '—';
+  const hoje=new Date();hoje.setHours(0,0,0,0);
+  const dias=Math.round((hoje-d)/86400000);
+  if(dias<=0) return 'hoje'; if(dias===1) return 'ontem'; if(dias<7) return `há ${dias} dias`;
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+}
+function _dnDiasUteisRestantes(){
+  const d=new Date();d.setHours(0,0,0,0);const mes=d.getMonth();let n=0;
+  while(d.getMonth()===mes){ const w=d.getDay(); if(w&&w<6) n++; d.setDate(d.getDate()+1); }
+  return n;
+}
+const _DN_CORES=['#16a34a','#2563eb','#d97706','#7c3aed','#db2777','#0891b2'];
+function _dnAvatar(u,nome,i){
+  const foto=u&&typeof safeUrl==='function'?safeUrl(u.foto):null;
+  if(foto) return `<img class="dn-av" src="${foto}" alt="">`;
+  const p=String(nome||'?').trim().split(/\s+/);
+  const ini=((p[0]||'?')[0]+(p.length>1?p[p.length-1][0]:'')).toUpperCase();
+  return `<span class="dn-av" style="background:${_DN_CORES[i%_DN_CORES.length]}">${esc(ini)}</span>`;
+}
+const _DN_CHIP={'Novo lead':'b','Primeiro contato':'b','Aguardando resposta':'y','Proposta enviada':'y','Negociação':'p','Fechado / Convertido':'g','Perdido':'r'};
+window._dnVendas=null; let _dnPedido=0;
+async function _dnCarregarVendas(){
+  const h=new Date();
+  const de=hojeISO(new Date(h.getFullYear(),h.getMonth(),1)), ate=hojeISO(h);
+  const deA=hojeISO(new Date(h.getFullYear(),h.getMonth()-1,1)), ateA=hojeISO(new Date(h.getFullYear(),h.getMonth(),0));
+  const chave=de+'|'+ate;
+  if(window._dnVendas&&window._dnVendas.chave===chave&&Date.now()-window._dnVendas.em<60000) return window._dnVendas;
+  const pedido=++_dnPedido;
+  const [a,b]=await Promise.all([window._rpc('crm_ranking_vendas',{p_de:de,p_ate:ate}),window._rpc('crm_ranking_vendas',{p_de:deA,p_ate:ateA})]);
+  if(pedido!==_dnPedido) return null;
+  const mapa=r=>{const m={};(r.data||[]).forEach(x=>{if(x.user_id)m[x.user_id]={vendas:Number(x.vendas)||0,credito:Number(x.credito)||0};});return m;};
+  window._dnVendas={chave,em:Date.now(),mes:a.error?{}:mapa(a),ant:b.error?{}:mapa(b)};
+  return window._dnVendas;
+}
+function renderDashNovo(){
+  const box=document.getElementById('dash-novo');
+  if(!box||!designNovoAtivo()) return;
+  const me=getMe();
+  const vis=getVisiveisParaMim();
+  const gestor=isGestor(me);
+  const leadsD=gestor?leads:leads.filter(l=>vis.has(l.responsavelId));
+  const usersD=users.filter(u=>gestor||vis.has(u.id));
+  const h=new Date();
+  const mesIni=new Date(h.getFullYear(),h.getMonth(),1), antIni=new Date(h.getFullYear(),h.getMonth()-1,1);
+  const ontem=new Date();ontem.setHours(0,0,0,0);ontem.setDate(ontem.getDate()-1);
+  const datas=leadsD.map(_dnData);
+  const leadsMes=datas.filter(d=>d&&d>=mesIni).length;
+  const leadsAnt=datas.filter(d=>d&&d>=antIni&&d<mesIni).length;
+  const novos=datas.filter(d=>d&&d>=ontem).length;
+  const fech=leadsD.filter(l=>l.etapa==='Fechado / Convertido').length;
+  const conv=leadsD.length?(fech/leadsD.length*100):0;
+  const pipeline=leadsD.filter(l=>!['Fechado / Convertido','Perdido'].includes(l.etapa)).reduce((s,l)=>s+(l.credito||0),0);
+  const V=window._dnVendas;
+  const soma=(m,k)=>usersD.reduce((s,u)=>s+((m&&m[u.sb_id]&&m[u.sb_id][k])||0),0);
+  const vendasMes=V?soma(V.mes,'vendas'):null, vendasAnt=V?soma(V.ant,'vendas'):null;
+  const credMes=V?soma(V.mes,'credito'):null, credAnt=V?soma(V.ant,'credito'):null;
+  const meta=usersD.reduce((s,u)=>s+(Number(u.meta)||0),0);
+  const variacao=(a,b,tipo)=>{
+    if(a===null||b===null) return '<span>carregando…</span>';
+    if(!b) return a?'<span>sem base no mês anterior</span>':'<span>vs. mês anterior</span>';
+    const d=tipo==='abs'?a-b:Math.round((a-b)/b*100);
+    const txt=tipo==='abs'?(d>=0?'+':'−')+Math.abs(d):(d>=0?'+':'−')+Math.abs(d)+'%';
+    return `<b class="${d<0?'baixa':''}" style="font-weight:600">${txt}</b> <span>vs. mês anterior</span>`;
+  };
+  const kpi=(ic,lbl,val,vr)=>`<div class="dn-card dn-kpi"><div class="dn-k-top"><span class="dn-k-ic"><i class="ti ti-${ic}"></i></span>${lbl}</div><div class="dn-k-val dn-num">${val}</div><div class="dn-k-var">${vr}</div></div>`;
+  const hr=h.getHours();
+  const saud=hr<12?'Bom dia':hr<18?'Boa tarde':'Boa noite';
+  const nome=me?String(me.nome||'').split(' ')[0]:'';
+  const dataTxt=h.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'});
+  const mesNome=h.toLocaleDateString('pt-BR',{month:'long'});
+  // Meta do mês
+  const dias=_dnDiasUteisRestantes();
+  let hero;
+  if(meta>0){
+    const vend=credMes||0, pct=Math.min(100,Math.round(vend/meta*100)), falta=Math.max(0,meta-vend);
+    hero=`<div class="dn-hero"><div class="dn-lbl">Meta de ${mesNome} · ${gestor?'empresa':'sua visão'}</div>
+      <div class="dn-grande dn-num">${credMes===null?'…':_dnCompacto(vend)} <small>de ${_dnCompacto(meta)}</small></div>
+      <div style="opacity:.85">${falta?`Faltam ${_dnCompacto(falta)} em ${dias} dia${dias!==1?'s':''} úte${dias!==1?'is':'il'}${dias?` — média de ${_dnCompacto(falta/dias)} por dia`:''}`:'Meta batida! 🎉'}</div>
+      <div class="dn-barra"><span style="width:${pct}%"></span></div>
+      <div class="dn-lin"><div>Vendido no mês<b class="dn-num">${credMes===null?'…':_dnCompacto(vend)}</b></div><div>Pipeline em aberto<b class="dn-num">${_dnCompacto(pipeline)}</b></div><div>Vendas<b class="dn-num">${vendasMes===null?'…':vendasMes}</b></div><div>Atingido<b class="dn-num">${pct}%</b></div></div></div>`;
+  } else {
+    hero=`<div class="dn-hero"><div class="dn-lbl">Meta de ${mesNome}</div>
+      <div class="dn-grande dn-num">${credMes===null?'…':_dnCompacto(credMes)} <small>vendidos no mês</small></div>
+      <div style="opacity:.85">Nenhuma meta definida ainda. Com a meta, este cartão mostra quanto falta e a média por dia útil.</div>
+      <div class="dn-lin"><div>Pipeline em aberto<b class="dn-num">${_dnCompacto(pipeline)}</b></div><div>Vendas<b class="dn-num">${vendasMes===null?'…':vendasMes}</b></div><div>Dias úteis restantes<b class="dn-num">${dias}</b></div></div>
+      ${can('ranking_view')?`<button class="dn-btn dn-hero-btn" onclick="showTab('ranking')"><i class="ti ti-target-arrow"></i>Definir metas</button>`:''}</div>`;
+  }
+  // Funil
+  const etapas=ETAPAS.filter(e=>e!=='Perdido');
+  const cont=etapas.map(e=>leadsD.filter(l=>l.etapa===e).length);
+  const max=Math.max(...cont,1);
+  const funil=`<div class="dn-card dn-funil"><h3><i class="ti ti-layout-kanban"></i>Funil de vendas${can('funil_view')?`<button class="dn-mais" onclick="showTab('funil')">Abrir funil</button>`:''}</h3>
+    ${etapas.map((e,i)=>`<div class="dn-f-l"><span class="dn-muted">${esc(etapaLabel(e))}</span><div class="dn-fb"><span style="width:${Math.round(cont[i]/max*100)}%;opacity:${(1-i*.12).toFixed(2)}"></span></div><span class="dn-n dn-num">${cont[i]}</span></div>`).join('')}</div>`;
+  // Últimos leads
+  const ult=leadsD.map((l,i)=>({l,d:datas[i],i})).sort((a,b)=>((b.d||0)-(a.d||0))||(a.i-b.i)).slice(0,6);
+  const tabela=`<div class="dn-card dn-leads"><h3><i class="ti ti-users"></i>Últimos leads${can('leads_view')?`<button class="dn-mais" onclick="showTab('leads')">Ver todos</button>`:''}</h3>
+    ${ult.length?`<div class="dn-tab"><table><thead><tr><th>Lead</th><th>Tipo</th><th>Crédito</th><th>Origem</th><th>Etapa</th><th>Chegou</th></tr></thead><tbody>${ult.map(({l,d},i)=>`<tr class="dn-lnk" onclick="openLeadDetalhe(${l.id})">
+      <td><div class="dn-pessoa">${_dnAvatar(null,l.nome,i+1)}<div>${esc(l.nome)}<small>${esc(l.tel?formatTelefone(l.tel):'sem telefone')}</small></div></div></td>
+      <td>${esc(l.tipo||'—')}</td><td class="dn-num" style="font-weight:600">${l.credito?fmtR(l.credito):'—'}</td><td class="dn-muted">${esc(l.origem||'—')}</td>
+      <td><span class="dn-chip ${_DN_CHIP[l.etapa]||'b'}">${esc(etapaLabel(l.etapa))}</span></td><td class="dn-muted">${_dnChegou(d)}</td></tr>`).join('')}</tbody></table></div>`
+    :'<div class="dn-vazio">Nenhum lead ainda.</div>'}</div>`;
+  // Ranking
+  const rk=V?usersD.map(u=>({u,c:(V.mes[u.sb_id]||{}).credito||0,n:(V.mes[u.sb_id]||{}).vendas||0})).filter(x=>x.c>0).sort((a,b)=>b.c-a.c).slice(0,5):[];
+  const rank=`<div class="dn-card dn-rank"><h3><i class="ti ti-trophy" style="color:#f5b301"></i>Ranking do mês${can('ranking_view')?`<button class="dn-mais" onclick="showTab('ranking')">Ver ranking</button>`:''}</h3>
+    ${!V?'<div class="dn-vazio">Carregando…</div>':rk.length?rk.map((x,i)=>{const m=Number(x.u.meta)||0;return `<div class="dn-r-item"><span class="dn-r-pos">${i===0?'<i class="ti ti-crown" style="color:#f5b301;font-size:18px"></i>':i+1}</span>${_dnAvatar(x.u,x.u.nome,i)}<div style="min-width:0"><div class="dn-r-nome">${esc(x.u.nome)}</div><div class="dn-muted" style="font-size:11.5px">${x.n} venda${x.n!==1?'s':''}</div></div><div class="dn-r-val dn-num">${_dnCompacto(x.c)}${m?`<small>${Math.round(x.c/m*100)}% da meta</small>`:''}</div></div>`;}).join('')
+    :'<div class="dn-vazio">As vendas do mês aparecem aqui assim que forem registradas.</div>'}</div>`;
+  box.innerHTML=`<div class="dn-ph"><div><h1>${saud}${nome?', '+esc(nome):''}</h1><div class="dn-sub">${esc(dataTxt.charAt(0).toUpperCase()+dataTxt.slice(1))} · ${novos} lead${novos!==1?'s':''} novo${novos!==1?'s':''} desde ontem</div></div>
+      <div class="dn-acoes">${can('leads_import')?'<button class="dn-btn" onclick="abrirModalImportar()"><i class="ti ti-upload"></i>Importar</button>':''}${can('leads_create')?'<button class="dn-btn pri" onclick="openModal()"><i class="ti ti-plus"></i>Novo lead</button>':''}</div></div>
+    ${kpi('user-plus','Leads no mês',leadsMes,variacao(leadsMes,leadsAnt,'pct'))}
+    ${kpi('circle-check','Vendas no mês',vendasMes===null?'…':vendasMes,variacao(vendasMes,vendasAnt,'abs'))}
+    ${kpi('coin','Crédito vendido',credMes===null?'…':_dnCompacto(credMes),variacao(credMes,credAnt,'pct'))}
+    ${kpi('percentage','Conversão',conv.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%','<span>leads que viraram venda</span>')}
+    ${hero}${funil}${tabela}${rank}`;
+  if(!V||Date.now()-V.em>60000) _dnCarregarVendas().then(r=>{ if(r&&designNovoAtivo()) renderDashNovo(); }).catch(()=>{});
 }
