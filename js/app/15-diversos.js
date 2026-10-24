@@ -338,15 +338,6 @@ async function uploadFoto(e) {
     showToast('Erro ao salvar foto. Tente novamente.','ti-alert-triangle');
   }
 }
-// Design novo (opcional): claro Verde Evolux, escuro Laranja. Fica salvo no navegador de cada pessoa.
-function toggleDesignNovo(on){
-  document.documentElement.classList.toggle('design-novo',!!on);
-  try{ localStorage.setItem('evolux-design',on?'novo':'atual'); }catch(e){}
-  const t=document.getElementById('design-novo-toggle'); if(t) t.checked=!!on;
-  try{ renderDashboard(); }catch(e){}
-  try{ renderTable(); }catch(e){}
-  showToast(on?'Design novo ativado.':'Voltou para o design atual.','ti-palette');
-}
 function toggleDarkMode(on) {
   document.documentElement.setAttribute('data-theme', on?'dark':'light');
   localStorage.setItem('evolux-theme', on?'dark':'light');

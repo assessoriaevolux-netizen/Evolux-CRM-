@@ -77,7 +77,7 @@ function renderDashboard(){
   document.getElementById('dash-etapas').innerHTML=ETAPAS.map((e,i)=>`<div class="br"><span class="brl">${esc(etapaLabel(e))}</span><div class="brt"><div class="brf" style="width:${Math.round(porEtapa[i]/max*100)}%;background:${EC[i]}"></div></div><span class="brv">${porEtapa[i]}</span></div>`).join('');
 }
 
-// ─── PAINEL DO DESIGN NOVO (Configurações → Aparência → Design novo) ──────────
+// ─── PAINEL DO DESIGN NOVO (padrão para todos) ────────────────────────────────
 function designNovoAtivo(){ return document.documentElement.classList.contains('design-novo'); }
 function _dnCompacto(v){
   v=Number(v)||0;
