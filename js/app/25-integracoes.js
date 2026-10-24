@@ -208,12 +208,21 @@ async function integSalvarPagina(pageId,dados){
   (r.avisos||[]).forEach(a=>showToast(a,'ti-alert-triangle','#d97706'));
   integRenderMeta();
 }
-async function integConectarMeta(){
-  const b=document.getElementById('btn-meta-conectar');
+// modo: vazio (Meta completa), 'coexistencia' (WhatsApp Business do celular por QR code) ou 'novo' (número só para o CRM)
+async function integConectarMeta(modo){
+  const b=document.getElementById(modo?'btn-wa-'+modo:'btn-meta-conectar');
+  const html=b?b.innerHTML:'';
   if(b){b.disabled=true;b.innerHTML='<i class="ti ti-loader-2 integ2-gira"></i>Abrindo a Meta…';}
-  const r=await integChamar('meta_login_url',{retorno:location.origin+location.pathname});
-  if(!r.ok||!r.url){ showToast(r.erro||'Não consegui abrir a Meta.','ti-alert-triangle','#dc2626'); if(b){b.disabled=false;b.innerHTML='<i class="ti ti-brand-meta"></i>Conectar com a Meta';} return; }
+  const r=await integChamar('meta_login_url',{retorno:location.origin+location.pathname,modo:modo||undefined});
+  if(!r.ok||!r.url){ showToast(r.erro||'Não consegui abrir a Meta.','ti-alert-triangle','#dc2626'); if(b){b.disabled=false;b.innerHTML=html;} return; }
   window.location.href=r.url;
+}
+async function integNumeroAtivar(id,btn){
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2 integ2-gira"></i>Ativando…';}
+  const r=await integChamar('wa_numero_ativar',{id});
+  if(!r.ok) showToast(r.erro,'ti-alert-triangle','#dc2626'); else showToast('Número ativado! Já pode receber e enviar mensagens.','ti-circle-check');
+  await integCarregarStatus(true);
+  integRenderWhats();
 }
 async function integAtualizarMeta(silencioso){
   window._integ.descobrindo=true;
@@ -261,13 +270,28 @@ async function integRenderWhats(){
   const metaExp=st.meta&&st.meta.expira_em?integData(st.meta.expira_em):null;
   let h=`<div class="integ2-sec"><div class="integ2-sec-tit"><i class="ti ti-device-mobile-message"></i>Números conectados</div>`;
   if(!nums.length){
-    h+=`<div class="integ2-mini" style="margin-bottom:10px">Nenhum número ainda. ${st.meta?'Clique em <strong>Atualizar lista</strong> em Meta / Facebook Ads (se você liberou o WhatsApp na conexão) ou adicione abaixo.':'Conecte a Meta (o número aparece sozinho) ou adicione abaixo.'}</div>`;
+    h+=g?`<div class="integ2-mini" style="margin-bottom:10px">Escolha como conectar o WhatsApp da empresa:</div>
+      <div class="integ2-wa-opcoes">
+        <div class="integ2-wa-opcao rec">
+          <div class="integ2-wa-opcao-tag">Recomendado</div>
+          <div class="integ2-wa-opcao-tit"><i class="ti ti-qrcode"></i>Usar o WhatsApp Business do celular</div>
+          <div class="integ2-mini">Você escaneia um QR code com o app WhatsApp Business. O número continua funcionando no celular e as conversas aparecem também no CRM. Não precisa de chip nem de código por SMS.</div>
+          <button class="btn bp" id="btn-wa-coexistencia" onclick="integConectarMeta('coexistencia')"><i class="ti ti-brand-whatsapp"></i>Conectar com QR code</button>
+        </div>
+        <div class="integ2-wa-opcao">
+          <div class="integ2-wa-opcao-tit"><i class="ti ti-device-mobile-plus"></i>Usar um número novo só no CRM</div>
+          <div class="integ2-mini">Para um número que não está em nenhum WhatsApp. Precisa do chip para receber o código por SMS ou ligação. Depois disso, o número funciona só pelo CRM.</div>
+          <button class="btn bg" id="btn-wa-novo" onclick="integConectarMeta('novo')"><i class="ti ti-plus"></i>Conectar número novo</button>
+        </div>
+      </div>`
+      :`<div class="integ2-mini" style="margin-bottom:10px"><i class="ti ti-lock"></i> Nenhum número ainda. Peça ao gestor para conectar o WhatsApp da empresa.</div>`;
   }
   h+=nums.map(n=>`<div class="integ2-numero${n.ativo?'':' off'}">
       <div class="integ2-numero-ic"><i class="ti ti-brand-whatsapp"></i></div>
       <div class="integ2-numero-txt">
         <div class="integ2-numero-tit">${esc(n.numero||n.phone_number_id)} ${n.padrao?'<span class="integ2-tag">padrão</span>':''} ${n.qualidade?`<span class="integ2-tag q-${esc(String(n.qualidade).toLowerCase())}" title="Qualidade do número na Meta">${({GREEN:'qualidade alta',YELLOW:'qualidade média',RED:'qualidade baixa'})[n.qualidade]||esc(n.qualidade)}</span>`:''}</div>
-        <div class="integ2-mini">${esc(n.nome_verificado||'')} · ${n.token_proprio?'<i class="ti ti-key"></i> token permanente':`usa a conexão da Meta${metaExp?' (vale até '+metaExp+')':''}`}</div>
+        <div class="integ2-mini">${esc(n.nome_verificado||'')} · ${n.coexistencia?'<i class="ti ti-device-mobile"></i> também no app do celular · ':''}${n.token_proprio?'<i class="ti ti-key"></i> token permanente':`usa a conexão da Meta${metaExp?' (vale até '+metaExp+')':''}`}</div>
+        ${n.status_api&&n.status_api!=='CONNECTED'?`<div class="integ2-aviso erro" style="margin:8px 0 0"><i class="ti ti-plug-x"></i><div>Número ainda não está ativo na Meta${n.registro_erro?': '+esc(n.registro_erro):'.'}${g?` <button class="btn bg bsm" onclick="integNumeroAtivar('${esc(n.id)}',this)"><i class="ti ti-refresh"></i>Tentar ativar</button>`:''}</div></div>`:''}
       </div>
       ${g?`<div class="integ2-numero-acoes">
         <select class="fi integ2-sel-p" title="Dono do número" onchange="integNumeroAtualizar('${esc(n.id)}',{dono_id:this.value||null})"><option value="">Número da empresa</option>${_integOpcoesUsuarios(n.dono_id)}</select>
@@ -278,7 +302,7 @@ async function integRenderWhats(){
     </div>`).join('');
   h+=`</div>`;
   if(g){
-    h+=`<details class="integ2-det" id="integ-wa-add"${nums.length?'':' open'}><summary><i class="ti ti-plus"></i> Adicionar número manualmente</summary>
+    h+=`<details class="integ2-det" id="integ-wa-add"><summary><i class="ti ti-plus"></i> Adicionar número manualmente</summary>
       <div class="integ2-mini" style="margin:8px 0">No <a href="https://business.facebook.com/" target="_blank" rel="noopener">Gerenciador de Negócios</a> → WhatsApp Manager → Telefones você encontra o ID do número e o ID da conta. O token permanente vem de Configurações do negócio → Usuários do sistema → Gerar token (permissões whatsapp_business_messaging e whatsapp_business_management).</div>
       <div class="g2"><div class="field"><label>ID do número (Phone Number ID)</label><input class="fi" id="wa-add-pnid" inputmode="numeric" placeholder="Ex.: 123456789012345"></div>
         <div class="field"><label>ID da conta (WABA ID)</label><input class="fi" id="wa-add-waba" inputmode="numeric" placeholder="Ex.: 987654321098765"></div></div>
