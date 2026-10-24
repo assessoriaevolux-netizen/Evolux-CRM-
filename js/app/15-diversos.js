@@ -344,6 +344,7 @@ function toggleDesignNovo(on){
   try{ localStorage.setItem('evolux-design',on?'novo':'atual'); }catch(e){}
   const t=document.getElementById('design-novo-toggle'); if(t) t.checked=!!on;
   try{ renderDashboard(); }catch(e){}
+  try{ renderTable(); }catch(e){}
   showToast(on?'Design novo ativado.':'Voltou para o design atual.','ti-palette');
 }
 function toggleDarkMode(on) {

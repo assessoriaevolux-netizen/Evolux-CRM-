@@ -89,6 +89,39 @@ function _renderTableImediato(){
   const pagina=fl.slice(inicio,inicio+TABLE_PAGE_SIZE);
   const porId=new Map(users.map(u=>[u.id,u]));
   const podeSim=can('simulador_view'), podeExcluir=can('leads_delete');
+  const thead=tbody.closest('table')?.querySelector('thead');
+  const novo=typeof designNovoAtivo==='function'&&designNovoAtivo();
+  if(thead){
+    const cab=novo?'<tr><th>Lead</th><th>Tipo</th><th>Crédito</th><th>Origem</th><th>Responsável</th><th>Etapa</th><th>Chegou</th><th></th></tr>'
+      :'<tr><th>Nome</th><th>Telefone</th><th>Tipo</th><th>Crédito</th><th>Origem</th><th>Responsável</th><th>Etapa</th><th>Data</th><th>Ações</th></tr>';
+    if(thead.dataset.modo!==(novo?'novo':'atual')){thead.innerHTML=cab;thead.dataset.modo=novo?'novo':'atual';}
+  }
+  const resumo=document.getElementById('leads-resumo');
+  if(resumo&&novo){
+    const total=fl.reduce((s,l)=>s+(l.credito||0),0);
+    const abertos=fl.filter(l=>!['Fechado / Convertido','Perdido'].includes(l.etapa)).length;
+    resumo.innerHTML=`<span><b>${fl.length}</b> lead${fl.length!==1?'s':''}</span><span><b>${abertos}</b> em andamento</span><span><b>${_dnCompacto(total)}</b> em crédito</span>`;
+  }
+  if(novo){
+    const COR_TIPO={'Imóvel':'#16a34a','Automóvel':'#2563eb','Moto':'#d97706','Serviço':'#7c3aed'};
+    tbody.innerHTML=pagina.map(l=>{
+      const isSel=selectedLeads.has(l.id);
+      const r=porId.get(l.responsavelId);
+      const rNome=_nomeResponsavel(l,porId);
+      return `<tr class="dl-row${distribMode&&isSel?' lead-check-row sel':''}" onclick="${distribMode?`toggleLeadSelect(${l.id})`:`openLeadDetalhe(${l.id})`}">
+        <td><div class="dl-lead">${distribMode?`<input type="checkbox" ${isSel?'checked':''} onclick="event.stopPropagation()" onchange="toggleLeadSelect(${l.id})" style="accent-color:var(--g);width:14px;height:14px">`:''}${_dnAvatar(null,l.nome,l.id)}<div style="min-width:0"><div class="dl-nome">${esc(l.nome)}</div><div class="dl-tel">${esc(formatTelefone(l.tel)||'sem telefone')}</div></div></div></td>
+        <td><span class="dl-tipo"><i style="background:${COR_TIPO[l.tipo]||'#64748b'}"></i>${esc(l.tipo||'—')}</span></td>
+        <td class="dl-cred">${l.credito?fmtR(l.credito):'—'}</td>
+        <td class="dn-muted">${esc(l.origem||'—')}</td>
+        <td><span class="dl-resp">${r?_dnAvatar(r,r.nome,r.id):''}${esc(String(rNome).split(' ')[0])}</span></td>
+        <td><span class="dn-chip ${_DN_CHIP[l.etapa]||'b'}">${esc(etapaLabel(l.etapa))}</span></td>
+        <td class="dn-muted">${_dnChegou(_dnData(l))}</td>
+        <td><div class="dl-acoes" onclick="event.stopPropagation()">
+          ${podeSim?`<button onclick="simFromLead(${l.id})" title="Simular"><i class="ti ti-calculator"></i></button>`:''}
+          <button onclick="openLeadDetalhe(${l.id})" title="Abrir lead"><i class="ti ti-pencil"></i></button>
+          ${podeExcluir?`<button class="dl-del" onclick="removeLead(${l.id})" title="Remover"><i class="ti ti-trash"></i></button>`:''}
+        </div></td></tr>`;}).join('');
+  } else
   tbody.innerHTML=pagina.map(l=>{
     const si=ETAPAS.indexOf(l.etapa);
     const isSel=selectedLeads.has(l.id);

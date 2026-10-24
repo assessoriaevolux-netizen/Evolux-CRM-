@@ -7,7 +7,7 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="css/crm.css?v=20261024b">
-<link rel="stylesheet" href="css/design-novo.css?v=20261024a">
+<link rel="stylesheet" href="css/design-novo.css?v=20261024e">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <script>try{if(localStorage.getItem('evolux-design')==='novo')document.documentElement.classList.add('design-novo');if(localStorage.getItem('evolux-theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
@@ -251,6 +251,7 @@
     <button class="btn bp bsm" onclick="distribuirLeads()"><i class="ti ti-check"></i>Distribuir</button>
     <button class="btn bg bsm" onclick="toggleDistrib()">Cancelar</button>
   </div>
+  <div id="leads-resumo"></div>
   <div class="card" style="overflow:hidden">
     <table><thead><tr><th>Nome</th><th>Telefone</th><th>Tipo</th><th>Crédito</th><th>Origem</th><th>Responsável</th><th>Etapa</th><th>Data</th><th>Ações</th></tr></thead>
     <tbody id="leads-body"></tbody></table>
@@ -1166,10 +1167,10 @@
 
 <!-- Scripts do CRM (em ordem de execução) -->
 <script src="js/app/01-base.js?v=20261024a"></script>
-<script src="js/app/02-dashboard.js?v=20261024c"></script>
+<script src="js/app/02-dashboard.js?v=20261024d"></script>
 <script src="js/app/03-funil.js?v=20261024a"></script>
 <script src="js/app/04-importacao.js?v=20261023a"></script>
-<script src="js/app/05-leads.js?v=20261023a"></script>
+<script src="js/app/05-leads.js?v=20261024d"></script>
 <script src="js/app/06-simulador.js?v=20261023a"></script>
 <script src="js/app/07-lances.js?v=20261023a"></script>
 <script src="js/app/08-ranking.js?v=20261023a"></script>
@@ -1179,7 +1180,7 @@
 <script src="js/app/12-relatorios.js?v=20261023a"></script>
 <script src="js/app/13-calendario.js?v=20261023a"></script>
 <script src="js/app/14-whatsapp.js?v=20261024b"></script>
-<script src="js/app/15-diversos.js?v=20261024c"></script>
+<script src="js/app/15-diversos.js?v=20261024d"></script>
 <script src="js/app/16-empresas.js?v=20261023a"></script>
 <script src="js/app/17-equipes.js?v=20261023a"></script>
 <script src="js/app/18-ui.js?v=20261023a"></script>
