@@ -98,12 +98,8 @@ const HPERM_MODULES=[
     {id:'lances_create',label:'Cadastrar lances'},
     {id:'lances_edit',label:'Editar, marcar ofertado e remover lances'},
   ]},
-  {id:'whatsapp',label:'WhatsApp',perms:[
-    {id:'whatsapp_view',label:'Ver a aba WhatsApp (conversas dos leads que pode ver)'},
-    {id:'whatsapp_send',label:'Enviar mensagens pelo CRM'},
-    {id:'whatsapp_bulk',label:'Fazer disparo em massa'},
-  ]},
-  {id:'ia',label:'IA de atendimento',perms:[
+  // WhatsApp (conversas, envio e disparo) é liberado para todos — não entra no editor de permissões.
+  {id:'ia',label:'IA de atendimento (plano Master)',perms:[
     {id:'ia_view',label:'Ver a aba IA e as conversas da IA'},
     {id:'ia_manage',label:'Editar, ligar e testar os roteiros da IA'},
   ]},
@@ -162,11 +158,19 @@ function _permsPadraoRole(role){
   return _permsDe(_PERMS_VEND);
 }
 // Permissões novas que, quando o cargo ainda não tem a chave, seguem outra (igual ao banco: integ_tem_perm_de)
-const PERM_SEGUE={whatsapp_send:'whatsapp_view',ia_view:'whatsapp_view'};
+const PERM_SEGUE={ia_view:'whatsapp_view'};
+// WhatsApp: todo mundo da empresa vê as conversas dos próprios leads, envia e faz disparo (custo da Meta é da empresa)
+const PERM_LIVRE=new Set(['whatsapp_view','whatsapp_send','whatsapp_bulk']);
+// IA: só empresas no plano Master (liberado pelo administrador da plataforma no painel Empresas)
+const PERM_IA=new Set(['ia_view','ia_manage']);
+function iaLiberada(){const e=window.empresa;return !!e&&String(e.plano||'').toLowerCase()==='master';}
+window.iaLiberada=iaLiberada;
 // Pode fazer X? (gestor e plataforma podem tudo; o resto segue o cargo)
 function can(perm,u){
   u=u||getMe();
   if(!u)return false;
+  if(PERM_IA.has(perm)&&!iaLiberada())return false;
+  if(PERM_LIVRE.has(perm))return true;
   if(isGestor(u))return true;
   const h=u.hierarquiaId?getHier(u.hierarquiaId):null;
   const p=h&&h.perms;

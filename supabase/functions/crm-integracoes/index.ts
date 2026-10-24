@@ -465,6 +465,10 @@ async function historicoIA(lead: string) {
     }))
 }
 async function roteiroDe(emp: string, tipo: string) {
+  // IA só funciona para empresas do plano Master (liberado no painel Empresas)
+  let liberada = false
+  try { liberada = !!(await rpc('integ_ia_liberada', { p_emp: emp })) } catch (e) { console.error(e) }
+  if (!liberada) return null
   const { data } = await admin.from('ia_roteiros').select('*').eq('empresa_id', emp).eq('tipo', tipo).maybeSingle()
   return data as any
 }
@@ -808,10 +812,14 @@ async function processarFila() {
 }
 
 // ─── Ações do CRM ────────────────────────────────────────────────────────────
-type Ctx = { user_id: string; nome: string; empresa_id: string | null; empresa_nome: string; gestor: boolean; plataforma: boolean; perms: Record<string, boolean> }
+type Ctx = { user_id: string; nome: string; empresa_id: string | null; empresa_nome: string; gestor: boolean; plataforma: boolean; ia_liberada?: boolean; perms: Record<string, boolean> }
 function exigirEmpresa(ctx: Ctx) { if (!ctx.empresa_id) throw new Falha(403, 'Sua conta não está ligada a uma empresa.') ; return ctx.empresa_id }
 function exigirGestor(ctx: Ctx) { exigirEmpresa(ctx); if (!ctx.gestor) throw new Falha(403, 'Somente o gestor da empresa pode fazer isso.') }
-function exigirPerm(ctx: Ctx, p: string, msg?: string) { exigirEmpresa(ctx); if (!ctx.gestor && !ctx.perms?.[p]) throw new Falha(403, msg || 'Você não tem permissão para isso.') }
+function exigirPerm(ctx: Ctx, p: string, msg?: string) {
+  exigirEmpresa(ctx)
+  if (p.startsWith('ia_') && !ctx.ia_liberada) throw new Falha(403, 'A IA de atendimento é exclusiva do plano Master. Fale com a Evolux para liberar.')
+  if (!ctx.gestor && !ctx.perms?.[p]) throw new Falha(403, msg || 'Você não tem permissão para isso.')
+}
 async function leadVisivel(ctx: Ctx, id: unknown) {
   const l = await rpc('integ_srv_lead', { p_user: ctx.user_id, p_lead: String(id || '') })
   if (!l) throw new Falha(404, 'Lead não encontrado ou fora da sua visão.')

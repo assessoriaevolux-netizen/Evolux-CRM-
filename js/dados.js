@@ -868,7 +868,8 @@
       if (!empresaId) return;
       const { data, error } = await sb.from('empresas').select('*').eq('id', empresaId).maybeSingle();
       if (error || !data) return;
-      window.empresa = { nome: data.nome || 'Minha Empresa', logo: data.logo_url || null, whatsapp: data.whatsapp || '', email: data.email || '' };
+      window.empresa = { nome: data.nome || 'Minha Empresa', logo: data.logo_url || null, whatsapp: data.whatsapp || '', email: data.email || '', plano: data.plano || 'basico' };
+      try{ window.applyNavPermissions&&window.applyNavPermissions(); }catch(e){}
       try{ empresa=window.empresa; }catch(e){}
       if(typeof aplicarEtapasLabels==='function') aplicarEtapasLabels(data.etapas_labels||null);
     } catch(e) { console.warn('loadEmpresa error:', e); }

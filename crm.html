@@ -12,7 +12,7 @@
      SUPABASE — Auth guard + sincronização em tempo real
      ═══════════════════════════════════════════════════════════ -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="js/dados.js?v=20261023a"></script>
+<script src="js/dados.js?v=20261024a"></script>
 </head>
 <body>
 
@@ -149,7 +149,7 @@
       <button class="btn bg bsm" data-perm="funil_edit" onclick="openEditarFunil()"><i class="ti ti-pencil"></i>Editar funil</button>
       <button class="btn bg bsm" onclick="exportarLeadsCSV()"><i class="ti ti-download"></i>Exportar</button>
       <button class="btn bg bsm" data-perm="leads_import" onclick="abrirModalImportar()"><i class="ti ti-upload"></i>Importar</button>
-      <button class="btn bg bsm" data-perm="leads_transfer|leads_delete" onclick="toggleFunilSelMode()" id="btn-funil-sel"><i class="ti ti-checkboxes"></i>Selecionar</button>
+      <button class="btn bg bsm" data-perm="leads_transfer|leads_delete|whatsapp_bulk" onclick="toggleFunilSelMode()" id="btn-funil-sel"><i class="ti ti-checkboxes"></i>Selecionar</button>
       <button class="btn bp bsm" data-perm="leads_create" onclick="openModal()"><i class="ti ti-plus"></i>Novo lead</button>
     </div>
   </div>
@@ -177,6 +177,7 @@
     <button class="btn bg bsm" onclick="selectAllFunil()"><i class="ti ti-layout-grid"></i>Todos</button>
     <select id="funil-transfer-dest" class="fi" style="max-width:200px;padding:6px 10px;margin-left:auto"></select>
     <button class="btn bp bsm" id="btn-funil-transferir" onclick="transferirSelecionados()"><i class="ti ti-check"></i>Transferir</button>
+    <button class="btn bsm" id="btn-funil-wa" style="background:#25d366;color:#fff" onclick="funilDispararWhatsApp()"><i class="ti ti-brand-whatsapp"></i>Disparar no WhatsApp</button>
     <button class="btn bsm" id="btn-funil-excluir" style="background:#e53e3e;color:#fff" onclick="excluirSelecionados()"><i class="ti ti-trash"></i>Excluir</button>
     <button class="btn bg bsm" onclick="cancelarSelecaoFunil()">Cancelar</button>
   </div>
@@ -1157,9 +1158,9 @@
 </div>
 
 <!-- Scripts do CRM (em ordem de execução) -->
-<script src="js/app/01-base.js?v=20261023a"></script>
+<script src="js/app/01-base.js?v=20261024a"></script>
 <script src="js/app/02-dashboard.js?v=20261023a"></script>
-<script src="js/app/03-funil.js?v=20261023a"></script>
+<script src="js/app/03-funil.js?v=20261024a"></script>
 <script src="js/app/04-importacao.js?v=20261023a"></script>
 <script src="js/app/05-leads.js?v=20261023a"></script>
 <script src="js/app/06-simulador.js?v=20261023a"></script>
@@ -1170,7 +1171,7 @@
 <script src="js/app/11-configuracoes.js?v=20261023a"></script>
 <script src="js/app/12-relatorios.js?v=20261023a"></script>
 <script src="js/app/13-calendario.js?v=20261023a"></script>
-<script src="js/app/14-whatsapp.js?v=20261023a"></script>
+<script src="js/app/14-whatsapp.js?v=20261024a"></script>
 <script src="js/app/15-diversos.js?v=20261023a"></script>
 <script src="js/app/16-empresas.js?v=20261023a"></script>
 <script src="js/app/17-equipes.js?v=20261023a"></script>
@@ -1181,7 +1182,7 @@
 <script src="js/app/22-protocolo.js?v=20261023a"></script>
 <script src="js/app/23-eventos.js?v=20261023a"></script>
 <script src="js/app/24-nova-senha.js?v=20261023a"></script>
-<script src="js/app/25-integracoes.js?v=20261023a"></script>
+<script src="js/app/25-integracoes.js?v=20261024a"></script>
 <script src="js/app/26-anuncios.js?v=20261023a"></script>
 <script src="js/app/27-ia.js?v=20261023a"></script>
 <script src="js/app/99-inicio.js?v=20261023a"></script>

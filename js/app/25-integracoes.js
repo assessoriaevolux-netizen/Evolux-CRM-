@@ -182,7 +182,7 @@ function integCardPagina(p){
         <div class="field"><label>Etapa inicial</label><select class="fi" id="${id}-etapa">${ETAPAS.slice(0,5).map(e=>`<option value="${esc(e)}"${e===(p.etapa_inicial||'Novo lead')?' selected':''}>${esc(etapaLabel(e))}</option>`).join('')}</select></div>
         <div class="field"><label>Tipo quando o formulário não diz</label><select class="fi" id="${id}-tipo"><option value="">Descobrir pelas respostas</option>${['Imóvel','Automóvel','Moto','Serviço'].map(t=>`<option${t===p.tipo_padrao?' selected':''}>${t}</option>`).join('')}</select></div>
       </div>
-      <div class="cfg-toggle-row"><div><div class="cfg-toggle-label">IA faz o primeiro contato pelo WhatsApp</div><div class="cfg-toggle-sub">Assim que o lead chega, a IA de primeiro atendimento manda a mensagem inicial (precisa estar ligada na aba IA).</div></div>
+      <div class="cfg-toggle-row"${iaLiberada()?'':' hidden'}><div><div class="cfg-toggle-label">IA faz o primeiro contato pelo WhatsApp</div><div class="cfg-toggle-sub">Assim que o lead chega, a IA de primeiro atendimento manda a mensagem inicial (precisa estar ligada na aba IA).</div></div>
         ${integToggle(id+'-ia',p.ia_primeiro_contato,'')}</div>
       <button class="btn bp bsm" onclick="integSalvarPaginaCfg('${esc(p.page_id)}','${id}')"><i class="ti ti-check"></i>Salvar</button>
     </div>

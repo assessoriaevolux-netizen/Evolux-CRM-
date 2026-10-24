@@ -87,8 +87,8 @@ function _atualizarContagemSel(){
   document.getElementById('funil-sel-count').textContent=`${n} lead${n!==1?'s':''} selecionado${n!==1?'s':''}`;
 }
 function toggleFunilSelMode(){
-  if(!funilSelMode&&!can('leads_transfer')&&!can('leads_delete')){
-    showToast('Você não tem permissão para transferir nem excluir leads.','ti-lock');
+  if(!funilSelMode&&!can('leads_transfer')&&!can('leads_delete')&&!can('whatsapp_bulk')){
+    showToast('Você não tem permissão para transferir, excluir ou disparar para leads.','ti-lock');
     return;
   }
   funilSelMode=!funilSelMode;
@@ -105,9 +105,22 @@ function toggleFunilSelMode(){
   }
   const bt=document.getElementById('btn-funil-transferir'); if(bt) bt.style.display=podeTransf?'':'none';
   const bx=document.getElementById('btn-funil-excluir'); if(bx) bx.style.display=can('leads_delete')?'':'none';
+  const bw=document.getElementById('btn-funil-wa'); if(bw) bw.style.display=can('whatsapp_bulk')?'':'none';
   renderKanban();
 }
 function cancelarSelecaoFunil(){funilSelMode=false;funilSelected.clear();document.getElementById('funil-transfer-bar').style.display='none';renderKanban();}
+// Leva os leads selecionados no funil para o disparo em massa do WhatsApp
+function funilDispararWhatsApp(){
+  if(funilSelected.size===0){showToast('Selecione ao menos um lead.','ti-alert-triangle','#d97706');return;}
+  if(typeof WA==='undefined'){showToast('A aba WhatsApp ainda não carregou.','ti-alert-triangle','#d97706');return;}
+  const ids=[...funilSelected].map(id=>leads.find(x=>x.id===id)).filter(l=>l&&l.sb_id).map(l=>String(l.sb_id));
+  WA.disp.sel=new Set(ids);
+  WA.disp.filtros={etapa:'',tipo:'',resp:'',origem:'',busca:''};
+  WA.disp.confirmando=false;WA.disp.acompanhar=null;
+  WA.aba='disparo';
+  cancelarSelecaoFunil();
+  showTab('whatsapp');
+}
 function toggleFunilCard(id){
   if(funilSelected.has(id))funilSelected.delete(id);else funilSelected.add(id);
   _atualizarContagemSel();
