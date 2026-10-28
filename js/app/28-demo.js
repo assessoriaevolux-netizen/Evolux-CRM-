@@ -8,6 +8,7 @@
 // mas ao recarregar a página a demonstração volta ao estado original.
 (function(){
   'use strict';
+  console.log('[Demo] script carregando…');
   var DEMO = '__demoInjetado';
   var S = { users:[], equipes:[], leads:[], vendas:[], lances:[], eventos:[], acts:[], ultimaOp:0 };
   window._demo = S;
@@ -306,7 +307,10 @@
   function injetar(){
     if(window[DEMO]) return;
     var me=typeof getMe==='function'?getMe():null;
-    if(!me||typeof isPlataforma!=='function'||!isPlataforma(me)) return;
+    if(!me){ console.warn('[Demo] getMe() retornou null — demo não injeta'); return; }
+    if(typeof isPlataforma!=='function'){ console.warn('[Demo] isPlataforma não existe'); return; }
+    if(!isPlataforma(me)){ console.warn('[Demo] usuário não é plataforma — role:',me.role,'— demo não injeta'); return; }
+    console.log('[Demo] injetando para',me.nome,'(role:'+me.role+')');
     window[DEMO]=true;
     gerarOrdenado(me);
     S.users.forEach(function(u){ users.push(u); });
@@ -568,4 +572,5 @@
     return r;
   }; });
 
+  console.log('[Demo] wrappers instalados — _renderTudo:',typeof window._renderTudo,', _rpc:',typeof window._rpc);
 })();
