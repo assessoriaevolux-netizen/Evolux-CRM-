@@ -69,8 +69,6 @@ function cfgRenderSection(){
       <div class="g2"><div class="field"><label>Nome</label><input type="text" class="fi" id="accNome" placeholder="Seu nome"></div><div class="field"><label>Sobrenome</label><input type="text" class="fi" id="accSobrenome" placeholder="Seu sobrenome"></div></div>
       <div class="field"><label><i class="ti ti-brand-instagram" style="font-size:13px;vertical-align:middle"></i> Instagram</label><input type="text" class="fi" id="accInstagram" placeholder="@seuinstagram"></div>
       <div class="field"><label><i class="ti ti-brand-whatsapp" style="font-size:13px;vertical-align:middle;color:#25d366"></i> WhatsApp <span style="font-size:10.5px;font-weight:400;color:var(--tm)">(aparece no PDF da simulação)</span></label><input type="text" class="fi" id="accWhatsapp" placeholder="(11) 99999-0000" oninput="maskTelConta(this)"></div>
-      <div class="g2"><div class="field"><label>Fuso horário</label><select class="fi"><option>(GMT-03:00) Brasília</option><option>(GMT-04:00) Manaus</option></select></div><div class="field"><label>País</label><select class="fi"><option>Brasil</option></select></div></div>
-      <div class="field"><label>Formato de data</label><select class="fi"><option selected>DD/MM/AAAA</option></select></div>
       <button class="btn bp" style="margin-top:6px" onclick="salvarConfiguracoesConta()"><i class="ti ti-check"></i>Salvar configurações</button>
     </div>`,
 
@@ -85,24 +83,6 @@ function cfgRenderSection(){
       <div style="font-size:12.5px;font-weight:700;color:var(--tx);margin-bottom:8px">Taxa de financiamento (comparativo)</div>
       <div class="ibox" style="margin-bottom:10px"><i class="ti ti-info-circle" style="font-size:14px;flex-shrink:0"></i>Usada no simulador para comparar consórcio × financiamento bancário.</div>
       <div class="field"><label>Taxa de juros financiamento (% a.m.)</label><input type="number" id="eTaxaFin" class="fi" step="0.05" value="${taxaFin}" oninput="saveTaxaFin()"></div>
-      <div class="cfg-divider"></div>
-      <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:4px"><i class="ti ti-plug" style="color:var(--g);margin-right:6px"></i>Integração com administradora</div>
-      <div class="cfg-card-sub" style="margin-bottom:14px">Vincule os dados da administradora ativa ao CRM para importar tabelas e sincronizar cotas automaticamente.</div>
-      <div class="ibox" style="margin-bottom:14px;background:rgba(29,185,84,.06);border-color:rgba(29,185,84,.2)"><i class="ti ti-flask" style="font-size:14px;flex-shrink:0;color:var(--g)"></i><span>Integração via API disponível após deploy. Preencha os dados abaixo para configurar agora e ativar quando o ambiente estiver pronto.</span></div>
-      <div class="g2" style="gap:10px;margin-bottom:10px">
-        <div class="field" style="margin:0"><label>CNPJ da administradora</label><input type="text" id="intCnpj" class="fi" placeholder="00.000.000/0001-00" oninput="maskCnpjInt(this)"></div>
-        <div class="field" style="margin:0"><label>Nome do contato / gerente</label><input type="text" id="intContato" class="fi" placeholder="Ex: João Silva"></div>
-      </div>
-      <div class="g2" style="gap:10px;margin-bottom:10px">
-        <div class="field" style="margin:0"><label>Telefone do contato</label><input type="text" id="intTelContato" class="fi" placeholder="(11) 99999-0000" oninput="maskTelConta(this)"></div>
-        <div class="field" style="margin:0"><label>E-mail do contato</label><input type="email" id="intEmailContato" class="fi" placeholder="gerente@administradora.com.br"></div>
-      </div>
-      <div class="field" style="margin-bottom:10px"><label>URL da tabela de cotas (link direto)</label><input type="url" id="intUrlTabela" class="fi" placeholder="https://..."></div>
-      <div class="field" style="margin-bottom:14px"><label>Código de acesso / token da API <span style="font-size:10.5px;font-weight:400;color:var(--tm)">(fornecido pela administradora)</span></label><input type="text" id="intToken" class="fi" placeholder="Ex: sk-adm-xxxxx"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn bg" onclick="showToast('Dados da integração salvos! Conexão ativa após deploy.','ti-check')"><i class="ti ti-device-floppy"></i>Salvar integração</button>
-        <button class="btn bp bsm" onclick="showToast('Conexão com a administradora será testada após deploy.','ti-plug')"><i class="ti ti-plug"></i>Testar conexão</button>
-      </div>
     </div>`,
 
     usuarios:`<div class="cfg-card">
@@ -277,13 +257,8 @@ function cfgRenderSection(){
 
     notificacoes:`<div class="cfg-card">
       <div class="cfg-card-title"><i class="ti ti-bell" style="color:var(--g)"></i>Notificações</div>
-      <div class="cfg-card-sub">Defina quando e como ser avisado sobre atividades no CRM.</div>
-      ${toggleRow('Novo lead recebido','Notificar quando um lead novo entrar no funil')}
-      ${toggleRow('Lead parado há 3 dias','Alerta quando um lead ficar sem atualização')}
-      ${toggleRow('Lance se aproximando','Lembrete 2 dias antes da data do lance')}
-      ${toggleRow('Reunião agendada','Notificar 1 hora antes de uma reunião')}
-      ${toggleRow('Lead convertido','Celebrar quando uma venda for fechada 🎉')}
-      ${toggleRow('Relatório semanal','Enviar resumo toda segunda-feira')}
+      <div class="cfg-card-sub">O sininho no topo mostra, em tempo real, o que acontece no CRM: leads novos, vendas fechadas, leads movidos no funil, transferências, indicações e cadastros de usuários.</div>
+      <div class="ibox"><i class="ti ti-info-circle" style="font-size:14px;flex-shrink:0"></i><span>Quem vê o quê segue o cargo de cada pessoa: com <strong>Ver notificações da equipe</strong>, a pessoa acompanha também a equipe dela; sem essa permissão, só as próprias. Ajuste em Configurações → Hierarquia.</span></div>
     </div>`,
 
     aparencia:`<div class="cfg-card">
@@ -321,12 +296,10 @@ function cfgRenderSection(){
     seguranca:`<div class="cfg-card">
       <div class="cfg-card-title"><i class="ti ti-shield-lock" style="color:var(--g)"></i>Segurança</div>
       <div class="cfg-card-sub">Proteja o acesso ao CRM com configurações avançadas.</div>
-      ${toggleRow('Autenticação em dois fatores (2FA)','Exige código extra no login — recomendado',false)}
       <div class="cfg-toggle-row" style="opacity:.7">
         <div><div class="cfg-toggle-label">Encerrar sessão por inatividade</div><div class="cfg-toggle-sub">Logout automático após 30 dias sem uso — <strong>obrigatório, não pode ser desativado</strong></div></div>
         <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--g)"><i class="ti ti-lock" style="font-size:14px"></i>Ativo</div>
       </div>
-      ${toggleRow('Restringir acesso por IP','Permitir login apenas de IPs cadastrados',false)}
       <div class="cfg-divider"></div>
       <div style="font-size:12.5px;font-weight:700;color:var(--tx);margin-bottom:8px">Alterar minha senha</div>
       <div class="field"><label>Senha atual</label><input type="password" class="fi" id="seg-senha-atual" placeholder="••••••••" autocomplete="current-password"></div>

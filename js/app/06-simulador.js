@@ -15,13 +15,10 @@ function syncSim(){
     if(a)sadm.value=a.id;
   }
   simPopulateTabelas(a);
+  // só monta a lista de leads quando o simulador está aberto
   const sl=document.getElementById('sLeadSel');
-  if(sl){
-    const vis=getVisiveisParaMim();
-    const leadsVisiveis=isGestor()?leads:leads.filter(l=>vis.has(l.responsavelId));
-    const v=sl.value;
-    sl.innerHTML='<option value="">Selecionar lead cadastrado...</option>'+leadsVisiveis.map(l=>`<option value="${l.id}">${esc(l.nome)} — ${esc(l.tipo)} · ${fmtR(l.credito)}</option>`).join('');
-    sl.value=v;
+  if(sl&&document.getElementById('tab-simulador')?.classList.contains('active')){
+    preencherSelectLeads(sl,{vazio:'Selecionar lead cadastrado...',rotulo:l=>` — ${l.tipo} · ${fmtR(l.credito)}`});
   }
 }
 

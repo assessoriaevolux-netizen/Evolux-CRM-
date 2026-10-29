@@ -33,8 +33,9 @@ function renderRelatorios(){
   const _usersRel=users.filter(u=>_gestorRel||_visRel.has(u.id));
 
   // ── Etapas do funil ──────────────────────────────────────────────────────
-  const maxE=Math.max(...ETAPAS.map(e=>_leadsRel.filter(l=>l.etapa===e).length),1);
-  document.getElementById('rel-etapas').innerHTML=ETAPAS.map((e,i)=>{const c=_leadsRel.filter(l=>l.etapa===e).length;return `<div class="br"><span class="brl">${esc(etapaLabel(e))}</span><div class="brt"><div class="brf" style="width:${Math.round(c/maxE*100)}%;background:${EC[i]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
+  const _contEtapa={};_leadsRel.forEach(l=>{_contEtapa[l.etapa]=(_contEtapa[l.etapa]||0)+1;});
+  const maxE=Math.max(...ETAPAS.map(e=>_contEtapa[e]||0),1);
+  document.getElementById('rel-etapas').innerHTML=ETAPAS.map((e,i)=>{const c=_contEtapa[e]||0;return `<div class="br"><span class="brl">${esc(etapaLabel(e))}</span><div class="brt"><div class="brf" style="width:${Math.round(c/maxE*100)}%;background:${EC[i]}"></div></div><span class="brv">${c}</span></div>`;}).join('');
 
   // ── Tipos ────────────────────────────────────────────────────────────────
   document.getElementById('rel-tipos').innerHTML=['Imóvel','Automóvel','Moto','Serviço'].map(t=>{const c=_leadsRel.filter(l=>l.tipo===t).length;return `<div class="lr"><span class="ld" style="background:${TC[t]}"></span><span style="flex:1">${t}</span><span style="font-weight:700;color:var(--tx)">${c}</span></div>`;}).join('');
@@ -68,12 +69,17 @@ function renderRelatorios(){
   const eqEl=document.getElementById('rel-equipe-table');
   if(eqEl){
     // Para cada user: conta leads do período que são dele
+    // uma passada pelos leads, somando por responsável
+    const porResp=new Map();
+    for(const l of _leadsRel){
+      let r=porResp.get(l.responsavelId);
+      if(!r){ r={a:0,c:0,v:0}; porResp.set(l.responsavelId,r); }
+      if(l.etapa==='Fechado / Convertido'){ r.c++; r.v+=l.credito||0; }
+      else if(l.etapa!=='Perdido') r.a++;
+    }
     const sorted=[..._usersRel].map(u=>{
-      const mLeads=_leadsRel.filter(l=>l.responsavelId===u.id);
-      const mAtivos=mLeads.filter(l=>!['Fechado / Convertido','Perdido'].includes(l.etapa)).length;
-      const mConv=mLeads.filter(l=>l.etapa==='Fechado / Convertido').length;
-      const mVol=mLeads.filter(l=>l.etapa==='Fechado / Convertido').reduce((a,l)=>a+l.credito,0);
-      return {...u,_mAtivos:mAtivos,_mConv:mConv,_mVol:mVol};
+      const r=porResp.get(u.id)||{a:0,c:0,v:0};
+      return {...u,_mAtivos:r.a,_mConv:r.c,_mVol:r.v};
     }).sort((a,b)=>b._mVol-a._mVol);
 
     eqEl.innerHTML=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">

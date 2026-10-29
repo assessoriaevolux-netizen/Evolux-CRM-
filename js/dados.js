@@ -38,14 +38,23 @@
   // ── Utilitários de acesso ao banco ─────────────────────────────────────────
   // Busca TODAS as linhas em páginas de 1000 (o Supabase devolve no máximo 1000 por vez).
   // "montar" precisa devolver uma consulta nova a cada chamada, já com .order().
+  // A 1ª página vem sozinha; se vier cheia, as próximas são buscadas 6 de cada vez
+  // em paralelo (empresa com 60 mil leads abre em segundos, não em dezenas de segundos).
   window._sbTodos=async function(montar,tamanho){
     tamanho=tamanho||1000;
-    const out=[];
-    for(let de=0;de<500000;de+=tamanho){
+    const pagina=async de=>{
       const {data,error}=await montar().range(de,de+tamanho-1);
       if(error) throw error;
-      out.push(...(data||[]));
-      if(!data||data.length<tamanho) break;
+      return data||[];
+    };
+    const out=await pagina(0);
+    if(out.length<tamanho) return out;
+    const PARALELO=6;
+    for(let de=tamanho;de<500000;de+=tamanho*PARALELO){
+      const pags=await Promise.all(Array.from({length:PARALELO},(_,k)=>pagina(de+k*tamanho)));
+      let fim=false;
+      for(const p of pags){ out.push(...p); if(p.length<tamanho){ fim=true; break; } }
+      if(fim) break;
     }
     return out;
   };
@@ -56,9 +65,11 @@
   }
   function _msgErro(err){
     const m=String((err&&(err.message||err))||'');
+    if(/PLANO SUSPENSO/i.test(m)) return 'o plano da empresa está suspenso (CRM só para consulta)';
     if(/row-level security|permission denied|42501/i.test(m)) return 'sem permissão para esta alteração';
     return m||'erro desconhecido';
   }
+  window._msgErro=_msgErro;
 
   // Alterações que não chegaram ao banco ficam aqui e são reenviadas
   window._pendentes=new Map();
@@ -252,7 +263,13 @@
     try{
       if(!window._empresaIdDireto) return;
       const data=await _todosProfiles();
+      // Meu cargo/equipe mudou? Então a lista de leads que eu enxergo também muda
+      const eu=data.find(r=>r.id===window._currentUserId);
+      const meAntes=window.users.find(u=>u.sb_id===window._currentUserId);
+      if(eu&&eu.ativo===false){ window._conferirAcesso&&window._conferirAcesso(); }
+      const mudouMinhaVisao=!!(eu&&meAntes&&((eu.role||'vendedor').toLowerCase()!==meAntes.role||(eu.hierarquia_id||null)!==(meAntes.hierarquiaId||null)));
       mergeProfilesIntoUsers(data);
+      if(mudouMinhaVisao){ setTimeout(async()=>{ await window._loadEquipes(); await window._loadLeads(); try{window._renderTudo&&window._renderTudo();}catch(e){} },0); }
       window._ensureMeHperms&&window._ensureMeHperms();
       try{window.updateSbUser&&window.updateSbUser();}catch(e){}
       try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
@@ -311,13 +328,31 @@
       updated_at: new Date().toISOString()
     };
   }
+  // Ao salvar um lead cuja observação ainda não foi baixada, não manda o campo
+  // (senão a observação que está no banco seria apagada)
+  function _payloadLeadSalvar(lead){
+    const p=_payloadLead(lead);
+    if(lead._obsOk===false) delete p.obs;
+    return p;
+  }
+  // Baixa as observações (campo pesado) só quando precisa: ao abrir o lead ou exportar
+  window._carregarObsLeads=async function(lista){
+    const falta=(lista||[]).filter(l=>l&&l.sb_id&&l._obsOk===false);
+    for(let i=0;i<falta.length;i+=300){
+      const parte=falta.slice(i,i+300);
+      const {data,error}=await sb.from('leads').select('id,obs').in('id',parte.map(l=>l.sb_id));
+      if(error) throw error;
+      const porId=new Map((data||[]).map(r=>[String(r.id),r.obs||'']));
+      parte.forEach(l=>{ if(porId.has(String(l.sb_id))){ l.obs=porId.get(String(l.sb_id)); l._obsOk=true; } });
+    }
+  };
   window._payloadLead=_payloadLead;
 
   // Salva um lead (novo ou existente). Devolve true/false.
   window._syncLead = async function(lead) {
     const empresaId = lead.empresa_id || await window._getEmpresaId();
     if (!empresaId) return false;
-    const payload=_payloadLead(lead);
+    const payload=_payloadLeadSalvar(lead);
     let res;
     try{
       if(lead.sb_id) res=await sb.from('leads').update(payload).eq('id',lead.sb_id).select('id').maybeSingle();
@@ -413,7 +448,10 @@
       etapaOriginal,
       origem: row.origem || '',
       atendimento: row.atendimento || '',
-      obs: row.obs || '',
+      // a lista principal vem sem a observação (é o campo mais pesado); ela é
+      // baixada quando o lead é aberto. Tempo real e cadastro trazem completa.
+      obs: ('obs' in row) ? (row.obs || '') : (existing&&existing._obsOk!==false ? (existing.obs||'') : ''),
+      _obsOk: ('obs' in row) ? true : !!(existing&&existing._obsOk!==false),
       admin: row.administradora || null,
       metaId: row.meta_id || null,
       data: row.data_criacao ? String(row.data_criacao).slice(0,10).split('-').reverse().join('/') : '',
@@ -425,44 +463,74 @@
   }
 
   // Aplica uma mudança vinda do tempo real sem recarregar a base inteira
-  window._aplicarLeadRealtime=function(tipo,novo,antigo){
+  // ctx (opcional, usado no processamento em lote): {porSb: Map, gestor, vis}
+  window._aplicarLeadRealtime=function(tipo,novo,antigo,ctx){
     if(tipo==='DELETE'){
       const id=antigo&&antigo.id;
-      const i=leads.findIndex(l=>l.sb_id===id);
-      if(i!==-1){ leads.splice(i,1); return true; }
+      const alvo=ctx?ctx.porSb.get(String(id)):leads.find(l=>l.sb_id===id);
+      const i=alvo?leads.indexOf(alvo):-1;
+      if(i!==-1){ leads.splice(i,1); if(ctx) ctx.porSb.delete(String(id)); return true; }
       return false;
     }
     if(!novo||!novo.id) return false;
     if(String(novo.empresa_id)!==String(window._empresaIdDireto)) return false;
     // o aviso do tempo real pode chegar antes da resposta do próprio cadastro:
     // reconhece o lead recém-criado nesta tela (ainda sem id do banco)
-    const existing=leads.find(l=>l.sb_id===novo.id)
-      ||leads.find(l=>!l.sb_id&&l.nome===novo.nome&&normalizaTelefone(l.tel)===(novo.telefone||''));
+    const existing=(ctx?ctx.porSb.get(String(novo.id)):leads.find(l=>l.sb_id===novo.id))
+      ||(ctx?ctx.semId:leads).find(l=>!l.sb_id&&l.nome===novo.nome&&normalizaTelefone(l.tel)===(novo.telefone||''));
     const mapped=_mapLead(novo,existing);
     // confere se a pessoa ainda pode ver este lead (ex.: transferido para outra equipe)
-    const me=window.getMe&&window.getMe();
-    const vis=window.getVisiveisParaMim?window.getVisiveisParaMim():null;
-    const podeVer=!me||(window.isGestor&&window.isGestor(me))||(vis&&vis.has(mapped.responsavelId));
+    let podeVer;
+    if(ctx) podeVer=ctx.gestor||ctx.vis.has(mapped.responsavelId);
+    else{
+      const me=window.getMe&&window.getMe();
+      const vis=window.getVisiveisParaMim?window.getVisiveisParaMim():null;
+      podeVer=!me||(window.isGestor&&window.isGestor(me))||(vis&&vis.has(mapped.responsavelId));
+    }
     if(!podeVer){
-      if(existing){ leads.splice(leads.indexOf(existing),1); return true; }
+      if(existing){ leads.splice(leads.indexOf(existing),1); if(ctx) ctx.porSb.delete(String(novo.id)); return true; }
       return false;
     }
     if(existing) Object.assign(existing,mapped);
     else leads.unshift(mapped); // mais novos primeiro (mesma ordem do carregamento)
+    if(ctx) ctx.porSb.set(String(novo.id),existing||mapped);
     return true;
   };
+  // Avisos do tempo real chegam em rajadas (importação de milhares de leads):
+  // junta tudo a cada 300 ms e aplica de uma vez, com um índice montado só uma vez.
+  let _filaLeadsRt=[], _filaLeadsTimer=null;
+  function _filaLead(payload){
+    _filaLeadsRt.push(payload);
+    if(!_filaLeadsTimer) _filaLeadsTimer=setTimeout(_processarFilaLeads,300);
+  }
+  function _processarFilaLeads(){
+    _filaLeadsTimer=null;
+    const fila=_filaLeadsRt; _filaLeadsRt=[];
+    if(!fila.length) return;
+    const me=window.getMe&&window.getMe();
+    const ctx={porSb:new Map(), gestor:!me||(window.isGestor&&window.isGestor(me)),
+               vis:window.getVisiveisParaMim?window.getVisiveisParaMim():new Set()};
+    ctx.semId=[];
+    leads.forEach(l=>{ if(l.sb_id) ctx.porSb.set(String(l.sb_id),l); else ctx.semId.push(l); });
+    let mudou=false;
+    fila.forEach(p=>{ try{ if(window._aplicarLeadRealtime(p.eventType,p.new,p.old,ctx)) mudou=true; }catch(e){ console.warn('[tempo real]',e); } });
+    if(mudou) _renderLeadsDebounced();
+  }
 
+  // Colunas da lista de leads (sem "obs", que é baixada ao abrir o lead)
+  const _COLS_LEAD_LISTA='id,empresa_id,responsavel_id,nome,telefone,tipo,credito,etapa,origem,atendimento,administradora,meta_id,data_criacao,created_at,updated_at';
   window._loadLeads = async function() {
     try {
       const empresaId = await window._getEmpresaId();
       if (!empresaId) { console.error('[Security] _loadLeads: empresaId null — abortando'); return; }
-      const data=await window._sbTodos(()=>sb.from('leads').select('*').eq('empresa_id', empresaId)
+      const data=await window._sbTodos(()=>sb.from('leads').select(_COLS_LEAD_LISTA).eq('empresa_id', empresaId)
         .order('created_at',{ascending:false}).order('id'));
       const noBanco=new Set();
       const porSbId=new Map(leads.filter(l=>l.sb_id).map(l=>[l.sb_id,l]));
       const primeiraCarga=!leads.length;
       const novos=[];
       data.forEach(row => {
+        if(noBanco.has(row.id)) return; // páginas em paralelo podem repetir uma linha
         noBanco.add(row.id);
         const existing = porSbId.get(row.id);
         const mapped = _mapLead(row, existing);
@@ -543,10 +611,12 @@
       const data=await window._sbTodos(()=>sb.from('lances').select('*').eq('empresa_id',empresaId)
         .order('created_at',{ascending:false}).order('id'));
       const noBanco=new Set();
+      const lancePorSb=new Map(lances.filter(la=>la.sb_id).map(la=>[la.sb_id,la]));
+      const leadPorSb=new Map(leads.filter(l=>l.sb_id).map(l=>[String(l.sb_id),l]));
       data.forEach(row => {
         noBanco.add(row.id);
-        const existing = lances.find(la => la.sb_id === row.id);
-        const lead = leads.find(l => l.sb_id === row.lead_id);
+        const existing = lancePorSb.get(row.id);
+        const lead = row.lead_id ? leadPorSb.get(String(row.lead_id)) : null;
         const mapped = {
           id: existing ? existing.id : (nextLanceId++),
           sb_id: row.id,
@@ -783,8 +853,9 @@
   };
 
   window._deleteEvento = async function(sb_id) {
-    if (!sb_id) return;
-    await sb.from('eventos_calendario').delete().eq('id', sb_id);
+    if (!sb_id) return true;
+    const {data,error}=await sb.from('eventos_calendario').delete().eq('id', sb_id).select('id');
+    return !error && !!(data && data.length);
   };
 
   window._loadEventos = async function() {
@@ -793,8 +864,9 @@
       if(!empresaId) return;
       const data=await window._sbTodos(()=>sb.from('eventos_calendario').select('*').eq('empresa_id',empresaId).order('data').order('id'));
       eventos.splice(0); nextEventoId = 1;
+      const leadPorSb=new Map(leads.filter(l=>l.sb_id).map(l=>[String(l.sb_id),l]));
       data.forEach(row => {
-        const lead = leads.find(l => l.sb_id === row.lead_id);
+        const lead = row.lead_id ? leadPorSb.get(String(row.lead_id)) : null;
         eventos.push({
           id: nextEventoId++, sb_id: row.id, leadId: lead ? lead.id : null, leadNome: row.lead_nome || '',
           tipo: row.tipo || 'reuniao', data: row.data || '', horaIni: row.hora_ini || '', horaFim: row.hora_fim || '',
@@ -878,18 +950,24 @@
   };
 
   // ── CARREGAMENTO INICIAL COMPLETO ──────────────────────────────────────────
+  // Carrega em paralelo o que não depende de nada; leads depois das equipes;
+  // lances e agenda depois dos leads (para ligar cada um ao seu lead).
   window._loadAllData = async function() {
     if(!window._empresaIdDireto) return;
-    await window._loadEmpresa().catch(e=>console.warn('[_loadAllData] empresa:',e));
-    // empresa sem hierarquias ganha as padrão (feito pelo servidor)
-    await window._rpc('crm_garantir_hierarquias');
-    await window._loadHierarquias().catch(e=>console.warn('[_loadAllData] hierarquias:',e));
-    await window._loadAdministradoras().catch(e=>console.warn('[_loadAllData] administradoras:',e));
-    await window._loadEquipes().catch(e=>console.warn('[_loadAllData] equipes:',e));
-    await window._loadLeads().catch(e=>console.warn('[_loadAllData] leads:',e));
-    await window._loadLances().catch(e=>console.warn('[_loadAllData] lances:',e));
-    await window._loadEventos().catch(e=>console.warn('[_loadAllData] eventos:',e));
-    await window._loadAtividades().catch(e=>console.warn('[_loadAllData] atividades:',e));
+    const aviso=(o)=>e=>console.warn('[_loadAllData] '+o+':',e);
+    await Promise.all([
+      window._loadEmpresa().catch(aviso('empresa')),
+      // empresa sem hierarquias ganha as padrão (feito pelo servidor)
+      window._rpc('crm_garantir_hierarquias').then(()=>window._loadHierarquias()).catch(aviso('hierarquias')),
+      window._loadAdministradoras().catch(aviso('administradoras')),
+      window._loadEquipes().catch(aviso('equipes')),
+      window._loadAtividades().catch(aviso('atividades')),
+    ]);
+    await window._loadLeads().catch(aviso('leads'));
+    await Promise.all([
+      window._loadLances().catch(aviso('lances')),
+      window._loadEventos().catch(aviso('eventos')),
+    ]);
     try{window._ensureMeHperms&&window._ensureMeHperms();}catch(e){}
     try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
     window._renderTudo&&window._renderTudo();
@@ -902,10 +980,17 @@
 
   // ── 4. Tempo real ─────────────────────────────────────────────────────────
   function _debounce(fn,ms){ let t=null; return function(){ if(t) clearTimeout(t); t=setTimeout(()=>{t=null;fn();},ms); }; }
+  // Redesenha só a aba que está aberta (as outras se redesenham ao serem abertas).
+  // Na aba Leads mantém a página em que a pessoa está.
   const _renderLeadsDebounced=_debounce(function(){
-    try{window.renderKanban&&window.renderKanban();}catch(e){}
-    try{window.renderTable&&window.renderTable();}catch(e){}
-    try{window.renderDashboard&&window.renderDashboard();}catch(e){}
+    const ativa=document.querySelector('.content.active');
+    const id=ativa&&ativa.id?ativa.id.replace('tab-',''):'';
+    try{
+      if(id==='funil') window.renderKanban&&window.renderKanban();
+      else if(id==='leads') (window._renderTableImediato||window.renderTable)();
+      else if(id==='dashboard') window.renderDashboard&&window.renderDashboard();
+      else if(id==='relatorios') window.renderRelatorios&&window.renderRelatorios();
+    }catch(e){ console.warn('[render]',e); }
   },400);
   const _recarregarPerfis=_debounce(()=>window._loadProfiles(),800);
   const _recarregarRanking=_debounce(function(){
@@ -926,16 +1011,13 @@
       const canal=(nome,tabela,evento,fn)=>sb.channel(nome).on('postgres_changes',{event:evento,schema:'public',table:tabela,filter:filtro},fn).subscribe();
 
       canal('profiles-sync','profiles','*',()=>_recarregarPerfis());
-      canal('hierarquias-sync','hierarquias','*',async()=>{
+      // Permissões de um cargo mudaram: vale na hora (abas, botões e a tela aberta)
+      canal('hierarquias-sync','hierarquias','*',_debounce(async()=>{
         await window._loadHierarquias();
         try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
-        try{window.renderConfig&&document.getElementById('tab-configuracoes')?.classList.contains('active')&&window.renderConfig();}catch(e){}
-        try{window.renderRanking&&window.renderRanking();}catch(e){}
-      });
-      canal('leads-sync','leads','*',function(payload){
-        const mudou=window._aplicarLeadRealtime(payload.eventType,payload.new,payload.old);
-        if(mudou) _renderLeadsDebounced();
-      });
+        try{window._renderTudo&&window._renderTudo();}catch(e){}
+      },500));
+      canal('leads-sync','leads','*',_filaLead);
       canal('lances-sync','lances','*',()=>_recarregarLances());
       canal('vendas-sync','vendas','*',()=>{ _recarregarRanking(); _recarregarPerfis(); });
       canal('atividades-sync','atividades','INSERT',()=>_recarregarAtividades());

@@ -21,13 +21,13 @@ async function renderEmpresas(){
       <div style="width:48px;height:48px;border-radius:10px;background:var(--gs);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--g);flex-shrink:0">${esc((e.nome||'?').charAt(0))}</div>
       <div style="flex:1;min-width:160px">
         <div style="font-weight:700;font-size:14px">${esc(e.nome)}</div>
-        <div style="font-size:12px;color:var(--tm);margin-top:2px">Plano: <strong>${esc(e.plano||'básico')}</strong> · ${ativo?'<span style="color:var(--g)">● Ativa</span>':'<span style="color:#dc2626">● Suspensa (ninguém da empresa consegue entrar)</span>'}</div>
+        <div style="font-size:12px;color:var(--tm);margin-top:2px">Plano: <strong>${esc(e.plano||'básico')}</strong> · ${ativo?'<span style="color:var(--g)">● Ativa</span>':'<span style="color:#dc2626">● Plano suspenso — a equipe só consegue consultar, nada é gravado</span>'}</div>
         ${e.obs?`<div style="font-size:11.5px;color:var(--tm);margin-top:4px">${esc(e.obs)}</div>`:''}
       </div>
       <div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap">
         <button class="btn bg bsm" onclick="gerarConviteEmpresa('${esc(e.id)}')" title="Gerar link de convite para o gestor"><i class="ti ti-link"></i>Convite</button>
         <button class="btn bd bsm" onclick="openEditarEmpresaModal('${esc(e.id)}')" title="Editar empresa"><i class="ti ti-pencil"></i></button>
-        <button class="btn bd bsm" onclick="toggleEmpresaAtivo('${esc(e.id)}',${ativo})" style="flex-shrink:0">${ativo?'Suspender':'Reativar'}</button>
+        ${String(e.id)===String(window._empresaIdDireto)?'':`<button class="btn ${ativo?'bd':'bp'} bsm" onclick="toggleEmpresaAtivo('${esc(e.id)}',${ativo})" style="flex-shrink:0"><i class="ti ${ativo?'ti-lock':'ti-lock-open'}"></i>${ativo?'Suspender plano':'Reativar plano'}</button>`}
       </div>
     </div>`;
   }).join('');
@@ -103,11 +103,11 @@ async function toggleEmpresaAtivo(id,atual){
   const executar=async()=>{
     const {error}=await window._rpc('crm_admin_ativar_empresa',{p_id:String(id),p_ativo:novo});
     if(error){showToast('Erro ao alterar a empresa: '+error.message,'ti-alert-circle','#dc2626');return;}
-    showToast('Empresa '+(novo?'reativada':'suspensa')+'.','ti-check');
+    showToast(novo?'Plano reativado. A empresa volta a usar tudo em até 1 minuto.':'Plano suspenso. Em até 1 minuto a empresa passa a ver o CRM só para consulta.','ti-check');
     renderEmpresas();
   };
   if(novo) executar();
-  else showConfirm(`Suspender a ${e?e.nome:'empresa'}? Ninguém dela conseguirá entrar no CRM até você reativar.`,executar);
+  else showConfirm(`Suspender o plano da ${e?e.nome:'empresa'}?\n\nTodo mundo da empresa continua entrando, mas vê um aviso de "plano suspenso" e não consegue criar, alterar nem excluir nada até você reativar. WhatsApp, IA e Anúncios também param.`,executar);
 }
 async function openEditarEmpresaModal(id){
   const e=_empresasCache.find(x=>String(x.id)===String(id));

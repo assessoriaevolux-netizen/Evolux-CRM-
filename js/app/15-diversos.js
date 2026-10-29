@@ -173,6 +173,7 @@ function downloadRelatorio() {
   const _gestorDL=isGestor();
   const _leadsDL=leads.filter(l=>(_gestorDL||_visDL.has(l.responsavelId))&&(_iniDL?(_parseDL(l.data)&&_parseDL(l.data)>=_iniDL):true));
   const _usersDL=users.filter(u=>_gestorDL||_visDL.has(u.id));
+  const _porIdDL=new Map(users.map(u=>[u.id,u]));
   const total = _leadsDL.length, conv = _leadsDL.filter(l=>l.etapa==='Fechado / Convertido').length;
   const tx = total ? Math.round(conv/total*100) : 0;
   const vol = _leadsDL.filter(l=>l.etapa==='Fechado / Convertido').reduce((s,l)=>s+l.credito,0);
@@ -241,10 +242,10 @@ function downloadRelatorio() {
   <div class="card"><div class="lbl">Volume convertido</div><div class="num">R$ ${Math.round(vol/1000)}k</div></div>
   <h3 style="margin-top:20px;font-size:13px;color:#1a6e3c">Desempenho da equipe (${periodo})</h3>
   <table><thead><tr><th>Membro</th><th>Leads ativos</th><th>Convertidos</th><th>Crédito fechado</th></tr></thead>
-  <tbody>${_usersDL.map(u=>{const mL=_leadsDL.filter(l=>l.responsavelId===u.id);const mA=mL.filter(l=>!['Fechado / Convertido','Perdido'].includes(l.etapa)).length;const mC=mL.filter(l=>l.etapa==='Fechado / Convertido').length;const mV=mL.filter(l=>l.etapa==='Fechado / Convertido').reduce((a,l)=>a+l.credito,0);return`<tr><td>${esc(u.nome)}</td><td>${mA}</td><td>${mC}</td><td>${fmtR(mV)}</td></tr>`;}).join('')}</tbody></table>
+  <tbody>${(()=>{const pr=new Map();_leadsDL.forEach(l=>{let r=pr.get(l.responsavelId);if(!r){r={a:0,c:0,v:0};pr.set(l.responsavelId,r);}if(l.etapa==='Fechado / Convertido'){r.c++;r.v+=l.credito||0;}else if(l.etapa!=='Perdido')r.a++;});return _usersDL.map(u=>{const r=pr.get(u.id)||{a:0,c:0,v:0};return`<tr><td>${esc(u.nome)}</td><td>${r.a}</td><td>${r.c}</td><td>${fmtR(r.v)}</td></tr>`;}).join('');})()}</tbody></table>
   <h3 style="margin-top:20px;font-size:13px;color:#1a6e3c">Leads do período</h3>
   <table><thead><tr><th>Nome</th><th>Tipo</th><th>Crédito</th><th>Etapa</th><th>Responsável</th></tr></thead>
-  <tbody>${_leadsDL.map(l=>{const u=users.find(x=>x.id===l.responsavelId);return`<tr><td>${esc(l.nome)}</td><td>${esc(l.tipo)}</td><td>${fmtR(l.credito)}</td><td>${esc(etapaLabel(l.etapa))}</td><td>${u?esc(u.nome):'—'}</td></tr>`;}).join('')}</tbody></table>
+  <tbody>${_leadsDL.map(l=>{const u=_porIdDL.get(l.responsavelId);return`<tr><td>${esc(l.nome)}</td><td>${esc(l.tipo)}</td><td>${fmtR(l.credito)}</td><td>${esc(etapaLabel(l.etapa))}</td><td>${u?esc(u.nome):'—'}</td></tr>`;}).join('')}</tbody></table>
   <div class="footer">Evolux CRM · ${esc(adminNomeRel)} · ${data}</div>
   
 

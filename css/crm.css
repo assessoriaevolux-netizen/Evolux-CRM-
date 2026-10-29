@@ -1499,3 +1499,16 @@ label.ind-lote-i{justify-content:flex-start}
 .ind-lote-i.feito{background:var(--gs);border-color:var(--gb)}
 @media (max-width:900px){.ind-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.ind-pix{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:560px){.ind-rank-l{grid-template-columns:30px minmax(0,1fr) auto}.ind-rank-b{display:none}.ind-acoes{width:100%}.ind-acoes .btn{flex:1;justify-content:center}}
+
+/* ── PLANO SUSPENSO (CRM só para consulta) ─────────────────────── */
+#evx-suspenso{position:fixed;top:0;left:0;right:0;z-index:9000;display:flex;align-items:center;gap:12px;padding:10px max(18px,env(safe-area-inset-right)) 10px max(18px,env(safe-area-inset-left));background:#b91c1c;color:#fff;font-size:13.5px;line-height:1.45;box-shadow:0 2px 14px rgba(0,0,0,.2)}
+#evx-suspenso>i{font-size:20px;flex-shrink:0}
+#evx-suspenso>div{flex:1;min-width:0}
+#evx-suspenso button{flex-shrink:0;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:8px;padding:6px 12px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+#evx-suspenso button:hover{background:rgba(255,255,255,.26)}
+html.crm-suspenso body{padding-top:var(--susp-h,46px);box-sizing:border-box}
+html.crm-suspenso .sidebar{top:var(--susp-h,46px);height:calc(100vh - var(--susp-h,46px))}
+html.crm-suspenso .content{min-height:calc(100vh - 56px - var(--susp-h,46px))}
+html.crm-suspenso .main-area .btn.bp,html.crm-suspenso .main-area .dn-btn.pri,html.crm-suspenso .main-area .add-col-btn{opacity:.5;cursor:not-allowed}
+html.crm-suspenso .kcard{cursor:pointer}
+@media (max-width:560px){#evx-suspenso{font-size:12.5px;padding-top:8px;padding-bottom:8px}#evx-suspenso button span{display:none}}
