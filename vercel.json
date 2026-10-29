@@ -3,6 +3,7 @@
     { "source": "/crm", "destination": "/crm.html" },
     { "source": "/privacidade", "destination": "/privacidade.html" },
     { "source": "/exclusao-de-dados", "destination": "/exclusao-de-dados.html" },
+    { "source": "/indicar", "destination": "/indicar.html" },
     { "source": "/", "destination": "/index.html" }
   ],
   "headers": [
@@ -11,7 +12,7 @@
       "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
     },
     {
-      "source": "/(crm|privacidade|exclusao-de-dados)?",
+      "source": "/(crm|privacidade|exclusao-de-dados|indicar)?",
       "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
     },
     {
