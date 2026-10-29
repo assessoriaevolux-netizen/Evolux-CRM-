@@ -164,7 +164,8 @@ function indViewIndicadores(){
       <td>${indData(i.ultimo_envio)}</td>
       <td class="ind-nowrap">
         <button class="btn bg bsm" title="Enviar pelo WhatsApp" onclick="indEnviarWa('${i.id}')"${i.telefone&&i.ativo?'':' disabled'}><i class="ti ti-brand-whatsapp" style="color:#25d366"></i>Enviar</button>
-        <button class="btn bg bsm" title="Copiar mensagem com o link" onclick="indCopiarMsg('${i.id}')"><i class="ti ti-copy"></i></button>
+        <button class="btn bg bsm" title="Copiar só o link" onclick="indCopiarLink('${i.id}')"><i class="ti ti-link"></i></button>
+        <button class="btn bg bsm" title="Copiar mensagem completa com o link" onclick="indCopiarMsg('${i.id}')"><i class="ti ti-copy"></i></button>
       </td>
       <td class="ind-nowrap">
         <button class="btn bg bsm" title="${i.ativo?'Pausar link':'Reativar link'}" onclick="indAtivar('${i.id}',${!i.ativo})"><i class="ti ${i.ativo?'ti-player-pause':'ti-player-play'}"></i></button>
@@ -250,6 +251,7 @@ function indEnviarWa(id){
   window.open('https://wa.me/'+tel+'?text='+encodeURIComponent(indMensagem(i)),'_blank','noopener');
 }
 function indCopiarMsg(id){const i=indPorId(id);if(i)indCopiar(indMensagem(i),'Mensagem com o link copiada!');}
+function indCopiarLink(id){const i=indPorId(id);if(i)indCopiar(indLink(i.token),'Link copiado!');}
 async function indAtivar(id,ativo){
   const {error}=await window._rpc('ind_editar',{p_id:id,p_ativo:ativo,p_responsavel:null,p_limite:null});
   if(error){showToast('Não consegui alterar: '+(error.message||error),'ti-alert-triangle','#dc2626');return;}
@@ -329,27 +331,58 @@ async function indSalvarNovo(){
   if(ind) indMostrarLinks([ind],data[0].novo?null:'Este cliente já tinha um link. É o mesmo de antes:');
 }
 
-// Links em lote: clientes que fecharam e ainda não têm link
-function indAbrirLote(){
+// Links em lote: leads que ainda não têm link, com busca e filtro por etapa
+function indCandidatosLote(){
   const temLead=new Set(IND.indicadores.map(i=>String(i.lead_id||'')));
   const temTel=new Set(IND.indicadores.map(i=>indChaveTel(i.telefone)).filter(Boolean));
   const vistos=new Set();
-  const cands=(window.leads||[]).filter(l=>{
-    if(!l.sb_id||l.etapa!==IND_FECHADO)return false;
+  return (window.leads||[]).filter(l=>{
+    if(!l.sb_id)return false;
     const k=indChaveTel(l.tel);
     if(!k||temLead.has(String(l.sb_id))||temTel.has(k)||vistos.has(k))return false;
     vistos.add(k);return true;
   }).sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'));
-  if(!cands.length){
-    indModal('<i class="ti ti-users-group" style="color:var(--g)"></i> Gerar links em lote',`<div class="ind-vazio-mini">Todos os seus clientes (leads em "${esc(IND_FECHADO)}" com telefone) já têm link.<br>Para incluir outra pessoa, use <strong>Novo indicador</strong>.</div>`,`<button class="btn bg" onclick="indFecharModal()">Fechar</button>`);
+}
+function indAbrirLote(){
+  window._indCandsTodos=indCandidatosLote();
+  window._indLoteBusca='';window._indLoteEtapa='';
+  if(!window._indCandsTodos.length){
+    indModal('<i class="ti ti-users-group" style="color:var(--g)"></i> Gerar links em lote',`<div class="ind-vazio-mini">Todos os seus leads com telefone já têm link.<br>Para incluir outra pessoa, use <strong>Novo indicador</strong>.</div>`,`<button class="btn bg" onclick="indFecharModal()">Fechar</button>`);
     return;
   }
-  window._indCands=cands;
+  const etapas=[...new Set(window._indCandsTodos.map(l=>l.etapa).filter(Boolean))].sort();
   indModal('<i class="ti ti-users-group" style="color:var(--g)"></i> Gerar links em lote',`
-    <div class="ind-mini" style="margin-bottom:10px">Clientes em <strong>${esc(IND_FECHADO)}</strong> que ainda não têm link. Cada um fica com o responsável que já atende o lead.</div>
-    <label class="ind-chk-all"><input type="checkbox" checked onchange="document.querySelectorAll('.ind-chk').forEach(c=>c.checked=this.checked);indContarLote()"> Selecionar todos</label>
-    <div class="ind-lote">${cands.map((l,ix)=>`<label class="ind-lote-i"><input type="checkbox" class="ind-chk" data-ix="${ix}" checked onchange="indContarLote()"><span><strong>${esc(l.nome)}</strong><small>${esc(indTelFmt(l.tel))} · ${esc(indNomeUser(l.responsavelSbId))}</small></span></label>`).join('')}</div>`,
-    `<button class="btn bp" id="ind-l-ok" onclick="indGerarLote()"><i class="ti ti-link"></i>Gerar ${cands.length} links</button><button class="btn bg" onclick="indFecharModal()">Cancelar</button>`,560);
+    <div class="ind-mini" style="margin-bottom:10px">Leads que ainda não têm link de indicação. Cada um fica com o responsável que já atende o lead.</div>
+    <div class="g2" style="margin-bottom:10px">
+      <input class="fi" id="ind-l-busca" placeholder="Buscar por nome…" oninput="window._indLoteBusca=this.value;indAtualizarLote()" autocomplete="off">
+      <select class="fi" id="ind-l-etapa" onchange="window._indLoteEtapa=this.value;indAtualizarLote()">
+        <option value="">Todas as etapas</option>
+        ${etapas.map(e=>`<option value="${esc(e)}">${esc(e)}</option>`).join('')}
+      </select>
+    </div>
+    <label class="ind-chk-all"><input type="checkbox" id="ind-l-todos" checked onchange="document.querySelectorAll('.ind-chk').forEach(c=>c.checked=this.checked);indContarLote()"> Selecionar todos</label>
+    <div class="ind-lote" id="ind-l-lista"></div>
+    <div class="ind-mini" id="ind-l-info" style="margin-top:6px;text-align:right"></div>`,
+    `<button class="btn bp" id="ind-l-ok" onclick="indGerarLote()"><i class="ti ti-link"></i>Gerar links</button><button class="btn bg" onclick="indFecharModal()">Cancelar</button>`,580);
+  indAtualizarLote();
+  setTimeout(()=>document.getElementById('ind-l-busca')?.focus(),50);
+}
+function indAtualizarLote(){
+  const q=(window._indLoteBusca||'').trim().toLowerCase();
+  const qd=q.replace(/\D/g,'');
+  const et=window._indLoteEtapa||'';
+  const cands=window._indCandsTodos.filter(l=>{
+    if(et&&l.etapa!==et)return false;
+    if(q&&!String(l.nome).toLowerCase().includes(q)&&!(qd.length>=4&&String(l.tel||'').replace(/\D/g,'').includes(qd)))return false;
+    return true;
+  });
+  window._indCands=cands;
+  const box=document.getElementById('ind-l-lista');
+  const info=document.getElementById('ind-l-info');
+  if(box)box.innerHTML=cands.length?cands.map((l,ix)=>`<label class="ind-lote-i"><input type="checkbox" class="ind-chk" data-ix="${ix}" checked onchange="indContarLote()"><span><strong>${esc(l.nome)}</strong><small>${esc(indTelFmt(l.tel))} · ${esc(l.etapa||'—')} · ${esc(indNomeUser(l.responsavelSbId))}</small></span></label>`).join(''):'<div class="ind-vazio-mini">Nenhum lead encontrado.</div>';
+  if(info)info.textContent=cands.length+' de '+window._indCandsTodos.length+' leads';
+  const ta=document.getElementById('ind-l-todos');if(ta)ta.checked=true;
+  indContarLote();
 }
 function indContarLote(){const n=document.querySelectorAll('.ind-chk:checked').length;const b=document.getElementById('ind-l-ok');if(b){b.innerHTML=`<i class="ti ti-link"></i>Gerar ${n} link${n===1?'':'s'}`;b.disabled=!n;}}
 async function indGerarLote(){
@@ -376,7 +409,8 @@ function indMostrarLinks(lista,aviso){
     <div class="ind-mini" style="margin-bottom:10px">Toque em <strong>Enviar</strong> para abrir o WhatsApp com a mensagem e os prêmios já escritos.</div>
     <div class="ind-lote">${lista.map(i=>`<div class="ind-lote-i"><span><strong>${esc(i.nome)}</strong><small>${esc(indLink(i.token))}</small></span>
       <span class="ind-nowrap"><button class="btn bp bsm" onclick="indEnviarWa('${i.id}');this.closest('.ind-lote-i').classList.add('feito')"${i.telefone?'':' disabled'}><i class="ti ti-brand-whatsapp"></i>Enviar</button>
-      <button class="btn bg bsm" title="Copiar mensagem" onclick="indCopiarMsg('${i.id}')"><i class="ti ti-copy"></i></button></span></div>`).join('')}</div>`,
+      <button class="btn bg bsm" title="Copiar link" onclick="indCopiarLink('${i.id}')"><i class="ti ti-link"></i></button>
+      <button class="btn bg bsm" title="Copiar mensagem completa" onclick="indCopiarMsg('${i.id}')"><i class="ti ti-copy"></i></button></span></div>`).join('')}</div>`,
     `${lista.length>1?`<button class="btn bg" onclick="indCopiarTodos()"><i class="ti ti-clipboard-list"></i>Copiar lista</button>`:''}<button class="btn bp" onclick="indFecharModal()">Concluir</button>`,580);
 }
 function indCopiarTodos(){
