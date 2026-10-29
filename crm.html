@@ -6,7 +6,7 @@
 <title>Evolux CRM</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.0/dist/tabler-icons.min.css">
-<link rel="stylesheet" href="css/crm.css?v=20261024b">
+<link rel="stylesheet" href="css/crm.css?v=20261029a">
 <link rel="stylesheet" href="css/design-novo.css?v=20261024f">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
@@ -36,6 +36,7 @@
     <button class="nb active" onclick="showTab('dashboard',this)" title="Painel"><i class="ti ti-layout-dashboard"></i><span class="nb-label">Painel</span></button>
     <button class="nb" onclick="showTab('funil',this)" title="Funil"><i class="ti ti-layout-kanban"></i><span class="nb-label">Funil</span></button>
     <button class="nb" onclick="showTab('leads',this)" title="Leads"><i class="ti ti-users"></i><span class="nb-label">Leads</span></button>
+    <button class="nb" onclick="showTab('indicador',this)" title="Projeto Indicador"><i class="ti ti-gift"></i><span class="nb-label">Indicador</span></button>
     <button class="nb" onclick="showTab('simulador',this)" title="Simulador"><i class="ti ti-calculator"></i><span class="nb-label">Simulador</span></button>
     <button class="nb" onclick="showTab('lances',this)" title="Lances"><i class="ti ti-gavel"></i><span class="nb-label">Lances</span></button>
     <button class="nb" onclick="showTab('minhasvendas',this)" title="Minhas Vendas"><i class="ti ti-receipt"></i><span class="nb-label">Minhas Vendas</span></button>
@@ -610,6 +611,9 @@
 </div>
 
 <!-- WHATSAPP (preenchido por js/app/14-whatsapp.js) -->
+<!-- PROJETO INDICADOR -->
+<div id="tab-indicador" class="content"></div>
+
 <div id="tab-whatsapp" class="content"></div>
 
 <!-- IA DE ATENDIMENTO (js/app/27-ia.js) -->
@@ -1166,7 +1170,7 @@
 </div>
 
 <!-- Scripts do CRM (em ordem de execução) -->
-<script src="js/app/01-base.js?v=20261024a"></script>
+<script src="js/app/01-base.js?v=20261029a"></script>
 <script src="js/app/02-dashboard.js?v=20261024g"></script>
 <script src="js/app/03-funil.js?v=20261024j"></script>
 <script src="js/app/04-importacao.js?v=20261024h"></script>
@@ -1194,6 +1198,7 @@
 <script src="js/app/26-anuncios.js?v=20261023a"></script>
 <script src="js/app/27-ia.js?v=20261023a"></script>
 <script src="js/app/28-demo.js?v=20261028d"></script>
+<script src="js/app/29-indicador.js?v=20261029a"></script>
 <script src="js/app/99-inicio.js?v=20261023a"></script>
 </body>
 </html>
