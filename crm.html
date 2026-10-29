@@ -6,7 +6,7 @@
 <title>Evolux CRM</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.0/dist/tabler-icons.min.css">
-<link rel="stylesheet" href="css/crm.css?v=20261029a">
+<link rel="stylesheet" href="css/crm.css?v=20261029r">
 <link rel="stylesheet" href="css/design-novo.css?v=20261024f">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
@@ -16,7 +16,7 @@
      SUPABASE — Auth guard + sincronização em tempo real
      ═══════════════════════════════════════════════════════════ -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="js/dados.js?v=20261024h"></script>
+<script src="js/dados.js?v=20261029r"></script>
 </head>
 <body>
 
@@ -686,9 +686,13 @@
           <textarea class="ha" id="cal-obs" placeholder="Pauta da reunião, link da call..."></textarea>
         </div>
         <div style="display:flex;flex-direction:column;gap:7px;margin-top:4px">
-          <button class="btn bp" style="justify-content:center" onclick="calAgendar()">
+          <button class="btn bp" id="cal-btn-agendar" style="justify-content:center" onclick="calAgendar()">
             <i class="ti ti-calendar-check"></i>Agendar no CRM
           </button>
+          <div id="cal-edit-acoes" style="display:none;gap:7px">
+            <button class="btn bd" style="flex:1;justify-content:center" onclick="calExcluirEvento()"><i class="ti ti-trash"></i>Excluir</button>
+            <button class="btn bg" style="flex:1;justify-content:center" onclick="calCancelarEdicao()"><i class="ti ti-x"></i>Cancelar edição</button>
+          </div>
           <button class="gcal-btn" onclick="calAbrirGoogle()">
             <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
             Abrir no Google Calendar
@@ -1172,24 +1176,24 @@
 <!-- Scripts do CRM (em ordem de execução) -->
 <script src="js/app/01-base.js?v=20261029a"></script>
 <script src="js/app/02-dashboard.js?v=20261024g"></script>
-<script src="js/app/03-funil.js?v=20261024j"></script>
-<script src="js/app/04-importacao.js?v=20261024h"></script>
-<script src="js/app/05-leads.js?v=20261024h"></script>
-<script src="js/app/06-simulador.js?v=20261023a"></script>
-<script src="js/app/07-lances.js?v=20261023a"></script>
-<script src="js/app/08-ranking.js?v=20261023a"></script>
+<script src="js/app/03-funil.js?v=20261029r"></script>
+<script src="js/app/04-importacao.js?v=20261029r"></script>
+<script src="js/app/05-leads.js?v=20261029r"></script>
+<script src="js/app/06-simulador.js?v=20261029r"></script>
+<script src="js/app/07-lances.js?v=20261029r"></script>
+<script src="js/app/08-ranking.js?v=20261029r"></script>
 <script src="js/app/09-administradoras.js?v=20261023a"></script>
 <script src="js/app/10-usuarios.js?v=20261023a"></script>
-<script src="js/app/11-configuracoes.js?v=20261024g"></script>
-<script src="js/app/12-relatorios.js?v=20261023a"></script>
-<script src="js/app/13-calendario.js?v=20261023a"></script>
+<script src="js/app/11-configuracoes.js?v=20261029r"></script>
+<script src="js/app/12-relatorios.js?v=20261029r"></script>
+<script src="js/app/13-calendario.js?v=20261029r"></script>
 <script src="js/app/14-whatsapp.js?v=20261029c"></script>
-<script src="js/app/15-diversos.js?v=20261024g"></script>
-<script src="js/app/16-empresas.js?v=20261023a"></script>
+<script src="js/app/15-diversos.js?v=20261029r"></script>
+<script src="js/app/16-empresas.js?v=20261029r"></script>
 <script src="js/app/17-equipes.js?v=20261023a"></script>
 <script src="js/app/18-ui.js?v=20261023a"></script>
-<script src="js/app/19-minhas-vendas.js?v=20261023a"></script>
-<script src="js/app/20-init.js?v=20261023a"></script>
+<script src="js/app/19-minhas-vendas.js?v=20261029r"></script>
+<script src="js/app/20-init.js?v=20261029r"></script>
 <script src="js/app/21-hierarquia.js?v=20261023a"></script>
 <script src="js/app/22-protocolo.js?v=20261023a"></script>
 <script src="js/app/23-eventos.js?v=20261023a"></script>

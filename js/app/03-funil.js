@@ -74,12 +74,16 @@ function _leadDataISO(l){
   return d;
 }
 
+// Filtros calculados uma vez por desenho (período, gestor) — não a cada lead
 function getFunilFiltros(){
+  const consultor=document.getElementById('ff-consultor')?.value||'';
   return {
-    consultor:document.getElementById('ff-consultor')?.value||'',
+    consultor, consultorId:parseInt(consultor)||0,
     origem:document.getElementById('ff-origem')?.value||'',
     tipo:document.getElementById('ff-tipo')?.value||'',
-    atendimento:document.getElementById('ff-atendimento')?.value||''
+    atendimento:document.getElementById('ff-atendimento')?.value||'',
+    range:_funilDateRange(),
+    gestor:isGestor()
   };
 }
 function _atualizarContagemSel(){
@@ -193,13 +197,14 @@ function excluirSelecionados(){
 function applyFunilFilter(l,f,vis){
   // Visibilidade hierárquica: só mostra leads que o usuário pode ver
   if(!vis) vis=getVisiveisParaMim();
-  if(!isGestor()&&!vis.has(l.responsavelId)) return false;
-  if(f.consultor&&l.responsavelId!==parseInt(f.consultor))return false;
+  const gestor=f.gestor!==undefined?f.gestor:isGestor();
+  if(!gestor&&!vis.has(l.responsavelId)) return false;
+  if(f.consultor&&l.responsavelId!==(f.consultorId||parseInt(f.consultor)))return false;
   if(f.origem&&l.origem!==f.origem)return false;
   if(f.tipo&&l.tipo!==f.tipo)return false;
   if(f.atendimento&&(l.atendimento||'')!==f.atendimento)return false;
   // Filtro de período
-  const range=_funilDateRange();
+  const range=f.range!==undefined?f.range:_funilDateRange();
   if(range){
     // vale a data do lead (formulário/planilha) OU o dia em que ele entrou no CRM
     const noPeriodo=d=>!!d&&d>=range.de&&d<=range.ate;
@@ -215,7 +220,7 @@ let kanbanColPage={}; // { etapa: número de cards visíveis }
 const ATD_LABEL={aguardando:'⏳ Aguardando',em_andamento:'🔵 Em andamento',finalizado:'✅ Finalizado'};
 
 function renderKanbanColuna(etapa,i,f,vis,ctx){
-  const todosCards=leads.filter(l=>l.etapa===etapa&&applyFunilFilter(l,f,vis));
+  const todosCards=ctx.porEtapa?(ctx.porEtapa[etapa]||[]):leads.filter(l=>l.etapa===etapa&&applyFunilFilter(l,f,vis));
   const limite=kanbanColPage[etapa]||KANBAN_PAGE_SIZE;
   const cards=todosCards.slice(0,limite);
   const allColSel=cards.length>0&&cards.every(l=>funilSelected.has(l.id));
@@ -273,7 +278,16 @@ function _renderKanbanImediato(){
     podeAbrir:can('leads_edit')||can('funil_move'),
     podeCriar:can('leads_create'),
   };
-  const totalFiltrado=leads.filter(l=>applyFunilFilter(l,f,vis)).length;
+  // uma passada só pelos leads: separa por etapa já filtrado
+  ctx.porEtapa={};
+  ETAPAS.forEach(e=>ctx.porEtapa[e]=[]);
+  let totalFiltrado=0;
+  for(const l of leads){
+    if(!applyFunilFilter(l,f,vis)) continue;
+    totalFiltrado++;
+    const b=ctx.porEtapa[l.etapa];
+    if(b) b.push(l);
+  }
   document.getElementById('funil-total').textContent=totalFiltrado;
   el.innerHTML=ETAPAS.map((etapa,i)=>renderKanbanColuna(etapa,i,f,vis,ctx)).join('');
 }
@@ -340,8 +354,17 @@ function openLeadDetalhe(id){
   ldResp.innerHTML=(l.responsavelId?'':'<option value="" selected>— sem responsável —</option>')+
     usersOpt.map(u=>`<option value="${u.id}"${u.id===l.responsavelId?' selected':''}>${esc(u.nome)}</option>`).join('');
   document.getElementById('ld-atendimento').value=l.atendimento||'';
-  document.getElementById('ld-obs').value=l.obs||'';
+  const obsEl=document.getElementById('ld-obs');
+  obsEl.value=l.obs||'';
   ['ld-nome','ld-tel','ld-tipo','ld-credito','ld-origem','ld-atendimento','ld-obs'].forEach(cid=>{const el=document.getElementById(cid);if(el)el.disabled=!podeEd;});
+  // a observação é baixada só agora (a lista vem sem ela para abrir rápido)
+  if(l._obsOk===false&&l.sb_id&&window._carregarObsLeads){
+    obsEl.value='Carregando observações…'; obsEl.disabled=true;
+    window._carregarObsLeads([l]).then(()=>{
+      if(_leadDetalheId!==id) return;
+      obsEl.value=l.obs||''; obsEl.disabled=!podeEd;
+    }).catch(()=>{ if(_leadDetalheId===id) obsEl.value='Não consegui carregar as observações agora.'; });
+  }
   ldEtapa.disabled=!podeMov;
   ldResp.disabled=!podeTransf;
   const btnSave=document.getElementById('btn-save-lead-det');
@@ -378,7 +401,7 @@ async function saveLeadDetalhe(){
     l.credito=unM(document.getElementById('ld-credito').value)||l.credito;
     l.origem=document.getElementById('ld-origem').value;
     l.atendimento=document.getElementById('ld-atendimento').value;
-    l.obs=document.getElementById('ld-obs').value;
+    if(l._obsOk!==false) l.obs=document.getElementById('ld-obs').value; // só mexe se a observação foi carregada
   }
   if(podeMov) l.etapa=document.getElementById('ld-etapa').value;
   if(podeTransf) l.responsavelId=parseInt(document.getElementById('ld-resp').value)||l.responsavelId;

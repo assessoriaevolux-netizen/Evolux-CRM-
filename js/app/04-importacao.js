@@ -5,12 +5,18 @@ function _csvCelula(v){
   if(/^[=@\t\r]/.test(s)||/^[+\-][^\d\s]/.test(s)) s="'"+s;
   return `"${s.replace(/"/g,'""')}"`;
 }
-function exportarLeadsCSV(){
+async function exportarLeadsCSV(){
   const cols=['ID','Nome','Telefone','Tipo','Crédito','Etapa','Origem','Responsável','Atendimento','Data','Observações'];
   const f=getFunilFiltros();
   const vis=getVisiveisParaMim();
   const porId=new Map(users.map(u=>[u.id,u]));
-  const rows=leads.filter(l=>applyFunilFilter(l,f,vis)).map(l=>{
+  const lista=leads.filter(l=>applyFunilFilter(l,f,vis));
+  // as observações não vêm na lista principal: baixa antes de exportar
+  if(lista.some(l=>l._obsOk===false)&&window._carregarObsLeads){
+    showToast('Preparando a planilha...','ti-loader');
+    try{ await window._carregarObsLeads(lista); }catch(e){ showToast('Não consegui baixar as observações; a planilha sai sem elas.','ti-alert-triangle','#d97706'); }
+  }
+  const rows=lista.map(l=>{
     const resp=porId.get(l.responsavelId);
     return [l.id,l.nome,l.tel||'',l.tipo,l.credito,l.etapa,l.origem||'',resp?resp.nome:'',l.atendimento||'',l.data,l.obs||''].map(_csvCelula).join(',');
   });
@@ -504,7 +510,8 @@ async function _impConfirmar(){
   }
   // mostra na tela (mais novos primeiro) os salvos e os que aguardam a conexão voltar
   const falhou=new Set(res.falhas.map(f=>f.lead));
-  const paraTela=lista.filter(l=>!falhou.has(l)&&!(l.sb_id&&leads.some(x=>x.sb_id===l.sb_id)));
+  const jaNaTela=new Set(leads.filter(x=>x.sb_id).map(x=>String(x.sb_id)));  // o tempo real pode ter trazido antes
+  const paraTela=lista.filter(l=>!falhou.has(l)&&!(l.sb_id&&jaNaTela.has(String(l.sb_id))));
   for(let i=paraTela.length-1;i>=0;i--) leads.unshift(paraTela[i]);
   document.getElementById('modal-importar')?.remove();
   _imp=null;

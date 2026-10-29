@@ -20,7 +20,10 @@ function renderLances(){
   if(!lista) return;
   if(!ativos.length){lista.innerHTML='<p style="color:var(--tm);font-size:13px">Nenhum lance cadastrado. Leads "Fechado / Convertido" aparecem aqui automaticamente para cadastro de lance.</p>';return;}
   const podeEditar=can('lances_edit');
-  const sorted=[...ativos].sort((a,b)=>((_lanceData(a)||0)-(_lanceData(b)||0)));
+  const sortedTodos=[...ativos].sort((a,b)=>((_lanceData(a)||0)-(_lanceData(b)||0)));
+  // empresa grande pode ter milhares de lances: mostra aos poucos
+  const sorted=sortedTodos.slice(0,_lancesLimite);
+  const resto=sortedTodos.length-sorted.length;
   lista.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px">'+sorted.map(l=>{
     const autoTag=l._auto?`<span style="font-size:9px;padding:2px 6px;border-radius:20px;background:rgba(1,107,60,.12);color:var(--g);font-weight:700;margin-left:4px">AUTO</span>`:'';
     const btnRem=podeEditar?`<button class="btn bd bsm" onclick="removeLance(${l.id})" title="Remover"><i class="ti ti-${l.ofertado?'trash':'x'}"></i></button>`:'';
@@ -43,8 +46,11 @@ function renderLances(){
         </div>`:''}
       </div>
     </div>`;
-  }).join('')+'</div>';
+  }).join('')+'</div>'+(resto>0?`<div style="text-align:center;margin-top:14px"><button class="btn bg" onclick="lancesVerMais()"><i class="ti ti-chevron-down"></i>Ver mais ${fmt(Math.min(resto,LANCES_PAGINA))} de ${fmt(resto)}</button></div>`:'');
 }
+const LANCES_PAGINA=120;
+let _lancesLimite=LANCES_PAGINA;
+function lancesVerMais(){ _lancesLimite+=LANCES_PAGINA; renderLances(); }
 function _preencherLanceModal(l){
   document.getElementById('lValor').value=l&&l.valor?Math.round(l.valor).toLocaleString('pt-BR'):'';
   document.getElementById('lPct').value=l&&l.pct?l.pct:'';
@@ -55,8 +61,8 @@ function _preencherLanceModal(l){
 function editarLanceAuto(id){
   if(!can('lances_edit')){showToast('Você não tem permissão para editar lances.','ti-lock');return;}
   const l=lances.find(x=>x.id===id);if(!l)return;
-  populateSelects();
   const cl=document.getElementById('lCliente');
+  _preencherClientesLance(l.leadId||null);
   if(cl&&l.leadId){
     if(![...cl.options].some(o=>o.value===String(l.leadId))){
       const o=document.createElement('option');o.value=l.leadId;o.textContent=l.clienteNome;cl.appendChild(o);
@@ -69,12 +75,17 @@ function editarLanceAuto(id){
 }
 function openLanceModal(leadId){
   if(!can('lances_create')){showToast('Você não tem permissão para cadastrar lances.','ti-lock');return;}
-  populateSelects();
   window._editandoLanceId=null;
   _preencherLanceModal(null);
-  const cl=document.getElementById('lCliente');
-  if(cl&&leadId) cl.value=leadId;
+  _preencherClientesLance(leadId||null);
   document.getElementById('lance-modal').classList.add('open');
+}
+// Clientes do lance: quem já fechou aparece primeiro
+function _preencherClientesLance(selecionar){
+  const FECH='Fechado / Convertido';
+  preencherSelectLeads(document.getElementById('lCliente'),{vazio:'Selecionar cliente...',
+    ordenar:(a,b)=>(b.etapa===FECH)-(a.etapa===FECH),
+    rotulo:l=>l.etapa===FECH?' · cliente':''},selecionar);
 }
 function closeLanceModal(){document.getElementById('lance-modal').classList.remove('open');window._editandoLanceId=null;}
 let _salvandoLance=false;

@@ -39,14 +39,48 @@ function populateSelects(){
     }
   }
   // vvend é preenchido por rankAtualizarSidebar() (regras de venda) — não mexer aqui
-  const vis=getVisiveisParaMim();
-  const gestor=isGestor(me);
-  const leadsVis=leads.filter(l=>gestor||vis.has(l.responsavelId));
-  const lc=document.getElementById('lCliente');if(lc)lc.innerHTML=leadsVis.map(l=>`<option value="${l.id}">${esc(l.nome)}</option>`).join('');
-  const sl=document.getElementById('sLeadSel');if(sl)sl.innerHTML='<option value="">Selecionar lead existente...</option>'+leadsVis.map(l=>`<option value="${l.id}">${esc(l.nome)} — ${esc(l.tipo)} · ${fmtR(l.credito)}</option>`).join('');
+  // As listas de leads (simulador, lances, agenda) são montadas só quando a tela
+  // abre, com busca — ver preencherSelectLeads()
   // Cargos que a pessoa pode atribuir (cadastro de usuário)
   const hierOpts='<option value="">Hierarquia...</option>'+hierarquiasAtribuiveis().map(h=>`<option value="${esc(h.sb_id||h.id)}">${esc(h.nome)}</option>`).join('');
   const uHier=document.getElementById('uHierarquia');if(uHier){const v=uHier.value;uHier.innerHTML=hierOpts;uHier.value=v;}
+}
+
+// ─── ESCOLHER UM LEAD (simulador, lances, agenda) ─────────────────────────────
+// Campo de busca + no máximo 300 opções por vez: com dezenas de milhares de leads
+// a lista abre na hora (antes montava um <select> com todos, a cada tela).
+const _LEADS_SELECT_MAX=300;
+function preencherSelectLeads(sel,opts,selecionar){
+  if(!sel) return;
+  opts=opts||sel._opts||{};
+  sel._opts=opts;
+  let busca=document.getElementById(sel.id+'-busca');
+  if(!busca){
+    busca=document.createElement('input');
+    busca.id=sel.id+'-busca';
+    busca.type='search';
+    busca.className='fi';
+    busca.placeholder='Buscar lead por nome ou telefone…';
+    busca.autocomplete='off';
+    busca.style.cssText='width:100%;margin-bottom:6px;box-sizing:border-box';
+    busca.addEventListener('input',()=>{ clearTimeout(busca._t); busca._t=setTimeout(()=>preencherSelectLeads(sel),200); });
+    const pai=sel.parentElement;
+    const alvo=pai&&getComputedStyle(pai).display==='flex'?pai:sel;
+    alvo.parentNode.insertBefore(busca,alvo);
+  }
+  const q=busca.value.trim().toLowerCase(), qd=q.replace(/\D/g,'');
+  const v=selecionar!==undefined&&selecionar!==null?String(selecionar):sel.value;
+  const vis=getVisiveisParaMim(), gestor=isGestor();
+  let lista=leads.filter(l=>(gestor||vis.has(l.responsavelId))&&(!opts.filtro||opts.filtro(l))
+    &&(!q||l.nome.toLowerCase().includes(q)||(qd.length>=3&&(l.tel||'').includes(qd))));
+  if(opts.ordenar) lista.sort(opts.ordenar);
+  const total=lista.length;
+  const mostrar=lista.slice(0,_LEADS_SELECT_MAX);
+  if(v&&!mostrar.some(l=>String(l.id)===v)){ const atual=leads.find(l=>String(l.id)===v); if(atual) mostrar.unshift(atual); }
+  sel.innerHTML=`<option value="">${esc(opts.vazio||'Selecionar lead...')}</option>`+
+    mostrar.map(l=>`<option value="${l.id}">${esc(l.nome)}${opts.rotulo?esc(opts.rotulo(l)):''}</option>`).join('')+
+    (total>_LEADS_SELECT_MAX?`<option value="" disabled>… e mais ${fmt(total-_LEADS_SELECT_MAX)} — digite na busca acima</option>`:'');
+  sel.value=v;
 }
 
 // ─── TABELA DE LEADS ──────────────────────────────────────────────────────────
@@ -244,6 +278,6 @@ function simFromLead(id){
   showTab('simulador');
   setTimeout(()=>{
     const sl=document.getElementById('sLeadSel');
-    if(sl){sl.value=id;simLoadLead();}
+    if(sl){preencherSelectLeads(sl,null,id);simLoadLead();}
   },50);
 }

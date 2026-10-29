@@ -25,9 +25,11 @@ async function _carregarVendasParaMV(){
     if(!esc0.gestor) q = q.in('user_id', esc0.ids);
     return q.order('data_fechamento', {ascending:false, nullsFirst:false}).order('id');
   });
+  const leadPorSb = new Map(leads.filter(l=>l.sb_id).map(l=>[String(l.sb_id), l]));
+  const userPorSb = new Map(users.filter(u=>u.sb_id).map(u=>[u.sb_id, u]));
   _mvVendasCache = rows.map(v => {
-    const lead = leads.find(l => l.sb_id === v.lead_id);
-    const user = users.find(u => u.sb_id === v.user_id) || (window.usersInativos||{})[v.user_id] || null;
+    const lead = v.lead_id ? leadPorSb.get(String(v.lead_id)) : null;
+    const user = userPorSb.get(v.user_id) || (window.usersInativos||{})[v.user_id] || null;
     return {...v, _clienteNome: v.cliente_nome || lead?.nome || '—', _vendedorNome: user?.nome || '—',
             _vendedorFoto: user?.foto || null, _leadLocal: lead || null, _userLocal: user || null};
   });
@@ -110,6 +112,9 @@ function mvFiltrar(){
     return;
   }
   const podeEditar = can('vendas_edit'), podeExcluir = can('vendas_delete');
+  // muitas vendas: mostra aos poucos (os totais acima já contam todas)
+  const totalRows = rows.length;
+  rows = rows.slice(0, _mvLimite);
   lista.innerHTML = rows.map(v => {
     const d = _mvDataISO(v);
     const dataFmt = d ? d.split('-').reverse().join('/') : '—';
@@ -128,8 +133,11 @@ function mvFiltrar(){
         ${podeExcluir?`<button onclick="mvExcluirVenda('${esc(v.id)}')" title="Excluir" style="width:32px;height:32px;border:1px solid rgba(220,38,38,.25);background:rgba(220,38,38,.06);border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#dc2626"><i class="ti ti-trash" style="font-size:14px"></i></button>`:''}
       </div>` : ''}
     </div>`;
-  }).join('');
+  }).join('') + (totalRows > rows.length ? `<div style="text-align:center;margin-top:12px"><button class="btn bg" onclick="mvVerMais()"><i class="ti ti-chevron-down"></i>Ver mais (${fmt(totalRows-rows.length)} restantes)</button></div>` : '');
 }
+const MV_PAGINA = 100;
+let _mvLimite = MV_PAGINA;
+function mvVerMais(){ _mvLimite += MV_PAGINA; mvFiltrar(); }
 
 function mvEditarVenda(vendaId){
   if(!can('vendas_edit')){ showToast('Você não tem permissão para editar vendas.','ti-lock'); return; }

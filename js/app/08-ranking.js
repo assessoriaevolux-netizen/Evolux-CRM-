@@ -169,9 +169,9 @@ function renderRanking(){
     } else {
       rankEl.innerHTML=sorted.map((u,i)=>{
         const isLider=i===0&&u.credito>0;
-        const meta=u.meta||500000;
+        const meta=Number(u.meta)||0;   // sem meta cadastrada: não inventa um valor
         const pct=meta>0?Math.min(Math.round(u.credito/meta*100),999):0;
-        const atingiu=pct>=100;
+        const atingiu=meta>0&&pct>=100;
         const posLabel=i===0?'🥇 1º':i===1?'🥈 2º':i===2?'🥉 3º':`${i+1}º lugar`;
         const eqU=getEqDeUser(u);
         const foto=safeUrl(u.foto);
@@ -193,12 +193,12 @@ function renderRanking(){
             ${eqU?`<div style="font-size:11px;color:var(--tm);margin-top:2px">📋 ${esc(eqU.nome)}</div>`:''}
             <div class="rank-vals">
               <div class="rank-val-item"><div class="rank-val-label">💰 Vendas</div><div class="rank-val-num green">${fmtR(u.credito)}</div></div>
-              <div class="rank-val-item"><div class="rank-val-label">🎯 Meta</div><div class="rank-val-num ${atingiu?'green':'red'}">${fmtR(meta)}</div></div>
+              <div class="rank-val-item"><div class="rank-val-label">🎯 Meta</div><div class="rank-val-num ${meta?(atingiu?'green':'red'):''}">${meta?fmtR(meta):'Sem meta'}</div></div>
             </div>
             <div class="rank-bar-outer"><div class="rank-bar-inner ${atingiu?'atingiu':'nao-atingiu'}" style="width:${Math.min(pct,100)}%"></div></div>
             <div class="rank-bar-footer">
               <div class="rank-vendas-cnt">${u.vendas} venda${u.vendas!==1?'s':''}</div>
-              <span class="rank-pct-badge ${atingiu?'atingiu':'nao-atingiu'}">${pct}%</span>
+              ${meta?`<span class="rank-pct-badge ${atingiu?'atingiu':'nao-atingiu'}">${pct}%</span>`:''}
             </div>
           </div>
         </div>`;
