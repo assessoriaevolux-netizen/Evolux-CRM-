@@ -56,9 +56,12 @@ async function indCarregar(){
   if(IND.carregando) return;
   IND.carregando=true;IND.erro=null;
   try{
+    // Sempre só a empresa de quem está logado (nunca mistura empresas)
+    const emp=window._empresaIdDireto?String(window._empresaIdDireto):null;
+    if(!emp){IND.indicadores=[];IND.indicacoes=[];IND.carregado=true;IND.carregando=false;return;}
     const [a,b]=await Promise.all([
-      window._sbTodos(()=>window._sb.from('ind_indicadores').select('*').order('criado_em',{ascending:false})),
-      window._sbTodos(()=>window._sb.from('ind_indicacoes').select('*').order('criado_em',{ascending:false})),
+      window._sbTodos(()=>window._sb.from('ind_indicadores').select('*').eq('empresa_id',emp).order('criado_em',{ascending:false}).order('id')),
+      window._sbTodos(()=>window._sb.from('ind_indicacoes').select('*').eq('empresa_id',emp).order('criado_em',{ascending:false}).order('id')),
     ]);
     IND.indicadores=a;IND.indicacoes=b;IND.carregado=true;
   }catch(e){
@@ -69,9 +72,12 @@ async function indCarregar(){
   indEscutar();
 }
 function indEscutar(){
-  if(IND.canal||!window._sb||IND.erro) return;
+  if(IND.canal||!window._sb||IND.erro||!window._empresaIdDireto) return;
+  const emp=String(window._empresaIdDireto);
   let t=null;
-  IND.canal=window._sb.channel('ind-indicacoes').on('postgres_changes',{event:'*',schema:'public',table:'ind_indicacoes'},p=>{
+  IND.canal=window._sb.channel('ind-indicacoes').on('postgres_changes',{event:'*',schema:'public',table:'ind_indicacoes',filter:'empresa_id=eq.'+emp},p=>{
+    const row=p.new&&p.new.empresa_id?p.new:p.old;
+    if(row&&row.empresa_id&&String(row.empresa_id)!==emp) return;
     if(p.eventType==='INSERT') showToast('Nova indicação: '+((p.new&&p.new.nome)||''),'ti-users-plus');
     clearTimeout(t);t=setTimeout(async()=>{await indCarregar();if(document.getElementById('tab-indicador')?.classList.contains('active')) indRender();},800);
   }).subscribe();

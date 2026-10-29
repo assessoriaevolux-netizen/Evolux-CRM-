@@ -14,8 +14,8 @@ async function renderIA(){
   if(!tab.querySelector('.ia2')) tab.innerHTML=`<div class="ia2">${integCarregando()}</div>`;
   const [st,rot,conv]=await Promise.all([
     integCarregarStatus(true),
-    window._sb.from('ia_roteiros').select('*'),
-    window._sb.from('ia_conversas').select('*').order('atualizado_em',{ascending:false}).limit(150),
+    window._sb.from('ia_roteiros').select('*').eq('empresa_id',String(window._empresaIdDireto||'')),
+    window._sb.from('ia_conversas').select('*').eq('empresa_id',String(window._empresaIdDireto||'')).order('atualizado_em',{ascending:false}).limit(150),
   ]);
   if(!IA.padrao){ const p=await integChamar('ia_padrao'); if(p.ok) IA.padrao=p; }
   if(!IA.servidor) IA.servidor=await integServidor();

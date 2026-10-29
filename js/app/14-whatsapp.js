@@ -463,7 +463,7 @@ async function _waDispAcompanhar(){
 }
 async function _waDispHistorico(){
   const box=document.getElementById('wa2-d-hist');if(!box)return;
-  const {data,error}=await window._sb.from('wa_disparos').select('*').order('criado_em',{ascending:false}).limit(10);
+  const {data,error}=await window._sb.from('wa_disparos').select('*').eq('empresa_id',String(window._empresaIdDireto||'')).order('criado_em',{ascending:false}).limit(10);
   if(error){box.innerHTML=`<div class="integ2-mini">${esc(error.message)}</div>`;return;}
   if(!data||!data.length){box.innerHTML='<div class="integ2-mini">Nenhum disparo ainda.</div>';return;}
   box.innerHTML=`<div class="integ2-tabela"><table><thead><tr><th>Quando</th><th>Modelo</th><th>Quem</th><th>Enviadas</th><th>Erros</th></tr></thead><tbody>${data.map(d=>`<tr>
