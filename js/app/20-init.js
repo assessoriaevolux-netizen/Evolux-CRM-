@@ -119,6 +119,7 @@ window._renderTudo=function(){
   const id=ativa&&ativa.id?ativa.id.replace('tab-',''):'dashboard';
   const r={dashboard:()=>renderDashboard(),funil:()=>renderKanban(),leads:()=>renderTable(),ranking:()=>{_aplicarFiltroVendas();},
     indicador:()=>renderIndicador(),
+    token:()=>renderToken(),
     relatorios:()=>renderRelatorios(),lances:()=>renderLances(),minhasvendas:()=>renderMinhasVendas(),simulador:()=>{syncSim();calcSim();},
     whatsapp:()=>renderWhatsapp(),ia:()=>renderIA(),anuncios:()=>renderAnuncios(),calendario:()=>renderCalendario(),configuracoes:()=>renderConfig(),empresas:()=>{try{renderEmpresas();}catch(e){}}};
   try{(r[id]||r.dashboard)();}catch(e){console.warn('[render]',e);}

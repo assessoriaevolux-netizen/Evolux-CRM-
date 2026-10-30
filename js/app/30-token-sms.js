@@ -1,4 +1,4 @@
-// ─── TOKEN DA PROPOSTA POR SMS (Simulador) ────────────────────────────────────
+// ─── TOKEN DA PROPOSTA POR SMS (aba Token SMS) ─────────────────────────────────
 // O consultor agenda um SMS para o celular do cliente (agora, 1, 3, 5 ou 10 min):
 //   "Olá João, sua proposta de carta de crédito de R$ 300 mil foi registrada no
 //    seu nome. Token para dar continuidade à sua proposta: 482913"
@@ -8,15 +8,6 @@
 const SMS={lista:[],atraso:180,timer:null,tick:null,disparos:{},enviando:false};
 const SMS_ATRASOS=[[0,'Agora'],[60,'1 min'],[180,'3 min'],[300,'5 min'],[600,'10 min']];
 
-function smsValorSimulacao(){
-  if(document.getElementById('sModManual')?.checked){ const v=unM(document.getElementById('sManualCredito')?.value||''); if(v) return v; }
-  if(window._simLinhaAtual&&window._simLinhaAtual.credito) return window._simLinhaAtual.credito;
-  return unM(document.getElementById('sValor')?.value||'')||0;
-}
-function smsLeadSimulacao(){
-  const id=parseInt(document.getElementById('sLeadSel')?.value);
-  return id?leads.find(l=>l.id===id)||null:null;
-}
 // Mesmo formato do servidor: "R$ 300 mil", "R$ 312.500", "R$ 1,5 milhão"
 function smsValorTxt(v){
   v=Math.round(Number(v)||0);
@@ -32,41 +23,58 @@ function smsPrevia(){
   if(el) el.textContent=`Olá ${smsPrimeiroNome(nome)}, sua proposta de carta de crédito de ${valor?smsValorTxt(valor):'R$ —'} foi registrada no seu nome. Token para dar continuidade à sua proposta: ••••••`;
 }
 
-function abrirTokenSMS(){
-  const lead=smsLeadSimulacao();
-  const nome=(document.getElementById('sNome')?.value||'').trim()||(lead?lead.nome:'');
-  const tel=(document.getElementById('sTelCliente')?.value||'').trim()||(lead?formatTelefone(lead.tel):'');
-  const valor=smsValorSimulacao();
-  document.getElementById('sms-modal')?.remove();
-  const m=document.createElement('div');
-  m.id='sms-modal';m.className='modal-bg open';
-  m.onclick=e=>{if(e.target===m)fecharTokenSMS();};
-  m.innerHTML=`<div class="modal-box" style="max-width:560px">
-    <div class="modal-hdr"><span class="modal-title"><i class="ti ti-message-2-code" style="color:var(--g)"></i> Token da proposta por SMS</span><button class="modal-close" onclick="fecharTokenSMS()" aria-label="Fechar"><i class="ti ti-x"></i></button></div>
-    <div class="sms-corpo">
-      <div class="g2" style="gap:10px">
-        <div class="field" style="margin:0"><label>Nome do cliente</label><input class="fi" id="sms-nome" maxlength="120" value="${esc(nome)}" oninput="smsPrevia()"></div>
-        <div class="field" style="margin:0"><label>Celular</label><input class="fi" id="sms-tel" inputmode="numeric" value="${esc(tel)}" oninput="maskTelConta(this)" placeholder="(11) 98765-4321"></div>
+// ─── Aba "Token SMS" ──────────────────────────────────────────────────────────
+function renderToken(){
+  const tab=document.getElementById('tab-token');
+  if(!tab) return;
+  if(!tab.querySelector('.sms-pag')){
+    tab.innerHTML=`<div class="sms-pag">
+      <div class="ind-topo"><div><div class="ind-tit"><i class="ti ti-message-2-code"></i>Token da proposta por SMS</div>
+        <div class="ind-sub">Na hora da proposta, agende um SMS para o celular do cliente com o token. Ele lê o código para você e a proposta fica confirmada.</div></div></div>
+      <div class="sms-grid">
+        <div class="dn-card">
+          <h3><i class="ti ti-send"></i>Novo token</h3>
+          <div class="field" style="margin:0"><label>Lead (opcional)</label><select class="fi" id="sms-lead" onchange="smsEscolherLead()"></select></div>
+          <div class="g2" style="gap:10px;margin-top:10px">
+            <div class="field" style="margin:0"><label>Nome do cliente</label><input class="fi" id="sms-nome" maxlength="120" oninput="smsPrevia()"></div>
+            <div class="field" style="margin:0"><label>Celular</label><input class="fi" id="sms-tel" inputmode="numeric" oninput="maskTelConta(this)" placeholder="(11) 98765-4321"></div>
+          </div>
+          <div class="field" style="margin:10px 0 0"><label>Valor da carta de crédito</label><input class="fi" id="sms-valor" inputmode="numeric" oninput="maskM(this);smsPrevia()" placeholder="Ex: 300.000"></div>
+          <div class="field" style="margin:10px 0 0"><label>Quando o SMS chega</label>
+            <div class="sms-chips">${SMS_ATRASOS.map(([s,t])=>`<button type="button" class="sms-chip${SMS.atraso===s?' on':''}" onclick="SMS.atraso=${s};document.querySelectorAll('.sms-chip').forEach(b=>b.classList.toggle('on',b===this))">${t}</button>`).join('')}</div>
+          </div>
+          <div class="sms-previa-box"><div class="sms-previa-lbl"><i class="ti ti-device-mobile-message"></i> O cliente recebe</div><div id="sms-previa"></div></div>
+          <div class="ind-mini" id="sms-lead-aviso" style="margin-top:6px"></div>
+          <button class="btn bp" id="sms-agendar" style="width:100%;justify-content:center;margin-top:12px" onclick="agendarTokenSMS()"><i class="ti ti-send"></i>Agendar SMS</button>
+        </div>
+        <div class="dn-card">
+          <h3><i class="ti ti-history"></i>Tokens recentes</h3>
+          <div id="sms-lista"><div class="ind-mini">Carregando…</div></div>
+        </div>
       </div>
-      <div class="field" style="margin:10px 0 0"><label>Valor da carta de crédito</label><input class="fi" id="sms-valor" inputmode="numeric" value="${valor?Math.round(valor).toLocaleString('pt-BR'):''}" oninput="maskM(this);smsPrevia()" placeholder="Ex: 300.000"></div>
-      <div class="field" style="margin:10px 0 0"><label>Quando o SMS chega</label>
-        <div class="sms-chips">${SMS_ATRASOS.map(([s,t])=>`<button type="button" class="sms-chip${SMS.atraso===s?' on':''}" onclick="SMS.atraso=${s};document.querySelectorAll('.sms-chip').forEach(b=>b.classList.toggle('on',b===this))">${t}</button>`).join('')}</div>
-      </div>
-      <div class="sms-previa-box"><div class="sms-previa-lbl"><i class="ti ti-device-mobile-message"></i> O cliente recebe</div><div id="sms-previa"></div></div>
-      ${lead&&lead.sb_id?`<div class="ind-mini" style="margin-top:6px"><i class="ti ti-link"></i> Ligado ao lead <strong>${esc(lead.nome)}</strong>: ao confirmar o token, ele vai para Negociação.</div>`:''}
-      <button class="btn bp" id="sms-agendar" style="width:100%;justify-content:center;margin-top:12px" onclick="agendarTokenSMS()"><i class="ti ti-send"></i>Agendar SMS</button>
-      <div class="sms-sec"><i class="ti ti-history"></i> Tokens recentes</div>
-      <div id="sms-lista"><div class="ind-mini">Carregando…</div></div>
-    </div></div>`;
-  document.body.appendChild(m);
-  smsPrevia();
+    </div>`;
+    smsPrevia();
+  }
+  preencherSelectLeads(document.getElementById('sms-lead'),{vazio:'Sem lead — digitar os dados',rotulo:l=>' · '+formatTelefone(l.tel)});
   smsCarregar();
-  clearInterval(SMS.timer); SMS.timer=setInterval(smsCarregar,8000);
-  clearInterval(SMS.tick); SMS.tick=setInterval(smsAtualizarRelogios,1000);
+  clearInterval(SMS.timer); SMS.timer=setInterval(()=>{ if(smsAbaAberta()) smsCarregar(); },8000);
+  clearInterval(SMS.tick); SMS.tick=setInterval(()=>{ if(smsAbaAberta()) smsAtualizarRelogios(); },1000);
 }
-function fecharTokenSMS(){
-  document.getElementById('sms-modal')?.remove();
-  clearInterval(SMS.timer); clearInterval(SMS.tick);
+function smsAbaAberta(){ return !!document.getElementById('tab-token')?.classList.contains('active'); }
+function smsLeadEscolhido(){
+  const id=parseInt(document.getElementById('sms-lead')?.value);
+  return id?leads.find(l=>l.id===id)||null:null;
+}
+function smsEscolherLead(){
+  const l=smsLeadEscolhido();
+  const av=document.getElementById('sms-lead-aviso');
+  if(l){
+    document.getElementById('sms-nome').value=l.nome||'';
+    document.getElementById('sms-tel').value=formatTelefone(l.tel)||'';
+    if(l.credito) document.getElementById('sms-valor').value=Math.round(l.credito).toLocaleString('pt-BR');
+  }
+  if(av) av.innerHTML=l&&l.sb_id?`<i class="ti ti-link"></i> Ligado ao lead <strong>${esc(l.nome)}</strong>: ao confirmar o token, ele vai para Negociação.`:'';
+  smsPrevia();
 }
 
 async function agendarTokenSMS(){
@@ -77,7 +85,7 @@ async function agendarTokenSMS(){
   if(nome.length<2){showToast('Informe o nome do cliente.','ti-alert-triangle','#d97706');return;}
   if(tel.length<10){showToast('Informe o celular com DDD.','ti-alert-triangle','#d97706');return;}
   if(!valor){showToast('Informe o valor da carta de crédito.','ti-alert-triangle','#d97706');return;}
-  const lead=smsLeadSimulacao();
+  const lead=smsLeadEscolhido();
   const b=document.getElementById('sms-agendar');
   SMS.enviando=true; if(b){b.disabled=true;b.innerHTML='<i class="ti ti-loader-2"></i>Agendando…';}
   const {data,error}=await window._rpc('sim_token_criar',{p_nome:nome,p_telefone:tel,p_valor:valor,p_lead_id:lead&&lead.sb_id?String(lead.sb_id):null,p_atraso_seg:SMS.atraso});
