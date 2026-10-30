@@ -165,6 +165,9 @@ const PERM_LIVRE=new Set(['whatsapp_view','whatsapp_send','whatsapp_bulk']);
 const PERM_IA=new Set(['ia_view','ia_manage']);
 function iaLiberada(){const e=window.empresa;return !!e&&String(e.plano||'').toLowerCase()==='master';}
 window.iaLiberada=iaLiberada;
+// Projeto Indicador: também só no plano Master (Pro e Básico não têm)
+function indicadorLiberado(){return iaLiberada();}
+window.indicadorLiberado=indicadorLiberado;
 // Pode fazer X? (gestor e plataforma podem tudo; o resto segue o cargo)
 function can(perm,u){
   u=u||getMe();
@@ -472,6 +475,7 @@ function podeAba(id,me){
   const p=TAB_PERM[id];
   if(p===undefined||p===null)return true;
   if(p==='__plataforma')return isPlataforma(me);
+  if(id==='indicador'&&!indicadorLiberado())return false;
   return can(p,me);
 }
 function primeiraAbaPermitida(){
