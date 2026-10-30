@@ -70,7 +70,7 @@ async function openNovaEmpresaModal(){
       <div style="font-size:17px;font-weight:800;margin-bottom:4px">Nova empresa</div>
       <div style="font-size:13px;color:var(--tm);margin-bottom:20px">Preencha os dados da empresa cliente</div>
       <div class="field" style="margin-bottom:12px"><label>Nome da empresa</label><input type="text" id="ne-nome" class="fi" placeholder="Ex: Corretor Silva Consórcios"></div>
-      <div class="field" style="margin-bottom:20px"><label>Plano</label><select id="ne-plano" class="fi"><option value="basico">Básico</option><option value="pro">Pro</option><option value="master">Master</option></select></div>
+      <div class="field" style="margin-bottom:20px"><label>Plano</label><select id="ne-plano" class="fi"><option value="basico">Básico</option><option value="pro">Pro — sem IA e sem Indicador</option><option value="master">Master — tudo liberado</option></select></div>
       <div style="display:flex;gap:10px">
         <button onclick="document.getElementById('modal-nova-empresa')?.remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
         <button id="ne-btn" onclick="criarEmpresaConfirm()" style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-building-plus"></i> Criar empresa</button>
@@ -121,8 +121,8 @@ async function openEditarEmpresaModal(id){
       <div class="field" style="margin-bottom:12px"><label>Plano</label>
         <select id="ee-plano" class="fi">
           <option value="basico" ${(e.plano||'basico')==='basico'?'selected':''}>Básico</option>
-          <option value="pro" ${e.plano==='pro'?'selected':''}>Pro</option>
-          <option value="master" ${e.plano==='master'?'selected':''}>Master</option>
+          <option value="pro" ${e.plano==='pro'?'selected':''}>Pro — sem IA e sem Indicador</option>
+          <option value="master" ${e.plano==='master'?'selected':''}>Master — tudo liberado</option>
         </select>
       </div>
       <div class="field" style="margin-bottom:20px"><label>Observações internas</label><textarea id="ee-obs" class="fi" rows="2" placeholder="Anotações sobre este cliente...">${esc(e.obs||'')}</textarea></div>

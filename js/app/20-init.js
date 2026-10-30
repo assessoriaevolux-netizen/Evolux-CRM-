@@ -92,6 +92,10 @@ async function _conferirAcesso(){
     if(!a||a._legado) return;
     window._acesso=a;
     if(a.ativo===false){ await _sairDoCRM('desativado'); return; }
+    // plano mudou (ex.: Pro → Master)? libera ou esconde IA e Indicador na hora
+    const planoAntes=window.empresa&&window.empresa.plano;
+    await window._loadEmpresa();
+    if(window.empresa&&window.empresa.plano!==planoAntes){ try{applyNavPermissions();window._renderTudo();}catch(e){} }
     if(isPlataforma(getMe())) return;
     const susp=a.empresa_ativa===false;
     if(susp!==window._planoSuspenso){
