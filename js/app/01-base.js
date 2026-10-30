@@ -466,7 +466,7 @@ function toggleSidebar(){
 
 // ─── TABS ─────────────────────────────────────────────────────────────────────
 // Aba → permissão necessária (null = qualquer pessoa logada)
-const TAB_PERM={dashboard:'dashboard_view',funil:'funil_view',leads:'leads_view',indicador:'leads_view',simulador:'simulador_view',
+const TAB_PERM={dashboard:'dashboard_view',funil:'funil_view',leads:'leads_view',indicador:'leads_view',simulador:'simulador_view',token:'simulador_view',
   lances:'lances_view',minhasvendas:'vendas_view',ranking:'ranking_view',relatorios:'relatorios_view',
   whatsapp:'whatsapp_view',ia:'ia_view',anuncios:'anuncios_view',calendario:'agenda_view',configuracoes:null,empresas:'__plataforma'};
 function podeAba(id,me){
@@ -479,7 +479,7 @@ function podeAba(id,me){
   return can(p,me);
 }
 function primeiraAbaPermitida(){
-  return ['dashboard','funil','leads','indicador','minhasvendas','ranking','simulador','lances','calendario','whatsapp','ia','anuncios','relatorios','configuracoes']
+  return ['dashboard','funil','leads','indicador','token','minhasvendas','ranking','simulador','lances','calendario','whatsapp','ia','anuncios','relatorios','configuracoes']
     .find(id=>podeAba(id))||'configuracoes';
 }
 function showTab(id,btn){
@@ -496,7 +496,7 @@ function showTab(id,btn){
   if(btn) btn.classList.add('active');
   // Persiste aba ativa para restaurar após reload
   try{localStorage.setItem('evolux_last_tab',id);}catch(e){}
-  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,indicador:()=>renderIndicador(),simulador:()=>{syncSim();calcSim();},lances:renderLances,minhasvendas:()=>renderMinhasVendas(),ranking:()=>{_invalidarRanking();_aplicarFiltroVendas();},relatorios:renderRelatorios,whatsapp:renderWhatsapp,ia:renderIA,anuncios:renderAnuncios,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
+  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,indicador:()=>renderIndicador(),token:()=>renderToken(),simulador:()=>{syncSim();calcSim();},lances:renderLances,minhasvendas:()=>renderMinhasVendas(),ranking:()=>{_invalidarRanking();_aplicarFiltroVendas();},relatorios:renderRelatorios,whatsapp:renderWhatsapp,ia:renderIA,anuncios:renderAnuncios,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
 }
 // Mostra/esconde abas e botões conforme as permissões da pessoa logada.
 // Botões fixos do HTML usam data-perm="chave" (ou várias separadas por "|": basta uma).

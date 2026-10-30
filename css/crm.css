@@ -1525,3 +1525,5 @@ html.crm-suspenso .kcard{cursor:pointer}
 .sms-item-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .sms-confirma{display:flex;gap:6px;margin-top:8px}
 .sms-confirma .fi{flex:1;min-width:0;letter-spacing:.2em;font-weight:700}
+.sms-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;margin-top:16px}
+@media (max-width:900px){.sms-grid{grid-template-columns:minmax(0,1fr)}}
