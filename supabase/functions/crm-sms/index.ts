@@ -10,6 +10,7 @@
 //   SMS_PROVEDOR = zenvia   → ZENVIA_TOKEN e ZENVIA_REMETENTE (nome da conta/remetente na Zenvia)
 //   SMS_PROVEDOR = twilio   → TWILIO_SID, TWILIO_TOKEN e TWILIO_FROM (número da Twilio, ex.: +15551234567)
 //   SMS_PROVEDOR = smsgo    → SMSGO_KEY (chave da API, fica em Minha conta → API no painel da SMSGo)
+//   SMS_PROVEDOR = smsfire  → SMSFIRE_USER e SMSFIRE_PASS (usuário e senha do portal beta.smsfire.com.br)
 // Nada disso fica no código nem no GitHub.
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -102,10 +103,30 @@ async function smsgo(para: string, texto: string): Promise<Resultado> {
   return { ok: false, erro: `SMSGo ${r.status}: ${d?.message || d?.code || 'erro'}`, definitivo: r.status >= 400 && r.status < 500 && r.status !== 429 }
 }
 
+// ── SMSFire (smsfire.com.br) ──────────────────────────────────────────────────
+// Auth: Basic (base64 de usuario:senha). Envio individual por GET com query params.
+async function smsfire(para: string, texto: string): Promise<Resultado> {
+  const user = env('SMSFIRE_USER'), pass = env('SMSFIRE_PASS')
+  if (!user || !pass) return { ok: false, erro: 'Faltam SMSFIRE_USER e SMSFIRE_PASS nos Secrets', definitivo: true }
+  const token = btoa(`${user}:${pass}`)
+  const params = new URLSearchParams({ to: para, text: texto })
+  const r = await fetch(`https://api-v2.smsfire.com.br/sms/send/individual?${params}`, {
+    headers: { Authorization: 'Basic ' + token },
+  })
+  const d: any = await r.json().catch(() => ({}))
+  if (r.ok && d?.messages?.[0]) {
+    const msg = d.messages[0]
+    return { ok: true, id: String(msg.id) }
+  }
+  const erro = d?.error?.message || d?.message || `HTTP ${r.status}`
+  return { ok: false, erro: `SMSFire ${r.status}: ${erro}`, definitivo: r.status >= 400 && r.status < 500 && r.status !== 429 }
+}
+
 async function enviar(para: string, texto: string): Promise<Resultado> {
   if (PROVEDOR === 'zenvia') return zenvia(para, texto)
   if (PROVEDOR === 'twilio') return twilio(para, texto)
   if (PROVEDOR === 'smsgo') return smsgo(para, texto)
+  if (PROVEDOR === 'smsfire') return smsfire(para, texto)
   return { ok: false, erro: 'Serviço de SMS ainda não configurado (Secret SMS_PROVEDOR no Supabase)', definitivo: true }
 }
 
