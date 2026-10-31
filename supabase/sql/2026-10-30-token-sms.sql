@@ -266,7 +266,6 @@ grant all on public.sim_tokens to service_role;
 -- ─── Envio automático a cada minuto (pg_cron + pg_net) ──────────────────────
 -- Se não der para ativar, o SMS ainda sai na hora certa enquanto o CRM do
 -- consultor estiver aberto (o próprio CRM chama o envio).
-create temp table if not exists _sms_instalacao (item text, valor text) on commit drop;
 do $$
 declare v_ok text := 'ativado (a cada minuto)';
 begin
@@ -281,11 +280,11 @@ begin
   exception when others then
     v_ok := 'não ativado (' || sqlerrm || '). Ative pg_cron e pg_net em Database → Extensions e rode de novo.';
   end;
-  insert into _sms_instalacao values ('Envio automático do SMS', v_ok);
+  raise notice 'Envio automático do SMS: %', v_ok;
 end $$;
 
 notify pgrst, 'reload schema';
 
-select 'Token por SMS instalado' as resultado, (select valor from _sms_instalacao limit 1) as envio_automatico;
-
 commit;
+
+select 'Token por SMS instalado' as resultado;
