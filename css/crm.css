@@ -1520,6 +1520,7 @@ html.crm-suspenso .kcard{cursor:pointer}
 .sms-chip.on{border-color:var(--g);background:var(--gs);color:var(--g)}
 .sms-previa-box{margin-top:12px;background:var(--c0);border:1px dashed var(--c3,#c8cfe0);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.5;color:var(--tx)}
 .sms-previa-lbl{font-size:11px;font-weight:700;color:var(--tm);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sms-exemplo-txt{background:var(--c1,#f0f4f8);border-radius:8px;padding:8px 10px;font-size:13px;line-height:1.45;color:var(--tx);white-space:pre-wrap;word-break:break-word}
 .sms-sec{margin:18px 0 8px;font-size:11.5px;font-weight:700;color:var(--tm);text-transform:uppercase;letter-spacing:.06em}
 .sms-item{border:1px solid var(--c2);border-radius:10px;padding:10px 12px;margin-bottom:8px}
 .sms-item-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}

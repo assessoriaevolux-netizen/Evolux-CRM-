@@ -68,6 +68,9 @@ begin
 
   if p_mensagem is not null and btrim(p_mensagem) <> '' then
     v_msg := btrim(p_mensagem);
+    -- substituir placeholders de nome e valor
+    v_msg := replace(v_msg, '{nome}', v_primeiro);
+    v_msg := replace(v_msg, '{valor}', public.sms_valor_txt(p_valor));
     -- garantir que tem o placeholder do código
     if position('{codigo}' in v_msg) = 0 then
       v_msg := v_msg || ' Token: {codigo}';
