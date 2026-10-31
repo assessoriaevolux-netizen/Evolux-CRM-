@@ -148,7 +148,7 @@ begin
   values (v_id, v_emp, auth.uid(),
           case when p_lead_id is not null then p_lead_id::uuid end,
           v_nome, v_tel, p_valor,
-          v_msg, v_cod, encode(digest(v_cod, 'sha256'), 'hex'),
+          v_msg, v_cod, encode(sha256(convert_to(v_cod, 'UTF8')), 'hex'),
           'agendado', v_quando);
 
   return jsonb_build_object('id', v_id, 'enviar_em', v_quando);
