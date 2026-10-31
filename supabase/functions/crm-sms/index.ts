@@ -9,6 +9,7 @@
 // Segredos (Edge Functions → Secrets) — escolha UM serviço de SMS:
 //   SMS_PROVEDOR = zenvia   → ZENVIA_TOKEN e ZENVIA_REMETENTE (nome da conta/remetente na Zenvia)
 //   SMS_PROVEDOR = twilio   → TWILIO_SID, TWILIO_TOKEN e TWILIO_FROM (número da Twilio, ex.: +15551234567)
+//   SMS_PROVEDOR = smsgo    → SMSGO_KEY (chave da API, fica em Minha conta → API no painel da SMSGo)
 // Nada disso fica no código nem no GitHub.
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -55,9 +56,56 @@ async function twilio(para: string, texto: string): Promise<Resultado> {
   return { ok: false, erro: `Twilio ${r.status}: ${d?.message || 'erro'}`, definitivo: r.status >= 400 && r.status < 500 && r.status !== 429 }
 }
 
+// ── SMSGo (smsgo.com.br) ──────────────────────────────────────────────────────
+// Auth: troca a SMSGo-key por Bearer token (48h TTL), cacheado em memória.
+let _smsgoToken = '', _smsgoExp = 0
+
+async function smsgoAuth(): Promise<string> {
+  if (_smsgoToken && Date.now() < _smsgoExp) return _smsgoToken
+  const key = env('SMSGO_KEY')
+  if (!key) throw new Error('Falta SMSGO_KEY nos Secrets')
+  const r = await fetch('https://api.smsgo.com.br/v1/auth/token', {
+    headers: { 'SMSGo-key': key, Accept: 'application/json' },
+  })
+  const d: any = await r.json().catch(() => ({}))
+  if (!r.ok || !d?.token) throw new Error(`SMSGo auth ${r.status}: ${d?.message || 'falha'}`)
+  _smsgoToken = d.token
+  _smsgoExp = Date.now() + 47 * 3600_000 // renova 1h antes de expirar
+  return _smsgoToken
+}
+
+async function smsgo(para: string, texto: string): Promise<Resultado> {
+  const key = env('SMSGO_KEY')
+  if (!key) return { ok: false, erro: 'Falta SMSGO_KEY nos Secrets', definitivo: true }
+  let token: string
+  try { token = await smsgoAuth() } catch (e) { return { ok: false, erro: String((e as Error)?.message || e), definitivo: true } }
+  const r = await fetch('https://api.smsgo.com.br/v1/sms/send/single', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ phone: '+' + para, message: texto, sms_type_id: 2 }),  // 2 = Token/OTP
+  })
+  // Se 401 (token expirado), força renovação e tenta 1x
+  if (r.status === 401) {
+    _smsgoToken = ''; _smsgoExp = 0
+    try { token = await smsgoAuth() } catch (e) { return { ok: false, erro: String((e as Error)?.message || e), definitivo: true } }
+    const r2 = await fetch('https://api.smsgo.com.br/v1/sms/send/single', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ phone: '+' + para, message: texto, sms_type_id: 2 }),
+    })
+    const d2: any = await r2.json().catch(() => ({}))
+    if (r2.ok) return { ok: true, id: d2?.id }
+    return { ok: false, erro: `SMSGo ${r2.status}: ${d2?.message || d2?.code || 'erro'}`, definitivo: r2.status >= 400 && r2.status < 500 && r2.status !== 429 }
+  }
+  const d: any = await r.json().catch(() => ({}))
+  if (r.ok) return { ok: true, id: d?.id }
+  return { ok: false, erro: `SMSGo ${r.status}: ${d?.message || d?.code || 'erro'}`, definitivo: r.status >= 400 && r.status < 500 && r.status !== 429 }
+}
+
 async function enviar(para: string, texto: string): Promise<Resultado> {
   if (PROVEDOR === 'zenvia') return zenvia(para, texto)
   if (PROVEDOR === 'twilio') return twilio(para, texto)
+  if (PROVEDOR === 'smsgo') return smsgo(para, texto)
   return { ok: false, erro: 'Serviço de SMS ainda não configurado (Secret SMS_PROVEDOR no Supabase)', definitivo: true }
 }
 
