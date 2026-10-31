@@ -1,10 +1,8 @@
 // ─── TOKEN DA PROPOSTA POR SMS (aba Token SMS) ─────────────────────────────────
-// O consultor agenda um SMS para o celular do cliente (agora, 1, 3, 5 ou 10 min):
-//   "Olá João, sua proposta de carta de crédito de R$ 300 mil foi registrada no
-//    seu nome. Token para dar continuidade à sua proposta: 482913"
-// O cliente lê o token, o consultor digita aqui e a proposta fica confirmada
-// (o lead vai para Negociação). O texto é fixo no servidor e o token nunca
-// aparece para o consultor.
+// O consultor agenda um SMS para o celular do cliente (agora, 1, 3, 5 ou 10 min).
+// A mensagem vem pré-preenchida mas o consultor pode editar antes de enviar.
+// O placeholder {codigo} é obrigatório — se faltar, o servidor acrescenta no final.
+// O token nunca aparece para o consultor.
 const SMS={lista:[],atraso:180,timer:null,tick:null,disparos:{},enviando:false};
 const SMS_ATRASOS=[[0,'Agora'],[60,'1 min'],[180,'3 min'],[300,'5 min'],[600,'10 min']];
 
@@ -16,11 +14,24 @@ function smsValorTxt(v){
   return 'R$ '+v.toLocaleString('pt-BR');
 }
 function smsPrimeiroNome(n){ const p=String(n||'').trim().split(/\s+/)[0]||''; return p?p.charAt(0).toUpperCase()+p.slice(1).toLowerCase():'Cliente'; }
-function smsPrevia(){
+// Gera o texto-modelo e coloca no textarea (só se o usuário não editou manualmente)
+function smsMsgModelo(){
   const nome=document.getElementById('sms-nome')?.value||'';
   const valor=unM(document.getElementById('sms-valor')?.value||'');
+  return `Olá ${smsPrimeiroNome(nome)}, sua proposta de carta de crédito de ${valor?smsValorTxt(valor):'R$ —'} foi registrada no seu nome. Token para dar continuidade à sua proposta: {codigo}`;
+}
+function smsPrevia(){
   const el=document.getElementById('sms-previa');
-  if(el) el.textContent=`Olá ${smsPrimeiroNome(nome)}, sua proposta de carta de crédito de ${valor?smsValorTxt(valor):'R$ —'} foi registrada no seu nome. Token para dar continuidade à sua proposta: ••••••`;
+  if(!el) return;
+  // Se o consultor já editou manualmente, não sobrescreve
+  if(el.dataset.editado==='1') return;
+  el.value=smsMsgModelo();
+  smsContarChars();
+}
+function smsContarChars(){
+  const el=document.getElementById('sms-previa');
+  const ct=document.getElementById('sms-chars');
+  if(el&&ct){ const n=el.value.length; ct.textContent=n+'/765'; ct.style.color=n>765?'#dc2626':''; }
 }
 
 // ─── Aba "Token SMS" ──────────────────────────────────────────────────────────
@@ -43,7 +54,7 @@ function renderToken(){
           <div class="field" style="margin:10px 0 0"><label>Quando o SMS chega</label>
             <div class="sms-chips">${SMS_ATRASOS.map(([s,t])=>`<button type="button" class="sms-chip${SMS.atraso===s?' on':''}" onclick="SMS.atraso=${s};document.querySelectorAll('.sms-chip').forEach(b=>b.classList.toggle('on',b===this))">${t}</button>`).join('')}</div>
           </div>
-          <div class="sms-previa-box"><div class="sms-previa-lbl"><i class="ti ti-device-mobile-message"></i> O cliente recebe</div><div id="sms-previa"></div></div>
+          <div class="sms-previa-box"><div class="sms-previa-lbl"><i class="ti ti-device-mobile-message"></i> Mensagem que o cliente recebe <span id="sms-chars" style="float:right;font-weight:400;opacity:.6">0/765</span></div><textarea class="fi" id="sms-previa" rows="3" style="resize:vertical;font-size:13px;line-height:1.45" oninput="this.dataset.editado='1';smsContarChars()"></textarea><div class="ind-mini" style="margin-top:4px;opacity:.7"><i class="ti ti-info-circle"></i> Use <b>{codigo}</b> onde quer o token de 6 dígitos. Se não incluir, ele vai no final.</div></div>
           <div class="ind-mini" id="sms-lead-aviso" style="margin-top:6px"></div>
           <button class="btn bp" id="sms-agendar" style="width:100%;justify-content:center;margin-top:12px" onclick="agendarTokenSMS()"><i class="ti ti-send"></i>Agendar SMS</button>
         </div>
@@ -88,7 +99,8 @@ async function agendarTokenSMS(){
   const lead=smsLeadEscolhido();
   const b=document.getElementById('sms-agendar');
   SMS.enviando=true; if(b){b.disabled=true;b.innerHTML='<i class="ti ti-loader-2"></i>Agendando…';}
-  const {data,error}=await window._rpc('sim_token_criar',{p_nome:nome,p_telefone:tel,p_valor:valor,p_lead_id:lead&&lead.sb_id?String(lead.sb_id):null,p_atraso_seg:SMS.atraso});
+  const msg=(document.getElementById('sms-previa')?.value||'').trim();
+  const {data,error}=await window._rpc('sim_token_criar',{p_nome:nome,p_telefone:tel,p_valor:valor,p_lead_id:lead&&lead.sb_id?String(lead.sb_id):null,p_atraso_seg:SMS.atraso,p_mensagem:msg||null});
   SMS.enviando=false; if(b){b.disabled=false;b.innerHTML='<i class="ti ti-send"></i>Agendar SMS';}
   if(error){
     const m=String(error.message||error);
@@ -97,6 +109,8 @@ async function agendarTokenSMS(){
   }
   const quando=SMS.atraso?`em ${SMS_ATRASOS.find(a=>a[0]===SMS.atraso)[1]}`:'agora';
   showToast(`SMS agendado: chega ${quando} no celular do cliente.`,'ti-send');
+  // resetar textarea para o próximo envio
+  const prevEl=document.getElementById('sms-previa'); if(prevEl) prevEl.dataset.editado='';
   if(window._saveAtividade) window._saveAtividade('ti-message-2-code',`Token da proposta de ${smsValorTxt(valor)} agendado para ${nome}`);
   smsAgendarDisparo(data.id,data.enviar_em);
   smsCarregar();
