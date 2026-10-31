@@ -103,4 +103,4 @@ $$;
 revoke all on function public.sim_token_criar(text, text, numeric, text, integer, text) from public, anon;
 grant execute on function public.sim_token_criar(text, text, numeric, text, integer, text) to authenticated;
 
-raise notice 'sim_token_criar atualizado — mensagem editável ok';
+-- sim_token_criar atualizado — mensagem editável ok
