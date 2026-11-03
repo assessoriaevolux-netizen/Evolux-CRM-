@@ -4,16 +4,26 @@
 // Env vars necessárias (configurar no Vercel Dashboard):
 //   SUPABASE_URL, SUPABASE_SERVICE_KEY, RESEND_API_KEY, WEBHOOK_EMPRESA_ID
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+const ALLOWED_ORIGINS = [
+  'https://assessoriaevolux.com',
+  'https://www.assessoriaevolux.com',
+  'http://assessoriaevolux.com',
+  'http://www.assessoriaevolux.com',
+];
 
-function json(body, status = 200) {
+function corsHeaders(req) {
+  const origin = req?.headers?.get?.('origin') || '';
+  return {
+    'Access-Control-Allow-Origin': ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
+}
+
+function json(body, status = 200, req = null) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
   });
 }
 
@@ -133,11 +143,11 @@ export const config = { runtime: 'edge' };
 export default async function handler(req) {
   // CORS preflight
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS });
+    return new Response(null, { status: 204, headers: corsHeaders(req) });
   }
 
   if (req.method !== 'POST') {
-    return json({ ok: false, error: 'Use POST' }, 405);
+    return json({ ok: false, error: 'Use POST' }, 405, req);
   }
 
   try {
@@ -145,7 +155,7 @@ export default async function handler(req) {
 
     // Validação mínima
     if (!dados.nome && !dados.whatsapp) {
-      return json({ ok: false, error: 'nome ou whatsapp obrigatório' }, 400);
+      return json({ ok: false, error: 'nome ou whatsapp obrigatório' }, 400, req);
     }
 
     const lead = await inserirLead(dados);
@@ -153,9 +163,9 @@ export default async function handler(req) {
     // Email de notificação (fire-and-forget, não bloqueia resposta)
     enviarNotificacao(dados, lead?.id).catch(() => {});
 
-    return json({ ok: true, id: lead?.id });
+    return json({ ok: true, id: lead?.id }, 200, req);
   } catch (e) {
     console.error('webhook erro:', e);
-    return json({ ok: false, error: e.message }, 500);
+    return json({ ok: false, error: e.message }, 500, req);
   }
 }
