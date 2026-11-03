@@ -54,7 +54,8 @@ async function inviteUser(){
   const metaRaw=metaEl?unM(metaEl.value)||0:0;
   if(!metaRaw){showToast('Informe a meta do usuário.','ti-alert-triangle','#d97706');return;}
   const equipeEl=document.getElementById('uEquipe');
-  const eq=_equipesAtribuiveis().find(e=>e.id===parseInt(equipeEl?.value));
+  const eqVal=equipeEl?String(equipeEl.value||''):'';
+  const eq=eqVal?_equipesAtribuiveis().find(e=>String(e.id)===eqVal||String(e.sb_id)===eqVal):null;
   const btn=document.getElementById('btn-invite-user');
   _cadastrando=true;
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>Cadastrando...';}
@@ -236,10 +237,10 @@ async function salvarEdicaoUsuario(uid){
   const nomeVal=document.getElementById('eu-nome')?.value.trim();
   const metaVal=unM(document.getElementById('eu-meta')?.value)||0;
   const hierVal=document.getElementById('eu-hier')?.value||null;
-  const eqSel=parseInt(document.getElementById('eu-equipe')?.value)||null;
+  const eqSel=String(document.getElementById('eu-equipe')?.value||'');
   if(!nomeVal){showToast('Informe o nome.','ti-alert-triangle','#d97706');return;}
   const eqAtual=getEqDeUser(u);
-  const novaEq=eqSel?equipes.find(e=>e.id===eqSel):null;
+  const novaEq=eqSel?equipes.find(e=>String(e.id)===eqSel||String(e.sb_id)===eqSel)||null:null;
   const mudouEquipe=(eqAtual?eqAtual.id:null)!==(novaEq?novaEq.id:null);
   const params={p_nome:nomeVal,p_meta:metaVal};
   if(hierVal&&String(hierVal)!==String(u.hierarquiaId)) params.p_hierarquia=hierVal;
