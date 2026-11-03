@@ -338,7 +338,7 @@
   }
 
   // Renderização: injeta antes do primeiro desenho
-  envolver('_renderTudo', function(orig){ return function(){ injetar(); return orig.apply(this, arguments); }; });
+  envolver('_renderTudo', function(orig){ return function(){ if(new URLSearchParams(window.location.search).has('demo')) injetar(); return orig.apply(this, arguments); }; });
 
   // Servidor: soma de vendas (painel, ranking, modo TV) e ações sobre pessoas de demonstração
   envolver('_rpc', function(orig){ return async function(nome, params){

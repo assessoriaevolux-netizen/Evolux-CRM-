@@ -143,7 +143,8 @@ function renderDashNovo(){
   const soma=(m,k)=>usersD.reduce((s,u)=>s+((m&&m[u.sb_id]&&m[u.sb_id][k])||0),0);
   const vendasMes=V?soma(V.mes,'vendas'):null, vendasAnt=V?soma(V.ant,'vendas'):null;
   const credMes=V?soma(V.mes,'credito'):null, credAnt=V?soma(V.ant,'credito'):null;
-  const meta=usersD.reduce((s,u)=>s+(Number(u.meta)||0),0);
+  const metaUsers=usersD.reduce((s,u)=>s+(Number(u.meta)||0),0);
+  const meta=(window.empresa&&Number(window.empresa.meta_empresa))||metaUsers;
   const variacao=(a,b,tipo)=>{
     if(a===null||b===null) return '<span>carregando…</span>';
     if(!b) return a?'<span>sem base no mês anterior</span>':'<span>vs. mês anterior</span>';
@@ -172,7 +173,7 @@ function renderDashNovo(){
       <div class="dn-grande dn-num">${credMes===null?'…':_dnCompacto(credMes)} <small>vendidos no mês</small></div>
       <div style="opacity:.85">Nenhuma meta definida ainda. Com a meta, este cartão mostra quanto falta e a média por dia útil.</div>
       <div class="dn-lin"><div>Pipeline em aberto<b class="dn-num">${_dnCompacto(pipeline)}</b></div><div>Vendas<b class="dn-num">${vendasMes===null?'…':vendasMes}</b></div><div>Dias úteis restantes<b class="dn-num">${dias}</b></div></div>
-      ${can('ranking_view')?`<button class="dn-btn dn-hero-btn" onclick="showTab('ranking')"><i class="ti ti-target-arrow"></i>Definir metas</button>`:''}</div>`;
+      ${isGestor(me)?`<button class="dn-btn dn-hero-btn" onclick="showTab('configuracoes')"><i class="ti ti-target-arrow"></i>Definir meta da empresa</button>`:can('ranking_view')?`<button class="dn-btn dn-hero-btn" onclick="showTab('ranking')"><i class="ti ti-target-arrow"></i>Definir metas</button>`:''}</div>`;
   }
   // Funil
   const etapas=ETAPAS.filter(e=>e!=='Perdido');

@@ -928,6 +928,7 @@
         logo_url: window.empresa.logo || null,
         whatsapp: window.empresa.whatsapp || '',
         email: window.empresa.email || '',
+        meta_empresa: window.empresa.meta_empresa || 0,
         updated_at: new Date().toISOString()
       }).eq('id', empresaId).select('id').maybeSingle();
     }catch(e){ res={error:e}; }
@@ -942,7 +943,7 @@
       if (!empresaId) return;
       const { data, error } = await sb.from('empresas').select('*').eq('id', empresaId).maybeSingle();
       if (error || !data) return;
-      window.empresa = { nome: data.nome || 'Minha Empresa', logo: data.logo_url || null, whatsapp: data.whatsapp || '', email: data.email || '', plano: data.plano || 'basico' };
+      window.empresa = { nome: data.nome || 'Minha Empresa', logo: data.logo_url || null, whatsapp: data.whatsapp || '', email: data.email || '', plano: data.plano || 'basico', meta_empresa: data.meta_empresa || 0 };
       try{ window.applyNavPermissions&&window.applyNavPermissions(); }catch(e){}
       try{ empresa=window.empresa; }catch(e){}
       if(typeof aplicarEtapasLabels==='function') aplicarEtapasLabels(data.etapas_labels||null);

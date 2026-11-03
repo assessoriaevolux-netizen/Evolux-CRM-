@@ -69,6 +69,10 @@ function cfgRenderSection(){
       <div class="g2"><div class="field"><label>Nome</label><input type="text" class="fi" id="accNome" placeholder="Seu nome"></div><div class="field"><label>Sobrenome</label><input type="text" class="fi" id="accSobrenome" placeholder="Seu sobrenome"></div></div>
       <div class="field"><label><i class="ti ti-brand-instagram" style="font-size:13px;vertical-align:middle"></i> Instagram</label><input type="text" class="fi" id="accInstagram" placeholder="@seuinstagram"></div>
       <div class="field"><label><i class="ti ti-brand-whatsapp" style="font-size:13px;vertical-align:middle;color:#25d366"></i> WhatsApp <span style="font-size:10.5px;font-weight:400;color:var(--tm)">(aparece no PDF da simulação)</span></label><input type="text" class="fi" id="accWhatsapp" placeholder="(11) 99999-0000" oninput="maskTelConta(this)"></div>
+      ${isGestor(getMe())?`<div class="cfg-divider"></div>
+      <div style="font-size:12.5px;font-weight:700;color:var(--tx);margin-bottom:8px"><i class="ti ti-target-arrow" style="font-size:13px;vertical-align:middle;color:var(--g)"></i> Meta da empresa</div>
+      <div class="ibox" style="margin-bottom:10px"><i class="ti ti-info-circle" style="font-size:14px;flex-shrink:0"></i>Defina a meta geral da empresa para o mês. Esse valor aparece no painel principal.</div>
+      <div class="field"><label>Meta da empresa (R$)</label><input type="text" class="fi" id="accMetaEmpresa" placeholder="Ex: 500.000" oninput="maskM(this)" value="${window.empresa&&window.empresa.meta_empresa?String(Math.round(window.empresa.meta_empresa)).replace(/\B(?=(\d{3})+(?!\d))/g,'.'):''}"></div>`:''}
       <button class="btn bp" style="margin-top:6px" onclick="salvarConfiguracoesConta()"><i class="ti ti-check"></i>Salvar configurações</button>
     </div>`,
 

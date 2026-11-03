@@ -227,6 +227,8 @@ async function salvarConfiguracoesConta(){
     if(empNomeEl) empresa.nome=empNomeEl.value.trim()||empresa.nome;
     if(empWaEl) empresa.whatsapp=empWaEl.value.trim();
     if(empEmailEl) empresa.email=empEmailEl.value.trim();
+    const empMetaEl=document.getElementById('accMetaEmpresa');
+    if(empMetaEl) empresa.meta_empresa=unM(empMetaEl.value)||0;
     const okEmp = await window._syncEmpresa();
     if(!okEmp){ Object.assign(empresa,empAntes); ok=false; }
   }
