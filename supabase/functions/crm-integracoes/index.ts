@@ -451,6 +451,62 @@ async function perguntarIA(modelo: string, mensagens: { role: string; content: s
   }
   return { ok: false, erro: 'A OpenAI não conseguiu responder.' }
 }
+
+// ─── Transcrição de áudio (Whisper) ─────────────────────────────────────────
+async function tokenWAParaNumero(numeroId: string): Promise<string | null> {
+  const { data: num } = await admin.from('integ_wa_numeros').select('token,empresa_id').eq('phone_number_id', numeroId).maybeSingle()
+  if (!num) return null
+  if ((num as any).token) return (num as any).token
+  const meta = await conexaoMeta((num as any).empresa_id)
+  return meta?.token || null
+}
+
+async function baixarMidiaWA(midiaId: string, token: string): Promise<Uint8Array | null> {
+  try {
+    // 1) pegar a URL real do áudio
+    const urlResp = await fetch(`${GRAPH_BASE}/${GRAPH_VERSAO}/${midiaId}`, {
+      headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000),
+    })
+    if (!urlResp.ok) { console.error('[Audio] url status', urlResp.status); return null }
+    const urlJson: any = await urlResp.json().catch(() => ({}))
+    const downloadUrl = urlJson?.url
+    if (!downloadUrl) { console.error('[Audio] sem download url'); return null }
+    // 2) baixar o binário
+    const binResp = await fetch(downloadUrl, {
+      headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000),
+    })
+    if (!binResp.ok) { console.error('[Audio] download status', binResp.status); return null }
+    return new Uint8Array(await binResp.arrayBuffer())
+  } catch (e) { console.error('[Audio] baixar erro', e); return null }
+}
+
+async function transcreverAudio(audio: Uint8Array): Promise<string> {
+  if (!OPENAI_KEY) return ''
+  try {
+    const form = new FormData()
+    form.append('file', new Blob([audio], { type: 'audio/ogg' }), 'audio.ogg')
+    form.append('model', 'whisper-1')
+    form.append('language', 'pt')
+    const r = await fetch(`${OPENAI_BASE}/audio/transcriptions`, {
+      method: 'POST', headers: { Authorization: `Bearer ${OPENAI_KEY}` },
+      body: form, signal: AbortSignal.timeout(60000),
+    })
+    if (!r.ok) { console.error('[Whisper] status', r.status, await r.text().catch(() => '')); return '' }
+    const j: any = await r.json().catch(() => ({}))
+    return String(j?.text || '').trim()
+  } catch (e) { console.error('[Whisper] erro', e); return '' }
+}
+
+/** Tenta transcrever um áudio do WhatsApp. Retorna o texto ou '' se falhar. */
+async function transcreverAudioWA(midiaId: string | null, numeroId: string): Promise<string> {
+  if (!midiaId || !OPENAI_KEY) return ''
+  const token = await tokenWAParaNumero(numeroId)
+  if (!token) { console.error('[Audio] sem token para numero', numeroId); return '' }
+  const audio = await baixarMidiaWA(midiaId, token)
+  if (!audio || audio.length < 100) return ''
+  return transcreverAudio(audio)
+}
+
 const ROTEIRO_PADRAO: Record<string, string> = {
   primeiro_atendimento: `Objetivo: dar boas-vindas, entender o que o cliente quer e marcar uma conversa com o consultor (visita à loja ou chamada de vídeo).
 
@@ -948,8 +1004,13 @@ async function processarWhatsApp(v: any) {
   for (const c of v?.contacts || []) if (c?.wa_id) nomes[String(c.wa_id)] = c?.profile?.name || ''
   const respostas: Promise<void>[] = []
   for (const m of v?.messages || []) {
-    const { tipo, conteudo, midia } = conteudoDaMensagem(m)
+    let { tipo, conteudo, midia } = conteudoDaMensagem(m)
     if (tipo === 'reacao') continue
+    // ── Transcrever áudio antes de passar pra IA ──
+    if (tipo === 'audio' && midia) {
+      const transcricao = await transcreverAudioWA(midia, numeroId)
+      if (transcricao) { conteudo = `[Áudio transcrito] ${transcricao}`; tipo = 'audio' }
+    }
     // ── Interceptar entrevista ANTES de criar lead ──
     const textoMsg = String(conteudo || '')
     const contato = String(m.from || '')
