@@ -1,0 +1,107 @@
+/* ══ CELULAR ══════════════════════════════════════════════════════════════════
+   Ajustes para o CRM rodar bem no celular (vendedor sem computador).
+   Só vale em telas de até 768px — no computador nada muda.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Botão ☰ e fundo escuro: escondidos no computador */
+.tp-menu{display:none}
+#sb-overlay{display:none}
+
+/* Cartão do funil: botão "Mover" (só aparece no celular / telas de toque) */
+.kcard-mover{display:none}
+@media (hover:none),(max-width:768px){
+  .kcard-mover{
+    display:flex;align-items:center;justify-content:center;gap:5px;width:100%;
+    margin-top:8px;padding:7px 8px;border-radius:8px;border:1px solid var(--c2);
+    background:var(--c0);color:var(--tx);font-size:12px;font-weight:600;font-family:inherit;cursor:pointer
+  }
+  .kcard-mover i{font-size:14px}
+}
+
+/* Menu "Mover para…" do funil */
+.kmover-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10050;display:flex;align-items:flex-end;justify-content:center}
+.kmover-box{
+  background:var(--w);width:100%;max-width:440px;border-radius:16px 16px 0 0;
+  padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:6px;
+  max-height:85dvh;overflow-y:auto;box-shadow:0 -10px 40px rgba(0,0,0,.25)
+}
+@media (min-width:769px){.kmover-bg{align-items:center}.kmover-box{border-radius:16px}}
+.kmover-tit{font-size:13.5px;color:var(--tm);margin-bottom:6px;line-height:1.4}
+.kmover-tit strong{color:var(--tx)}
+.kmover-op{
+  display:flex;align-items:center;gap:10px;width:100%;padding:13px 14px;border-radius:10px;
+  border:1px solid var(--c2);background:var(--c0);color:var(--tx);font-size:14px;font-weight:600;
+  font-family:inherit;text-align:left;cursor:pointer
+}
+.kmover-op .cdot{width:9px;height:9px;border-radius:50%;flex-shrink:0;display:inline-block}
+.kmover-op.atual{opacity:.55;cursor:default}
+.kmover-op small{font-weight:500;color:var(--tm)}
+.kmover-cancel{margin-top:6px;padding:12px;border-radius:10px;border:none;background:transparent;color:var(--tm);font-size:14px;font-weight:600;font-family:inherit;cursor:pointer}
+
+@media (max-width:768px){
+  /* ── Menu lateral vira gaveta que abre por cima ───────────────────────── */
+  body{display:block}
+  .sidebar,.sidebar.collapsed{
+    position:fixed!important;left:0;top:0;bottom:0;height:100dvh!important;
+    width:264px!important;min-width:264px!important;z-index:1001;
+    transform:translateX(-105%);transition:transform .22s cubic-bezier(.4,0,.2,1)!important;
+    box-shadow:none;padding-bottom:env(safe-area-inset-bottom,0px)
+  }
+  html.menu-aberto .sidebar{transform:none;box-shadow:0 0 40px rgba(0,0,0,.28)}
+  .sidebar.collapsed .nb span.nb-label,.sidebar.collapsed .sb-logo-text,.sidebar.collapsed .sb-user-info{opacity:1!important;width:auto!important;overflow:visible!important}
+  .sidebar.collapsed .nb{justify-content:flex-start!important;padding:10px 14px!important}
+  .sidebar.collapsed .nb i{width:20px!important}
+  .sidebar.collapsed .sb-logo{padding:20px 18px 16px!important;justify-content:flex-start!important}
+  .sidebar.collapsed .sb-user{padding:14px!important;justify-content:flex-start!important}
+  .sidebar.collapsed .sb-user .sb-user-info,.sidebar.collapsed .sb-user>i{display:block!important}
+  .sidebar .sb-nav{overflow-y:auto}
+  .sb-toggle{display:none!important}
+  #sb-overlay{display:block;position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:1000;opacity:0;pointer-events:none;transition:opacity .2s}
+  html.menu-aberto #sb-overlay{opacity:1;pointer-events:auto}
+  html.menu-aberto,html.menu-aberto body{overflow:hidden}
+
+  .main-area{width:100%;min-width:0}
+  .topbar,html.design-novo.design-novo .topbar{padding:0 12px!important;gap:8px}
+  .tp-menu{
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;
+    width:40px;height:40px;border-radius:10px;border:1px solid var(--c2);
+    background:var(--w);color:var(--tx);font-size:21px;cursor:pointer
+  }
+  .topbar-search{min-width:0}
+  .topbar-search input{font-size:16px} /* evita o zoom automático do iPhone */
+
+  /* ── Conteúdo em uma coluna ───────────────────────────────────────────── */
+  .content{padding:14px!important}
+  .rel-grid,.cal-layout,.sim-layout,.rank-layout,.cfg-layout{grid-template-columns:minmax(0,1fr)!important}
+  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)!important}
+
+  /* Configurações: menu vira faixa que desliza para o lado */
+  .cfg-nav-box{position:static!important}
+  .cfg-nav-topo{display:none}
+  #cfg-nav{display:flex;gap:6px;overflow-x:auto;padding:8px!important;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  #cfg-nav::-webkit-scrollbar{display:none}
+  #cfg-nav .cfg-nav-group{display:none}
+  #cfg-nav .cfg-nav-item{flex-shrink:0;white-space:nowrap;border-left:none;border-radius:20px;padding:8px 13px;background:var(--c0)}
+  #cfg-nav .cfg-nav-item.active{background:var(--gs);color:var(--g)}
+
+  /* Relatórios e Ranking: cabeçalhos quebram linha */
+  #tab-relatorios > div:first-child{flex-wrap:wrap}
+  #tab-relatorios > div:first-child > .btn{margin-left:0!important}
+  #rel-search-hist{width:100%!important}
+  .rank-hdr{flex-wrap:wrap;gap:10px}
+  .periodo-tabs,.rv-tabs{max-width:100%;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
+  .periodo-tabs::-webkit-scrollbar,.rv-tabs::-webkit-scrollbar{display:none}
+  .periodo-tab,.rv-tab{flex-shrink:0}
+
+  /* Tabelas largas: deslizam dentro do cartão, sem cortar */
+  .card:has(> table){overflow-x:auto!important;-webkit-overflow-scrolling:touch}
+
+  /* Funil: uma coluna ocupa quase a tela, desliza para o lado */
+  .kanban{grid-template-columns:repeat(7,80vw)!important;min-width:0!important}
+
+  /* Campos com fonte 16px: o iPhone não dá zoom ao tocar */
+  input.fi,select.fi,textarea.fi,input.tfield,select.tfield,.modal-box input,.modal-box select,.modal-box textarea{font-size:16px}
+
+  /* Janelas (modais) ocupam a largura e rolam por dentro */
+  .modal-box{max-width:calc(100vw - 20px)!important;max-height:calc(100dvh - 24px);overflow-y:auto}
+}

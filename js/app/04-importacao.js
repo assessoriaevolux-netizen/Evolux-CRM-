@@ -543,6 +543,10 @@ async function onDrop(e,i){
   const etapa=typeof i==='number'?ETAPAS[i]:i;
   const l=leads.find(x=>x.id===dragId);
   dragId=null;
+  await moverLeadParaEtapa(l,etapa);
+}
+// Muda a etapa de um lead (arrastando no computador ou pelo botão "Mover" no celular)
+async function moverLeadParaEtapa(l,etapa){
   if(!l||!etapa||l.etapa===etapa){renderKanban();return;}
   if(!podeMoverLead(l)){showToast('Você não tem permissão para mover este lead.','ti-lock');renderKanban();return;}
   const old=l.etapa;

@@ -245,6 +245,7 @@ function renderKanbanColuna(etapa,i,f,vis,ctx){
         <div class="kcard-i">${esc(formatTelefone(l.tel)||'—')}${resp?` · <span style="color:var(--b)">${esc(resp.nome.split(' ')[0])}</span>`:''}</div>
         ${l.atendimento?`<div style="font-size:10px;color:var(--tm);margin-bottom:4px">${ATD_LABEL[l.atendimento]||''}</div>`:''}
         <div class="kcard-b"><span class="tag ${TMAP[l.tipo]||'ts3'}">${esc(l.tipo)}</span><span class="kcard-v">${fmtR(l.credito)}</span></div>
+        ${podeDrag?`<button class="kcard-mover" onclick="event.stopPropagation();kanbanMover(${l.id})"><i class="ti ti-arrows-right-left"></i>Mover</button>`:''}
       </div>`;
     }).join('')}
     ${restantes>0?`<button class="add-col-btn" style="width:100%;margin-top:4px" onclick="kanbanVerMais(${i})"><i class="ti ti-chevron-down"></i>Ver mais (${restantes})</button>`:''}
@@ -255,6 +256,20 @@ function renderKanbanColuna(etapa,i,f,vis,ctx){
   </div>`;
 }
 
+// Celular: escolher a etapa num menu (arrastar não funciona no toque)
+function kanbanMover(id){
+  const l=leads.find(x=>x.id===id);
+  if(!l)return;
+  document.getElementById('kmover')?.remove();
+  const ov=document.createElement('div');
+  ov.id='kmover';ov.className='kmover-bg';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div class="kmover-box"><div class="kmover-tit">Mover <strong>${esc(l.nome)}</strong> para:</div>
+    ${ETAPAS.map((e,i)=>`<button class="kmover-op${e===l.etapa?' atual':''}" ${e===l.etapa?'disabled':''} data-i="${i}"><span class="cdot" style="background:${EC[i]}"></span>${esc(etapaLabel(e))}${e===l.etapa?' <small>(atual)</small>':''}</button>`).join('')}
+    <button class="kmover-cancel" onclick="document.getElementById('kmover')?.remove()">Cancelar</button></div>`;
+  ov.querySelectorAll('.kmover-op[data-i]').forEach(b=>b.addEventListener('click',()=>{ov.remove();moverLeadParaEtapa(l,ETAPAS[parseInt(b.dataset.i)]);}));
+  document.body.appendChild(ov);
+}
 function kanbanVerMais(i){
   const etapa=ETAPAS[i];
   kanbanColPage[etapa]=(kanbanColPage[etapa]||KANBAN_PAGE_SIZE)+KANBAN_PAGE_SIZE*2;

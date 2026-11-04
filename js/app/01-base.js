@@ -457,6 +457,22 @@ document.addEventListener('click',function(e){
   }
 });
 
+// ─── MENU NO CELULAR ─────────────────────────────────────────────────────────
+// No celular o menu fica escondido e abre por cima (botão ☰ no topo).
+function _ehCelular(){return window.matchMedia('(max-width: 768px)').matches;}
+function menuCelular(abrir){
+  const html=document.documentElement;
+  const on=typeof abrir==='boolean'?abrir:!html.classList.contains('menu-aberto');
+  html.classList.toggle('menu-aberto',on);
+}
+window.menuCelular=menuCelular;
+// escolheu uma aba no menu → fecha o menu
+document.addEventListener('click',function(e){
+  if(!_ehCelular()||!document.documentElement.classList.contains('menu-aberto'))return;
+  if(e.target.closest&&e.target.closest('#sidebar .nb, #sidebar .sb-user')) setTimeout(()=>menuCelular(false),60);
+});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')menuCelular(false);});
+
 function toggleSidebar(){
   const sb=document.getElementById('sidebar');
   const btn=document.getElementById('sb-toggle');

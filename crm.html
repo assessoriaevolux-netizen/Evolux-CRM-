@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="css/crm.css?v=20261030b">
 <link rel="stylesheet" href="css/design-novo.css?v=20261024f">
+<link rel="stylesheet" href="css/celular.css?v=20261104a">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <script>document.documentElement.classList.add('design-novo');try{if(localStorage.getItem('evolux-theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
@@ -24,6 +25,9 @@
 <button class="sb-toggle" id="sb-toggle" onclick="toggleSidebar()" title="Recolher menu">
   <i class="ti ti-chevron-left" id="sb-toggle-icon"></i>
 </button>
+
+<!-- Fundo escuro do menu no celular -->
+<div id="sb-overlay" onclick="menuCelular(false)"></div>
 
 <!-- SIDEBAR -->
 <div class="sidebar" id="sidebar">
@@ -66,6 +70,7 @@
 
 <!-- TOPBAR -->
 <div class="topbar">
+  <button class="tp-menu" id="tp-menu" onclick="menuCelular()" title="Menu" aria-label="Abrir menu"><i class="ti ti-menu-2"></i></button>
   <div class="topbar-search">
     <i class="ti ti-search"></i>
     <input type="text" id="global-search" placeholder="Pesquisar leads, clientes, equipe..." oninput="globalSearch(this.value)">
@@ -723,9 +728,9 @@
 <div id="tab-configuracoes" class="content">
 
   <!-- Nav lateral de configurações -->
-  <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:start">
-    <div style="background:var(--w);border:1px solid var(--c2);border-radius:var(--radl);overflow:hidden;box-shadow:var(--s1);position:sticky;top:0">
-      <div style="padding:14px 16px;background:linear-gradient(135deg,var(--g),var(--gc));color:#fff">
+  <div class="cfg-layout" style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:start">
+    <div class="cfg-nav-box" style="background:var(--w);border:1px solid var(--c2);border-radius:var(--radl);overflow:hidden;box-shadow:var(--s1);position:sticky;top:0">
+      <div class="cfg-nav-topo" style="padding:14px 16px;background:linear-gradient(135deg,var(--g),var(--gc));color:#fff">
         <div style="font-size:13px;font-weight:800;letter-spacing:-.01em">⚙️ Configurações</div>
         <div style="font-size:11px;opacity:.8;margin-top:2px">Gerencie sua conta</div>
       </div>
@@ -1176,10 +1181,10 @@
 </div>
 
 <!-- Scripts do CRM (em ordem de execução) -->
-<script src="js/app/01-base.js?v=20261104c"></script>
+<script src="js/app/01-base.js?v=20261104e"></script>
 <script src="js/app/02-dashboard.js?v=20261104b"></script>
-<script src="js/app/03-funil.js?v=20261104d"></script>
-<script src="js/app/04-importacao.js?v=20261029r"></script>
+<script src="js/app/03-funil.js?v=20261104e"></script>
+<script src="js/app/04-importacao.js?v=20261104e"></script>
 <script src="js/app/05-leads.js?v=20261029r"></script>
 <script src="js/app/06-simulador.js?v=20261029r"></script>
 <script src="js/app/07-lances.js?v=20261029r"></script>
