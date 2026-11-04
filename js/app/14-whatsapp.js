@@ -48,9 +48,11 @@ async function renderWhatsapp(){
   if(!podeDisparo&&WA.aba==='disparo') WA.aba='conversas';
   const podeEnt=can('ia_manage');
   if(!podeEnt&&WA.aba==='entrevistas') WA.aba='conversas';
+  const meus=_waMeusNumeros();
   topo.innerHTML=`<div class="wa2-topo">
     <div class="wa2-tit"><i class="ti ti-brand-whatsapp"></i>WhatsApp
-      ${nums.length?`<span class="integ2-tag ok"><i class="ti ti-circle-check"></i>${nums.length===1?esc(nums[0].numero||'conectado'):nums.length+' números'}</span>`:'<span class="integ2-tag">não conectado</span>'}</div>
+      ${nums.length?`<span class="integ2-tag ok"><i class="ti ti-circle-check"></i>${nums.length===1?esc(nums[0].numero||'conectado'):nums.length+' números'}</span>`:'<span class="integ2-tag">não conectado</span>'}
+      <button class="btn ${meus.length?'bg':'bp'} bsm" onclick="waMeuWhatsapp()" title="Conectar ou ver o seu próprio WhatsApp"><i class="ti ti-user-circle"></i>${meus.length?'Meu WhatsApp: '+esc(meus[0].numero||'conectado'):'Conectar meu WhatsApp'}</button></div>
     ${nums.length&&(podeDisparo||podeEnt)?`<div class="wa2-abas">
       <button class="${WA.aba==='conversas'?'on':''}" onclick="WA.aba='conversas';renderWhatsapp()"><i class="ti ti-messages"></i>Conversas</button>
       ${podeEnt?`<button class="${WA.aba==='entrevistas'?'on':''}" onclick="WA.aba='entrevistas';renderWhatsapp()"><i class="ti ti-clipboard-list"></i>Entrevistas</button>`:''}
@@ -59,8 +61,11 @@ async function renderWhatsapp(){
   if(!nums.length){
     corpo.innerHTML=`<div class="integ2-vazio"><div class="integ2-vazio-ic wa"><i class="ti ti-brand-whatsapp"></i></div>
       <div class="integ2-vazio-tit">Nenhum número de WhatsApp conectado</div>
-      <div class="integ2-vazio-txt">Conecte o WhatsApp Business da empresa para conversar com os leads, deixar a IA atender e fazer disparos — tudo registrado no CRM.</div>
-      ${st.gestor?`<button class="btn bp" onclick="integIrPara('whatsapp-cfg')"><i class="ti ti-settings"></i>Configurar WhatsApp</button>`:'<div class="integ2-mini"><i class="ti ti-lock"></i> Peça ao gestor para conectar o WhatsApp da empresa.</div>'}</div>`;
+      <div class="integ2-vazio-txt">Conecte o seu WhatsApp Business para conversar com os seus leads, deixar a IA atender e fazer disparos pelo seu número — tudo registrado no CRM.${st.gestor?' Ou conecte o WhatsApp da empresa em Configurações.':''}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+        <button class="btn bp" onclick="waMeuWhatsapp()"><i class="ti ti-brand-whatsapp"></i>Conectar meu WhatsApp</button>
+        ${st.gestor?`<button class="btn bg" onclick="integIrPara('whatsapp-cfg')"><i class="ti ti-settings"></i>WhatsApp da empresa</button>`:''}
+      </div></div>`;
     return;
   }
   if(WA.aba==='disparo') return _waRenderDisparo(corpo);
@@ -425,12 +430,12 @@ function _waDispResumo(){
   const m=_waModeloSel2();
   if(WA.disp.acompanhar){box.innerHTML=_waDispProgresso(WA.disp.acompanhar);return;}
   const preco=m&&m.categoria==='MARKETING'?0.32:0.04;
-  const nums=integNumeros();
+  const nums=_waNumerosQuePossoUsar();
   box.innerHTML=`<div class="wa2-resumo">
       <div><strong>${comTel.length}</strong> mensage${comTel.length!==1?'ns':'m'} serão enviadas${sel.length-comTel.length?` · ${sel.length-comTel.length} sem telefone (ficam de fora)`:''}</div>
       ${m?`<div class="integ2-mini">Custo estimado: cerca de ${fmtR(Math.ceil(comTel.length*preco))} (${m.categoria==='MARKETING'?'marketing':'utilidade'}), cobrado pela Meta direto na forma de pagamento da conta do WhatsApp Business da sua empresa. Quem pediu para não receber mensagens fica de fora.</div>`:''}
     </div>
-    ${nums.length>1?`<div class="field" style="max-width:340px"><label>Enviar pelo número</label><select class="fi" id="wa2-d-num">${nums.map(n=>`<option value="${esc(n.phone_number_id)}"${n.padrao?' selected':''}>${esc(n.numero||n.phone_number_id)}</option>`).join('')}</select></div>`:''}
+    ${nums.length>1?`<div class="field" style="max-width:340px"><label>Enviar pelo número</label><select class="fi" id="wa2-d-num">${nums.map(n=>`<option value="${esc(n.phone_number_id)}"${(_waMeusNumeros().length?_waMeusNumeros()[0]===n:n.padrao)?' selected':''}>${esc(n.numero||n.phone_number_id)}${_waRotuloNumero(n)}</option>`).join('')}</select></div>`:''}
     ${WA.disp.confirmando?`<div class="wa2-confirma"><i class="ti ti-alert-triangle"></i><span>Confirma o envio para <strong>${comTel.length}</strong> lead${comTel.length!==1?'s':''}? Não dá para desfazer.</span>
         <button class="btn bg" onclick="WA.disp.confirmando=false;_waDispResumo()">Voltar</button><button class="btn bp" id="wa2-d-ok" onclick="waDisparar()"><i class="ti ti-send"></i>Confirmar envio</button></div>`
       :`<button class="wa-send-btn" ${comTel.length&&m?'':'disabled'} onclick="WA.disp.confirmando=true;_waDispResumo()"><i class="ti ti-brand-whatsapp" style="font-size:17px"></i>Revisar e enviar para ${comTel.length} lead${comTel.length!==1?'s':''}</button>`}`;
@@ -474,6 +479,73 @@ async function _waDispHistorico(){
   box.innerHTML=`<div class="integ2-tabela"><table><thead><tr><th>Quando</th><th>Modelo</th><th>Quem</th><th>Enviadas</th><th>Erros</th></tr></thead><tbody>${data.map(d=>`<tr>
     <td>${integData(d.criado_em,true)}</td><td>${esc(d.template_nome)}</td><td>${esc(d.criado_por_nome||'')}</td>
     <td>${d.status==='enviando'?'<i class="ti ti-loader-2 integ2-gira"></i> ':''}${d.enviados} de ${d.total}</td><td>${d.falhas?`<span class="txt-r" title="${esc(d.erro||'')}">${d.falhas}</span>`:'0'}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+// ── Meu WhatsApp (cada pessoa conecta o próprio número) ─────────────────────
+function _waMeuId(){const me=getMe();return me?String(me.sb_id||''):'';}
+function _waMeusNumeros(){const id=_waMeuId();return integNumeros().filter(n=>n.dono_id&&String(n.dono_id)===id);}
+// números que a pessoa pode usar para enviar: os da empresa e o dela (gestor usa todos)
+function _waNumerosQuePossoUsar(){const id=_waMeuId();return integNumeros().filter(n=>isGestor()||!n.dono_id||String(n.dono_id)===id);}
+function _waRotuloNumero(n){if(!n.dono_id)return ' (empresa)';return String(n.dono_id)===_waMeuId()?' (meu)':' ('+integNomeUser(n.dono_id)+')';}
+function waMeuWhatsapp(){
+  let ov=document.getElementById('wa2-modal');
+  if(!ov){ov=document.createElement('div');ov.id='wa2-modal';ov.className='modal-bg';ov.onclick=e=>{if(e.target===ov)ov.classList.remove('open');};document.body.appendChild(ov);}
+  const meus=_waMeusNumeros();
+  const fechar=`document.getElementById('wa2-modal').classList.remove('open')`;
+  let corpo;
+  if(meus.length){
+    corpo=meus.map(n=>`<div class="integ2-numero${n.ativo?'':' off'}"><div class="integ2-numero-ic"><i class="ti ti-brand-whatsapp"></i></div>
+      <div class="integ2-numero-txt"><div class="integ2-numero-tit">${esc(n.numero||n.phone_number_id)}</div>
+        <div class="integ2-mini">${esc(n.nome_verificado||'')}${n.coexistencia?' · <i class="ti ti-device-mobile"></i> também no app do celular':''}</div>
+        ${n.status_api&&n.status_api!=='CONNECTED'?`<div class="integ2-aviso erro" style="margin:8px 0 0"><i class="ti ti-plug-x"></i><div>Ainda não está ativo na Meta${n.registro_erro?': '+esc(n.registro_erro):'.'}</div></div>`:''}</div>
+      <button class="btn bd bsm" onclick="waMeuNumeroRemover('${esc(n.id)}')" title="Desconectar"><i class="ti ti-plug-off"></i></button></div>`).join('')
+      +`<div class="integ2-mini" style="margin-top:10px">Mensagens, disparos e a IA dos seus leads saem por este número. A Meta cobra os modelos de mensagem na sua conta do WhatsApp Business.</div>
+      <button class="btn bg bsm" style="margin-top:10px" onclick="waMeusModelos(this)"><i class="ti ti-sparkles"></i>Criar os modelos de mensagem sugeridos no meu número</button>`;
+  } else {
+    corpo=`<div class="integ2-mini" style="margin-bottom:12px">Conecte o <strong>seu</strong> WhatsApp Business. As conversas com os seus leads aparecem aqui, você responde e faz disparos pelo seu número, e a IA atende por ele. Quem paga os modelos de mensagem é a sua conta da Meta.</div>
+      <div class="integ2-wa-opcoes">
+        <div class="integ2-wa-opcao rec"><div class="integ2-wa-opcao-tag">Recomendado</div>
+          <div class="integ2-wa-opcao-tit"><i class="ti ti-qrcode"></i>Usar o WhatsApp Business do meu celular</div>
+          <div class="integ2-mini">Você entra com o seu Facebook e escaneia um QR code com o app WhatsApp Business. O número continua no celular e as conversas aparecem também no CRM.</div>
+          <button class="btn bp" id="btn-meu-wa-coexistencia" onclick="integConectarMeta('coexistencia',true)"><i class="ti ti-brand-whatsapp"></i>Conectar com QR code</button></div>
+        <div class="integ2-wa-opcao"><div class="integ2-wa-opcao-tit"><i class="ti ti-device-mobile-plus"></i>Número novo só no CRM</div>
+          <div class="integ2-mini">Para um chip que não está em nenhum WhatsApp. Precisa receber o código por SMS ou ligação.</div>
+          <button class="btn bg" id="btn-meu-wa-novo" onclick="integConectarMeta('novo',true)"><i class="ti ti-plus"></i>Conectar número novo</button></div>
+      </div>
+      <div class="integ2-mini" style="margin-top:10px"><i class="ti ti-info-circle"></i> Precisa ter o app <strong>WhatsApp Business</strong> (não o WhatsApp comum) e um Facebook.</div>`;
+  }
+  ov.innerHTML=`<div class="modal-box" style="max-width:560px"><div class="modal-hdr"><span class="modal-title"><i class="ti ti-user-circle" style="color:var(--g)"></i>Meu WhatsApp</span><button class="modal-close" onclick="${fechar}"><i class="ti ti-x"></i></button></div><div style="padding:16px">${corpo}</div></div>`;
+  ov.classList.add('open');
+}
+// Volta da Meta depois de "Conectar meu WhatsApp"
+async function waMeuNumeroVoltou(r){
+  try{ if(!document.getElementById('tab-whatsapp')?.classList.contains('active')) showTab('whatsapp'); }catch(e){}
+  if(r.status!=='ok'){ showToast('O WhatsApp não foi conectado: '+(r.motivo||'tente de novo.'),'ti-alert-triangle','#dc2626'); return; }
+  showToast('Ligando o seu número de WhatsApp ao CRM…','ti-loader-2');
+  const res=await integChamar('wa_meu_numero_conectar');
+  if(!res.ok) showToast(res.erro||'Não consegui ligar o seu número.','ti-alert-triangle','#dc2626');
+  else showToast(`Pronto! Seu WhatsApp ${(res.numeros||[]).join(', ')} está conectado ao CRM.`,'ti-circle-check');
+  (res.avisos||[]).forEach(a=>showToast(a,'ti-alert-triangle','#d97706'));
+  await integCarregarStatus(true);
+  renderWhatsapp();
+}
+function waMeuNumeroRemover(id){
+  showConfirm('Desconectar o seu WhatsApp do CRM?\n\nO número continua funcionando no celular. As conversas antigas continuam salvas no CRM.',async()=>{
+    const r=await integChamar('wa_meu_numero_remover',{id});
+    if(!r.ok){showToast(r.erro,'ti-alert-triangle','#dc2626');return;}
+    showToast('Seu WhatsApp foi desconectado do CRM.','ti-plug-off');
+    document.getElementById('wa2-modal')?.classList.remove('open');
+    await integCarregarStatus(true);
+    renderWhatsapp();
+  });
+}
+async function waMeusModelos(btn){
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2 integ2-gira"></i>Enviando para a Meta…';}
+  const r=await integChamar('wa_criar_modelos',{});
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-sparkles"></i>Criar os modelos de mensagem sugeridos no meu número';}
+  if(!r.ok){showToast(r.erro,'ti-alert-triangle','#dc2626');return;}
+  showToast('Modelos enviados para aprovação da Meta (costuma sair em minutos).','ti-sparkles');
+  WA.modelos=null;
 }
 
 // ── Entrevistas (candidatos de vaga; não viram lead) ────────────────────────

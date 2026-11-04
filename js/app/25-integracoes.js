@@ -64,8 +64,8 @@ function integIrPara(secao){ showTab('configuracoes'); setTimeout(()=>{ try{cfgS
     const p=new URLSearchParams(location.search);
     const m=p.get('meta');
     if(!m) return;
-    window._metaRetorno={status:m,motivo:p.get('motivo')||''};
-    p.delete('meta');p.delete('motivo');
+    window._metaRetorno={status:m,motivo:p.get('motivo')||'',pessoal:p.get('wa')==='pessoal'};
+    p.delete('meta');p.delete('motivo');p.delete('wa');
     const q=p.toString();
     history.replaceState(null,'',location.pathname+(q?'?'+q:'')+location.hash);
   }catch(e){}
@@ -74,6 +74,7 @@ function integIrPara(secao){ showTab('configuracoes'); setTimeout(()=>{ try{cfgS
   if(!window._metaRetorno) return;
   if(!window.__crmPronto){ if(n<240) setTimeout(()=>esperarCRM(n+1),250); return; }
   const r=window._metaRetorno; delete window._metaRetorno;
+  if(r.pessoal){ waMeuNumeroVoltou(r); return; }
   if(r.status==='ok'){
     showToast('Conta da Meta conectada! Buscando contas, páginas e números…','ti-brand-meta');
     integIrPara('facebook');
@@ -209,11 +210,12 @@ async function integSalvarPagina(pageId,dados){
   integRenderMeta();
 }
 // modo: vazio (Meta completa), 'coexistencia' (WhatsApp Business do celular por QR code) ou 'novo' (número só para o CRM)
-async function integConectarMeta(modo){
-  const b=document.getElementById(modo?'btn-wa-'+modo:'btn-meta-conectar');
+// pessoal=true: a pessoa conecta o PRÓPRIO WhatsApp (qualquer cargo)
+async function integConectarMeta(modo,pessoal){
+  const b=document.getElementById((pessoal?'btn-meu-wa-':'btn-wa-')+(modo||'')) ||document.getElementById(modo?'btn-wa-'+modo:'btn-meta-conectar');
   const html=b?b.innerHTML:'';
   if(b){b.disabled=true;b.innerHTML='<i class="ti ti-loader-2 integ2-gira"></i>Abrindo a Meta…';}
-  const r=await integChamar('meta_login_url',{retorno:location.origin+location.pathname,modo:modo||undefined});
+  const r=await integChamar('meta_login_url',{retorno:location.origin+location.pathname,modo:modo||undefined,pessoal:!!pessoal});
   if(!r.ok||!r.url){ showToast(r.erro||'Não consegui abrir a Meta.','ti-alert-triangle','#dc2626'); if(b){b.disabled=false;b.innerHTML=html;} return; }
   window.location.href=r.url;
 }

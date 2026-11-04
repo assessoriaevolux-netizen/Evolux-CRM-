@@ -103,11 +103,13 @@ Deno.serve(async (req) => {
     const code = url.searchParams.get('code')
     if (!code) return voltar({ meta: 'erro', motivo: 'A Meta não devolveu o código de autorização.' })
 
-    // A pessoa ainda é gestora desta empresa?
+    // Conexão pessoal (a pessoa conecta o próprio WhatsApp): basta ser ativa na empresa.
+    // Conexão da empresa: só o gestor.
+    const pessoal = Number(st.p) === 1
     const { data: ctx, error: eCtx } = await admin.rpc('integ_srv_contexto', { p_user: st.u })
     const c: any = ctx
-    if (eCtx || !c || String(c.empresa_id) !== String(st.e) || !c.gestor) {
-      return voltar({ meta: 'erro', motivo: 'Somente o gestor da empresa pode conectar a Meta.' })
+    if (eCtx || !c || String(c.empresa_id) !== String(st.e) || (!pessoal && !c.gestor)) {
+      return voltar({ meta: 'erro', motivo: pessoal ? 'Seu acesso ao CRM não está ativo.' : 'Somente o gestor da empresa pode conectar a Meta.' })
     }
 
     // 1) code → token
@@ -129,6 +131,15 @@ Deno.serve(async (req) => {
     let expira: string | null = null
     if (d.expires_at) expira = new Date(Number(d.expires_at) * 1000).toISOString()
     else if (d.expires_at === undefined && expiraEmSeg) expira = new Date(Date.now() + expiraEmSeg * 1000).toISOString()
+
+    if (pessoal) {
+      // Guarda o token só até o CRM ligar o número (ação wa_meu_numero_conectar). Não mexe na conexão da empresa.
+      const { error: eP } = await admin.from('integ_wa_pessoal').upsert({
+        user_id: st.u, empresa_id: String(st.e), token, expira_em: expira, criado_em: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+      if (eP) return voltar({ meta: 'erro', motivo: 'Não consegui salvar a conexão: ' + eP.message })
+      return voltar({ meta: 'ok', wa: 'pessoal' })
+    }
 
     const { error } = await admin.from('integ_meta').upsert({
       empresa_id: String(st.e), conectado_por: st.u, conectado_nome: c.nome || null,

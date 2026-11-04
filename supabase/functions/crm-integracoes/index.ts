@@ -246,9 +246,12 @@ async function leadServidor(id: string) {
 
 // Número de WhatsApp para enviar: o escolhido, o da última conversa do lead, o do vendedor
 // ou o padrão da empresa. O token é o permanente do número ou o da conexão Meta.
-async function numeroParaEnviar(emp: string, op: { phone_number_id?: string; lead?: string; dono?: string | null } = {}) {
+// "quem" (pessoa do CRM que está enviando): se não for gestor, só pode usar os números
+// da empresa ou o PRÓPRIO número — nunca o WhatsApp pessoal de outra pessoa.
+async function numeroParaEnviar(emp: string, op: { phone_number_id?: string; lead?: string; dono?: string | null; quem?: { id: string; gestor: boolean } } = {}) {
   const { data } = await admin.from('integ_wa_numeros').select('*').eq('empresa_id', emp).eq('ativo', true)
-  const nums = (data || []) as any[]
+  let nums = (data || []) as any[]
+  if (op.quem && !op.quem.gestor) nums = nums.filter((x) => !x.dono_id || String(x.dono_id) === String(op.quem!.id))
   if (!nums.length) return null
   let n: any = null
   if (op.phone_number_id) {
@@ -261,7 +264,7 @@ async function numeroParaEnviar(emp: string, op: { phone_number_id?: string; lea
     if (ult?.[0]) n = nums.find((x) => x.phone_number_id === (ult[0] as any).phone_number_id)
   }
   if (!n && op.dono) n = nums.find((x) => x.dono_id === op.dono)
-  if (!n) n = nums.find((x) => x.padrao) || nums[0]
+  if (!n) n = nums.find((x) => x.padrao) || nums.find((x) => !x.dono_id) || nums[0]
   let token = n.token
   if (!token) token = (await conexaoMeta(emp))?.token
   if (!token) return null
@@ -1072,10 +1075,12 @@ const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>
 
   // ── Meta ──
   async meta_login_url(ctx, c, req) {
-    exigirGestor(ctx)
+    // pessoal = a pessoa conecta o PRÓPRIO WhatsApp (qualquer cargo). Sem isso, só o gestor (conexão da empresa).
+    const pessoal = !!c.pessoal && (c.modo === 'coexistencia' || c.modo === 'novo')
+    if (pessoal) exigirEmpresa(ctx); else exigirGestor(ctx)
     if (!APP_ID || !APP_SECRET) throw new Falha(400, 'Faltam os segredos META_APP_ID e META_APP_SECRET no Supabase.')
     const retorno = retornoValido(c.retorno, req.headers.get('origin'))
-    const state = await assinarState({ e: ctx.empresa_id, u: ctx.user_id, r: retorno, x: Math.floor(Date.now() / 1000) + 900, n: crypto.randomUUID() })
+    const state = await assinarState({ e: ctx.empresa_id, u: ctx.user_id, r: retorno, x: Math.floor(Date.now() / 1000) + 900, n: crypto.randomUUID(), ...(pessoal ? { p: 1 } : {}) })
     const p = new URLSearchParams({ client_id: APP_ID, redirect_uri: URL_CALLBACK, state, response_type: 'code' })
     if (LOGIN_CONFIG_ID) { p.set('config_id', LOGIN_CONFIG_ID); p.set('override_default_response_type', 'true') } else p.set('scope', ESCOPOS.join(','))
     // WhatsApp: "coexistencia" conecta o app WhatsApp Business do celular por QR code; "novo" cadastra um número só para o CRM
@@ -1343,6 +1348,63 @@ const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>
     await admin.from('integ_wa_numeros').update(mud).eq('id', String(c.id))
     return { ok: true }
   },
+  // ── Meu WhatsApp (cada pessoa conecta o próprio número; a Meta cobra na conta dela) ──
+  async wa_meu_numero_conectar(ctx) {
+    exigirEmpresa(ctx)
+    const emp = ctx.empresa_id as string
+    const { data: pend } = await admin.from('integ_wa_pessoal').select('*').eq('user_id', ctx.user_id).maybeSingle()
+    if (!pend || String((pend as any).empresa_id) !== emp) throw new Falha(400, 'Não encontrei a conexão com a Meta. Clique em "Conectar meu WhatsApp" de novo.')
+    const token = String((pend as any).token)
+    const dbg = await graph('debug_token', { token: tokenApp(), params: { input_token: token } })
+    const alvos = new Set<string>()
+    for (const g of dbg.data?.data?.granular_scopes || []) {
+      if (String(g?.scope || '').startsWith('whatsapp_business')) for (const t of g?.target_ids || []) alvos.add(String(t))
+    }
+    if (!alvos.size) throw new Falha(400, 'A Meta não liberou nenhuma conta do WhatsApp nessa conexão. Refaça e escolha o seu número até o fim.')
+    const avisos: string[] = []
+    const conectados: string[] = []
+    const { data: ex } = await admin.from('integ_wa_numeros').select('phone_number_id,empresa_id,dono_id')
+    const atuais = new Map(((ex || []) as any[]).map((n) => [String(n.phone_number_id), n]))
+    for (const wabaId of alvos) {
+      const ns = await graph(`${wabaId}/phone_numbers`, { token, params: { fields: 'id,display_phone_number,verified_name,quality_rating', limit: 50 } })
+      if (!ns.ok) { avisos.push('Conta do WhatsApp ' + wabaId + ': ' + ns.erro); continue }
+      for (const n of (ns.data?.data || []) as any[]) {
+        const pnid = String(n.id)
+        const atual: any = atuais.get(pnid)
+        if (atual && String(atual.empresa_id) !== emp) { avisos.push(`O número ${n.display_phone_number} já está ligado a outra empresa no CRM.`); continue }
+        if (atual && atual.dono_id && String(atual.dono_id) !== ctx.user_id) { avisos.push(`O número ${n.display_phone_number} já é de outra pessoa da empresa.`); continue }
+        if (atual && !atual.dono_id) { avisos.push(`O número ${n.display_phone_number} é o WhatsApp da empresa — fica com a empresa.`); continue }
+        const linha: any = {
+          empresa_id: emp, phone_number_id: pnid, waba_id: wabaId, numero: n.display_phone_number || null,
+          nome_verificado: n.verified_name || null, qualidade: n.quality_rating || null, token, dono_id: ctx.user_id,
+          ativo: true, atualizado_em: new Date().toISOString(),
+        }
+        if (!atual) linha.padrao = false
+        const { error } = await admin.from('integ_wa_numeros').upsert(linha, { onConflict: 'phone_number_id' })
+        if (error) { avisos.push(`Não consegui salvar o número ${n.display_phone_number}: ${error.message}`); continue }
+        conectados.push(n.display_phone_number || pnid)
+        const a = await prepararNumero(pnid, token)
+        if (a) avisos.push(a)
+      }
+      const sub = await graph(`${wabaId}/subscribed_apps`, { metodo: 'POST', token })
+      if (!sub.ok) avisos.push('Avisos do WhatsApp: ' + sub.erro)
+      cacheModelos.delete(wabaId)
+    }
+    if (conectados.length) {
+      const app = await assinarAppWhatsApp()
+      if (!app.ok) avisos.push('Assinatura dos avisos do WhatsApp no app: ' + app.erro)
+      await atividade(emp, ctx.user_id, 'ti-brand-whatsapp', `${ctx.nome} conectou o próprio WhatsApp (${conectados.join(', ')})`)
+    }
+    await admin.from('integ_wa_pessoal').delete().eq('user_id', ctx.user_id)
+    return { ok: conectados.length > 0, numeros: conectados, avisos, erro: conectados.length ? undefined : (avisos[0] || 'Nenhum número novo foi conectado.') }
+  },
+  async wa_meu_numero_remover(ctx, c) {
+    exigirEmpresa(ctx)
+    const { data } = await admin.from('integ_wa_numeros').delete().eq('id', String(c.id || '')).eq('empresa_id', ctx.empresa_id).eq('dono_id', ctx.user_id).select('numero')
+    if (!data?.length) throw new Falha(404, 'Número não encontrado entre os seus.')
+    await atividade(ctx.empresa_id as string, ctx.user_id, 'ti-plug-off', `${ctx.nome} desconectou o próprio WhatsApp`)
+    return { ok: true }
+  },
   async wa_numero_remover(ctx, c) {
     exigirGestor(ctx)
     await admin.from('integ_wa_numeros').delete().eq('id', String(c.id || '')).eq('empresa_id', ctx.empresa_id)
@@ -1350,14 +1412,21 @@ const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>
   },
   async wa_modelos(ctx, c) {
     exigirPerm(ctx, 'whatsapp_send')
-    const num = await numeroParaEnviar(ctx.empresa_id as string, { phone_number_id: c.phone_number_id || undefined })
+    const num = await numeroParaEnviar(ctx.empresa_id as string, { phone_number_id: c.phone_number_id || undefined, dono: ctx.user_id, quem: { id: ctx.user_id, gestor: ctx.gestor } })
     if (!num) throw new Falha(400, 'Nenhum número de WhatsApp configurado.')
     const lista = await listarModelos(num, !!c.renovar)
     return { modelos: lista.sort((a: any, b: any) => (a.status === 'APPROVED' ? 0 : 1) - (b.status === 'APPROVED' ? 0 : 1) || a.nome.localeCompare(b.nome)) }
   },
   async wa_criar_modelos(ctx, c) {
-    exigirGestor(ctx)
-    const num = await numeroParaEnviar(ctx.empresa_id as string, { phone_number_id: c.phone_number_id || undefined })
+    exigirEmpresa(ctx)
+    // gestor cria nos números da empresa; cada pessoa pode criar no próprio WhatsApp
+    let num: any
+    if (ctx.gestor) num = await numeroParaEnviar(ctx.empresa_id as string, { phone_number_id: c.phone_number_id || undefined })
+    else {
+      const { data: meu } = await admin.from('integ_wa_numeros').select('phone_number_id').eq('empresa_id', ctx.empresa_id).eq('dono_id', ctx.user_id).eq('ativo', true).limit(1)
+      if (!meu?.length) throw new Falha(403, 'Conecte o seu WhatsApp primeiro.')
+      num = await numeroParaEnviar(ctx.empresa_id as string, { phone_number_id: (meu[0] as any).phone_number_id })
+    }
     if (!num) throw new Falha(400, 'Nenhum número de WhatsApp configurado.')
     const existentes = new Set((await listarModelos(num, true)).map((m: any) => m.nome))
     const empresa = ctx.empresa_nome || 'Evolux'
@@ -1407,7 +1476,7 @@ const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>
     const ult = await ultimaEntrada(lead.id)
     const para = ult?.contato || telefoneWhatsApp(lead.telefone)
     if (!para) throw new Falha(400, 'Este lead não tem telefone.')
-    const num = await numeroParaEnviar(emp, { phone_number_id: c.phone_number_id || undefined, lead: lead.id, dono: ctx.user_id })
+    const num = await numeroParaEnviar(emp, { phone_number_id: c.phone_number_id || undefined, lead: lead.id, dono: ctx.user_id, quem: { id: ctx.user_id, gestor: ctx.gestor } })
     if (!num) throw new Falha(400, 'Nenhum número de WhatsApp configurado.')
     const modelo = await acharModelo(num, String(c.modelo || ''), c.idioma || undefined)
     const valores = Array.isArray(c.valores) ? c.valores.map((v: unknown) => String(v ?? '')) : valoresDoLead(c.campos || [], lead, ctx.empresa_nome)
@@ -1427,7 +1496,7 @@ const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>
     const emp = ctx.empresa_id as string
     const ids = [...new Set((Array.isArray(c.lead_ids) ? c.lead_ids : []).map((x: unknown) => String(x)))].slice(0, 1000)
     if (!ids.length) throw new Falha(400, 'Selecione os leads.')
-    const num = await numeroParaEnviar(emp, { phone_number_id: c.phone_number_id || undefined, dono: ctx.user_id })
+    const num = await numeroParaEnviar(emp, { phone_number_id: c.phone_number_id || undefined, dono: ctx.user_id, quem: { id: ctx.user_id, gestor: ctx.gestor } })
     if (!num) throw new Falha(400, 'Nenhum número de WhatsApp configurado.')
     const modelo = await acharModelo(num, String(c.modelo || ''), c.idioma || undefined)
     const campos: string[] = (Array.isArray(c.campos) ? c.campos : []).map((x: unknown) => String(x ?? '')).slice(0, modelo.variaveis.length)
