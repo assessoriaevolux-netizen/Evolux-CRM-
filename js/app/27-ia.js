@@ -4,6 +4,7 @@ const IA={roteiros:{},padrao:null,servidor:null,editando:null,teste:{tipo:'prime
 const IA_TIPOS={
   primeiro_atendimento:{tit:'Primeiro atendimento',ic:'ti-message-chatbot',desc:'Responde os leads novos no WhatsApp na hora, qualifica (bem, valor, prazo, lance) e marca a conversa com o consultor.'},
   pos_venda:{tit:'Pós-venda',ic:'ti-heart-handshake',desc:'Depois que a venda fecha, puxa conversa para ver se está tudo certo, tira dúvidas simples e pede indicações.'},
+  entrevista:{tit:'Entrevista de candidatos',ic:'ti-clipboard-list',desc:'Entrevista quem chama no WhatsApp falando de “entrevista” ou “currículo” (anúncio de vaga). Não vira lead: as conversas ficam no WhatsApp → Entrevistas.'},
 };
 const IA_MODELOS=[['gpt-6-luna','GPT-6 Luna — recomendado (mais barato)'],['gpt-6-sol','GPT-6 Sol — mais caprichado (cerca de 20× o custo)']];
 const IA_ATRASOS=[['1','1 hora depois'],['24','1 dia depois'],['48','2 dias depois'],['72','3 dias depois'],['168','1 semana depois']];
@@ -46,7 +47,9 @@ function _iaCard(tipo,gerencia){
   const ligada=!!r.ativo;
   const ed=IA.editando===tipo;
   const modeloInicial=cfg.modelo_inicial?`<i class="ti ti-template"></i> mensagem inicial: <strong>${esc(cfg.modelo_inicial)}</strong>`:'<span class="txt-y"><i class="ti ti-alert-triangle"></i> sem mensagem inicial escolhida</span>';
-  let resumo=tipo==='pos_venda'
+  let resumo=tipo==='entrevista'
+    ?`Começa quando a mensagem tem “entrevista” ou “currículo” · até ${Number(cfg.limite_mensagens)||30} respostas por candidato · <a href="#" onclick="event.preventDefault();WA.aba='entrevistas';showTab('whatsapp')">ver entrevistas</a>`
+    :tipo==='pos_venda'
     ?`${esc((IA_ATRASOS.find(a=>a[0]===String(cfg.atraso_horas||'24'))||IA_ATRASOS[1])[1])} da venda · ${modeloInicial}`
     :`Responde quem escreve no WhatsApp${(cfg.etapas||[]).length?` (etapas: ${(cfg.etapas).map(e=>esc(etapaLabel(e))).join(', ')})`:' (Novo lead, Primeiro contato e Aguardando resposta)'} · ${cfg.modelo_inicial?modeloInicial+' para leads de formulário':'só responde quem escreve primeiro'}`;
   return `<div class="ia2-card${ligada?' on':''}">
@@ -78,18 +81,18 @@ function _iaEditor(tipo){
   return `<div class="ia2-editor">
     <div class="field"><label>Roteiro (o que a IA deve fazer, em português simples)</label>
       <textarea class="fi ia2-roteiro" id="ia-ed-roteiro" rows="12" maxlength="12000">${esc(texto)}</textarea>
-      <div class="integ2-mini">Pode usar {{empresa}}, {{responsavel}}, {{nome}}, {{tipo}} e {{credito}}. As regras de segurança (não inventar valores, passar para o consultor, respeitar quem pede para parar) já valem sempre.</div></div>
+      <div class="integ2-mini">${tipo==='entrevista'?'Pode usar {{empresa}} e {{nome}}. Escreva as perguntas na ordem; a IA faz uma por vez. As regras de segurança (não pedir documentos, encerrar quando pedirem para parar) já valem sempre.':'Pode usar {{empresa}}, {{responsavel}}, {{nome}}, {{tipo}} e {{credito}}. As regras de segurança (não inventar valores, passar para o consultor, respeitar quem pede para parar) já valem sempre.'}</div></div>
     <div class="g2">
       <div class="field"><label>Modelo de IA</label><select class="fi" id="ia-ed-ia" onchange="document.getElementById('ia-ed-ia-outro').hidden=this.value!=='outro'">${IA_MODELOS.map(([k,t])=>`<option value="${k}"${k===modelo?' selected':''}>${t}</option>`).join('')}<option value="outro"${outro?' selected':''}>Outro…</option></select>
         <input class="fi" id="ia-ed-ia-outro" placeholder="nome do modelo na OpenAI" value="${outro?esc(modelo):''}"${outro?'':' hidden'} style="margin-top:6px"></div>
       ${tipo==='pos_venda'
         ?`<div class="field"><label>Quando mandar</label><select class="fi" id="ia-ed-atraso">${IA_ATRASOS.map(([k,t])=>`<option value="${k}"${k===String(cfg.atraso_horas||'24')?' selected':''}>${t}</option>`).join('')}</select></div>`
-        :`<div class="field"><label>Limite de respostas da IA por conversa</label><input class="fi" id="ia-ed-limite" type="number" min="2" max="60" value="${Number(cfg.limite_mensagens)||15}"><div class="integ2-mini">Passou disso, a conversa vai para o responsável.</div></div>`}
+        :`<div class="field"><label>Limite de respostas da IA por conversa</label><input class="fi" id="ia-ed-limite" type="number" min="2" max="60" value="${Number(cfg.limite_mensagens)||(tipo==='entrevista'?30:15)}"><div class="integ2-mini">${tipo==='entrevista'?'Passou disso, a entrevista é encerrada.':'Passou disso, a conversa vai para o responsável.'}</div></div>`}
     </div>
     ${tipo==='primeiro_atendimento'?`<div class="field"><label>A IA responde leads nestas etapas</label><div class="integ2-chips">${ETAPAS.slice(0,5).map(e=>`<label class="integ2-chip"><input type="checkbox" class="ia-ed-etapa" value="${esc(e)}"${etapas.includes(e)?' checked':''}>${esc(etapaLabel(e))}</label>`).join('')}</div></div>`:''}
-    <div class="field"><label>${tipo==='pos_venda'?'Mensagem do pós-venda (modelo aprovado)':'Mensagem inicial para quem preenche formulário do Meta (modelo aprovado)'}</label>
+    ${tipo==='entrevista'?'':`<div class="field"><label>${tipo==='pos_venda'?'Mensagem do pós-venda (modelo aprovado)':'Mensagem inicial para quem preenche formulário do Meta (modelo aprovado)'}</label>
       ${_iaSelModelo(tipo,cfg)}
-      ${tipo==='primeiro_atendimento'?'<div class="integ2-mini">Para a IA chamar os leads de formulário, ligue também “IA faz o primeiro contato” na página, em Configurações → Meta.</div>':'<div class="integ2-mini">A Meta só deixa a empresa puxar conversa com modelo aprovado. Quando o cliente responde, a IA continua seguindo o roteiro.</div>'}</div>
+      ${tipo==='primeiro_atendimento'?'<div class="integ2-mini">Para a IA chamar os leads de formulário, ligue também “IA faz o primeiro contato” na página, em Configurações → Meta.</div>':'<div class="integ2-mini">A Meta só deixa a empresa puxar conversa com modelo aprovado. Quando o cliente responde, a IA continua seguindo o roteiro.</div>'}</div>`}
     <div class="ia2-acoes">
       <button class="btn bp" onclick="iaSalvar('${tipo}')" id="ia-ed-salvar"><i class="ti ti-check"></i>Salvar roteiro</button>
       <button class="btn bg" onclick="IA.teste.tipo='${tipo}';IA.teste.hist=[];_iaTesteDesenhar();document.getElementById('ia2-teste')?.scrollIntoView({behavior:'smooth'})"><i class="ti ti-flask"></i>Testar este texto</button>
@@ -123,6 +126,7 @@ async function iaSalvar(tipo){
   const modelo=(iaSel==='outro'?document.getElementById('ia-ed-ia-outro').value:iaSel).trim().toLowerCase();
   if(!/^[a-z0-9][a-z0-9.-]{1,60}$/.test(modelo)){showToast('Nome de modelo inválido.','ti-alert-triangle','#d97706');return;}
   if(tipo==='pos_venda') cfg.atraso_horas=document.getElementById('ia-ed-atraso').value;
+  else if(tipo==='entrevista') cfg.limite_mensagens=Math.max(2,Math.min(60,parseInt(document.getElementById('ia-ed-limite').value)||30));
   else{
     cfg.limite_mensagens=Math.max(2,Math.min(60,parseInt(document.getElementById('ia-ed-limite').value)||15));
     cfg.etapas=[...document.querySelectorAll('.ia-ed-etapa:checked')].map(i=>i.value);
@@ -146,11 +150,12 @@ async function iaLigar(tipo,on){
   const r=IA.roteiros[tipo];
   const linha=r?{empresa_id:window._empresaIdDireto,tipo,ativo:on,roteiro:r.roteiro,modelo:r.modelo,config:r.config||{}}
     :{empresa_id:window._empresaIdDireto,tipo,ativo:on,roteiro:(IA.padrao&&IA.padrao.roteiros[tipo])||'',modelo:'gpt-6-luna',
-      config:tipo==='pos_venda'?{atraso_horas:'24'}:{limite_mensagens:15,etapas:['Novo lead','Primeiro contato','Aguardando resposta']}};
+      config:tipo==='pos_venda'?{atraso_horas:'24'}:tipo==='entrevista'?{limite_mensagens:30}:{limite_mensagens:15,etapas:['Novo lead','Primeiro contato','Aguardando resposta']}};
   const {error}=await window._sb.from('ia_roteiros').upsert(linha,{onConflict:'empresa_id,tipo'});
   if(error){showToast('Não salvou: '+error.message,'ti-alert-triangle','#dc2626');renderIA();return;}
   const cfg=linha.config||{};
-  if(on&&!cfg.modelo_inicial) showToast(tipo==='pos_venda'?'Pós-venda ligado. Escolha a mensagem do pós-venda (modelo aprovado) em "Editar roteiro" para ele conseguir puxar a conversa.':'IA ligada: ela responde quem escrever no WhatsApp. Para chamar os leads de formulário, escolha a mensagem inicial em "Editar roteiro".','ti-robot',9000);
+  if(on&&tipo==='entrevista') showToast('Entrevista ligada: quem escrever “entrevista” ou “currículo” no WhatsApp é atendido pela IA. As conversas ficam em WhatsApp → Entrevistas.','ti-clipboard-list',9000);
+  else if(on&&!cfg.modelo_inicial) showToast(tipo==='pos_venda'?'Pós-venda ligado. Escolha a mensagem do pós-venda (modelo aprovado) em "Editar roteiro" para ele conseguir puxar a conversa.':'IA ligada: ela responde quem escrever no WhatsApp. Para chamar os leads de formulário, escolha a mensagem inicial em "Editar roteiro".','ti-robot',9000);
   else showToast(on?'IA ligada.':'IA desligada.','ti-robot');
   await integCarregarStatus(true);
   renderIA();
@@ -162,8 +167,8 @@ function _iaTestePainel(){
     <div class="ads2-card-topo"><div class="ads2-card-tit"><i class="ti ti-flask"></i> Testar a conversa</div>
       <select class="tfield" id="ia2-t-tipo" onchange="IA.teste.tipo=this.value;IA.teste.hist=[];_iaTesteDesenhar()">${Object.keys(IA_TIPOS).map(t=>`<option value="${t}">${IA_TIPOS[t].tit}</option>`).join('')}</select></div>
     <div class="integ2-mini" style="margin-bottom:10px">Você faz o papel do cliente. Nada é enviado pelo WhatsApp; só a OpenAI é usada (custa frações de centavo). Se o roteiro estiver aberto para edição, o teste usa o texto que está lá, mesmo sem salvar.</div>
-    <div class="g2 ia2-t-lead"><div class="field"><label>Nome do cliente (teste)</label><input class="fi" id="ia2-t-nome" value="Maria Souza"></div>
-      <div class="field"><label>Interesse</label><select class="fi" id="ia2-t-bem">${['Imóvel','Automóvel','Moto','Serviço'].map(t=>`<option>${t}</option>`).join('')}</select></div></div>
+    <div class="g2 ia2-t-lead"><div class="field"><label id="ia2-t-nome-lbl">Nome do cliente (teste)</label><input class="fi" id="ia2-t-nome" value="Maria Souza"></div>
+      <div class="field" id="ia2-t-bem-box"><label>Interesse</label><select class="fi" id="ia2-t-bem">${['Imóvel','Automóvel','Moto','Serviço'].map(t=>`<option>${t}</option>`).join('')}</select></div></div>
     <div class="ia2-t-chat" id="ia2-t-chat"></div>
     <div class="wa2-compositor"><textarea id="ia2-t-msg" rows="1" placeholder="Escreva como se fosse o cliente" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();iaTestar();}"></textarea>
       <button class="btn bg" onclick="IA.teste.hist=[];_iaTesteDesenhar()" title="Recomeçar"><i class="ti ti-refresh"></i></button>
@@ -172,10 +177,13 @@ function _iaTestePainel(){
 }
 function _iaTesteDesenhar(){
   const sel=document.getElementById('ia2-t-tipo');if(sel)sel.value=IA.teste.tipo;
+  const ent=IA.teste.tipo==='entrevista';
+  const lb=document.getElementById('ia2-t-nome-lbl');if(lb)lb.textContent=ent?'Nome do candidato (teste)':'Nome do cliente (teste)';
+  const bb=document.getElementById('ia2-t-bem-box');if(bb)bb.hidden=ent;
   const box=document.getElementById('ia2-t-chat');if(!box)return;
   box.innerHTML=IA.teste.hist.length?IA.teste.hist.map(m=>`<div class="wa2-msg ${m.de==='ia'?'saida':'entrada'}"><div class="wa2-msg-txt">${esc(m.texto)}</div>
-      ${m.de==='ia'?`<div class="wa2-msg-meta"><span class="wa2-quem ia"><i class="ti ti-robot"></i>IA</span>${m.transferir?'<span class="integ2-st pend"><i class="ti ti-user-share"></i>passaria para o consultor</span>':''}${m.encerrar?'<span class="integ2-st erro"><i class="ti ti-bell-off"></i>encerraria a conversa</span>':''}${m.custo?`<span>US$ ${m.custo.toFixed(5)}</span>`:''}</div>`:''}</div>`).join('')
-    :`<div class="wa2-chat-vazio peq"><i class="ti ti-message-chatbot"></i><div>Mande um “oi” como se fosse um lead de ${IA.teste.tipo==='pos_venda'?'pós-venda':'anúncio'}.</div></div>`;
+      ${m.de==='ia'?`<div class="wa2-msg-meta"><span class="wa2-quem ia"><i class="ti ti-robot"></i>IA</span>${m.transferir?'<span class="integ2-st pend"><i class="ti ti-user-share"></i>passaria para o consultor</span>':''}${m.encerrar?`<span class="integ2-st erro"><i class="ti ti-bell-off"></i>${IA.teste.tipo==='entrevista'?'encerraria a entrevista':'encerraria a conversa'}</span>`:''}${m.custo?`<span>US$ ${m.custo.toFixed(5)}</span>`:''}</div>`:''}</div>`).join('')
+    :`<div class="wa2-chat-vazio peq"><i class="ti ti-message-chatbot"></i><div>${IA.teste.tipo==='entrevista'?'Mande algo como “Oi, vi a vaga e quero fazer a entrevista” como se fosse um candidato.':`Mande um “oi” como se fosse um lead de ${IA.teste.tipo==='pos_venda'?'pós-venda':'anúncio'}.`}</div></div>`;
   box.scrollTop=box.scrollHeight;
 }
 async function iaTestar(){
@@ -202,7 +210,7 @@ async function iaTestar(){
 function _iaConversasPainel(){
   const st={ativa:['IA atendendo','ok','ti-robot'],humano:['Com a equipe','pend','ti-user-check'],encerrada:['Pediu para parar','erro','ti-bell-off']};
   const lista=IA.conversas.filter(c=>!IA.filtro||c.status===IA.filtro);
-  return `<div class="ads2-card"><div class="ads2-card-topo"><div class="ads2-card-tit"><i class="ti ti-messages"></i> Conversas da IA</div>
+  return `<div class="ads2-card"><div class="ads2-card-topo"><div class="ads2-card-tit"><i class="ti ti-messages"></i> Conversas da IA com leads</div>
     <select class="tfield" onchange="IA.filtro=this.value;renderIA()"><option value="">Todas</option>${Object.entries(st).map(([k,v])=>`<option value="${k}"${IA.filtro===k?' selected':''}>${v[0]}</option>`).join('')}</select></div>
     ${lista.length?`<div class="integ2-tabela"><table><thead><tr><th>Lead</th><th>Roteiro</th><th>Situação</th><th class="num">Respostas da IA</th><th class="num">Custo</th><th>Última atividade</th><th></th></tr></thead><tbody>
       ${lista.map(c=>{const l=integLeadPorSb(c.lead_id);const s=st[c.status]||[c.status,'pend','ti-point'];return `<tr>

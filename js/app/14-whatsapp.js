@@ -3,7 +3,8 @@
 // aprovados fora da janela de 24h e disparo em massa. Tudo passa por crm-integracoes.
 const WA={aba:'conversas',conversas:[],carregou:false,busca:'',leadAtual:null,msgs:[],conversaIA:null,
   modelos:null,disp:{sel:new Set(),filtros:{etapa:'',tipo:'',resp:'',origem:'',busca:''},modelo:'',campos:[],confirmando:false,acompanhar:null},
-  mobileChat:false};
+  mobileChat:false,
+  ent:{lista:[],carregou:false,busca:'',filtro:'',atual:null,msgs:null,mobile:false}};
 const WA_CAMPOS=[['primeiro_nome','Primeiro nome do lead'],['nome','Nome completo'],['tipo','Tipo de bem'],['credito','Crédito'],
   ['etapa','Etapa do funil'],['responsavel','Primeiro nome do responsável'],['empresa','Nome da empresa'],['texto:','Texto fixo…']];
 const WA_CAMPOS_SUGERIDOS={evolux_primeiro_contato:['primeiro_nome','tipo','empresa'],evolux_pos_venda:['primeiro_nome','empresa'],evolux_novidades:['primeiro_nome','empresa']};
@@ -45,12 +46,15 @@ async function renderWhatsapp(){
   const nums=integNumeros();
   const podeDisparo=can('whatsapp_bulk');
   if(!podeDisparo&&WA.aba==='disparo') WA.aba='conversas';
+  const podeEnt=can('ia_manage');
+  if(!podeEnt&&WA.aba==='entrevistas') WA.aba='conversas';
   topo.innerHTML=`<div class="wa2-topo">
     <div class="wa2-tit"><i class="ti ti-brand-whatsapp"></i>WhatsApp
       ${nums.length?`<span class="integ2-tag ok"><i class="ti ti-circle-check"></i>${nums.length===1?esc(nums[0].numero||'conectado'):nums.length+' números'}</span>`:'<span class="integ2-tag">não conectado</span>'}</div>
-    ${nums.length&&podeDisparo?`<div class="wa2-abas">
+    ${nums.length&&(podeDisparo||podeEnt)?`<div class="wa2-abas">
       <button class="${WA.aba==='conversas'?'on':''}" onclick="WA.aba='conversas';renderWhatsapp()"><i class="ti ti-messages"></i>Conversas</button>
-      <button class="${WA.aba==='disparo'?'on':''}" onclick="WA.aba='disparo';renderWhatsapp()"><i class="ti ti-send"></i>Disparo em massa</button></div>`:''}
+      ${podeEnt?`<button class="${WA.aba==='entrevistas'?'on':''}" onclick="WA.aba='entrevistas';renderWhatsapp()"><i class="ti ti-clipboard-list"></i>Entrevistas</button>`:''}
+      ${podeDisparo?`<button class="${WA.aba==='disparo'?'on':''}" onclick="WA.aba='disparo';renderWhatsapp()"><i class="ti ti-send"></i>Disparo em massa</button>`:''}</div>`:''}
   </div>`;
   if(!nums.length){
     corpo.innerHTML=`<div class="integ2-vazio"><div class="integ2-vazio-ic wa"><i class="ti ti-brand-whatsapp"></i></div>
@@ -60,7 +64,8 @@ async function renderWhatsapp(){
     return;
   }
   if(WA.aba==='disparo') return _waRenderDisparo(corpo);
-  if(!corpo.querySelector('.wa2-layout')){
+  if(WA.aba==='entrevistas') return _waRenderEntrevistas(corpo);
+  if(!corpo.querySelector('#wa2-layout')){
     corpo.innerHTML=`<div class="wa2-layout${WA.mobileChat?' chat-aberto':''}" id="wa2-layout">
       <aside class="wa2-lista">
         <div class="wa2-lista-topo">
@@ -469,6 +474,127 @@ async function _waDispHistorico(){
   box.innerHTML=`<div class="integ2-tabela"><table><thead><tr><th>Quando</th><th>Modelo</th><th>Quem</th><th>Enviadas</th><th>Erros</th></tr></thead><tbody>${data.map(d=>`<tr>
     <td>${integData(d.criado_em,true)}</td><td>${esc(d.template_nome)}</td><td>${esc(d.criado_por_nome||'')}</td>
     <td>${d.status==='enviando'?'<i class="ti ti-loader-2 integ2-gira"></i> ':''}${d.enviados} de ${d.total}</td><td>${d.falhas?`<span class="txt-r" title="${esc(d.erro||'')}">${d.falhas}</span>`:'0'}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+// ── Entrevistas (candidatos de vaga; não viram lead) ────────────────────────
+async function _waRenderEntrevistas(corpo){
+  const E=WA.ent;
+  if(!corpo.querySelector('#wa2-ent-layout')){
+    corpo.innerHTML=`<div class="wa2-layout" id="wa2-ent-layout">
+      <aside class="wa2-lista">
+        <div class="wa2-lista-topo">
+          <div class="wa2-busca"><i class="ti ti-search"></i><input type="search" placeholder="Buscar nome ou telefone" value="${esc(E.busca)}" oninput="WA.ent.busca=this.value;_waEntLista()"></div>
+          <button class="btn bg bsm" onclick="_waEntCarregar()" title="Atualizar"><i class="ti ti-refresh"></i></button>
+        </div>
+        <div class="wa2-filtros" style="padding:0 10px 8px">
+          <select class="tfield" onchange="WA.ent.filtro=this.value;_waEntLista()">
+            <option value="">Todas as entrevistas</option>
+            <option value="ativa"${E.filtro==='ativa'?' selected':''}>Em andamento</option>
+            <option value="encerrada"${E.filtro==='encerrada'?' selected':''}>Encerradas</option>
+          </select>
+        </div>
+        <div class="wa2-conversas" id="wa2-ent-lista">${integCarregando('Carregando entrevistas…')}</div>
+        <div class="integ2-mini" style="padding:8px 10px"><i class="ti ti-settings"></i> Para editar as perguntas da IA: <a href="#" onclick="event.preventDefault();IA.editando='entrevista';showTab('ia')">aba IA → Entrevista de candidatos</a></div>
+      </aside>
+      <section class="wa2-chat" id="wa2-ent-chat"></section>
+    </div>`;
+  }
+  document.getElementById('wa2-ent-layout')?.classList.toggle('chat-aberto',!!(E.mobile&&E.atual));
+  _waEntChat();
+  await _waEntCarregar();
+}
+async function _waEntCarregar(){
+  const r=await integChamar('ent_listar',{});
+  const box=document.getElementById('wa2-ent-lista');
+  if(!r.ok){ if(box) box.innerHTML=`<div class="integ2-aviso erro" style="margin:10px"><i class="ti ti-alert-triangle"></i>${esc(r.erro||'Não consegui carregar.')}</div>`; return; }
+  WA.ent.lista=r.entrevistas||[];
+  WA.ent.carregou=true;
+  _waEntLista();
+  if(WA.ent.atual) _waEntChat();
+}
+function _waEntFiltradas(){
+  const E=WA.ent;const q=(E.busca||'').toLowerCase().trim();const dig=q.replace(/\D/g,'');
+  return E.lista.filter(e=>(!E.filtro||e.status===E.filtro)&&(!q||String(e.nome||'').toLowerCase().includes(q)||(dig.length>=3&&String(e.contato||'').includes(dig))));
+}
+function _waEntLista(){
+  const box=document.getElementById('wa2-ent-lista');
+  if(!box) return;
+  const lista=_waEntFiltradas();
+  if(!lista.length){
+    box.innerHTML=`<div class="wa2-lista-vazia"><i class="ti ti-clipboard-list"></i><div>${WA.ent.busca||WA.ent.filtro?'Nenhuma entrevista encontrada.':'Nenhuma entrevista ainda. Quando um candidato mandar mensagem com “entrevista” ou “currículo”, a conversa aparece aqui.'}</div></div>`;
+    return;
+  }
+  box.innerHTML=lista.map(e=>{
+    const nome=e.nome||formatTelefone(e.contato||'')||'Candidato';
+    const pref=e.ultima_direcao==='saida'?'IA: ':'';
+    return `<button class="wa2-conv${WA.ent.atual===e.id?' on':''}" onclick="waAbrirEntrevista('${esc(e.id)}')">
+      <span class="wa2-av">${esc(_waIniciais(nome))}</span>
+      <span class="wa2-conv-txt"><span class="wa2-conv-l1"><span class="wa2-conv-nome">${esc(nome)}</span><span class="wa2-conv-hora">${esc(integHaQuanto(e.atualizado_em||e.criado_em))}</span></span>
+        <span class="wa2-conv-l2"><span class="wa2-conv-ult">${esc(pref+(e.ultima||''))}</span>
+        ${e.status==='ativa'?'<span class="wa2-chip ia" title="A IA está entrevistando"><i class="ti ti-robot"></i></span>':'<span class="integ2-st pend" title="Entrevista encerrada">encerrada</span>'}</span></span>
+    </button>`;}).join('');
+}
+async function waAbrirEntrevista(id){
+  WA.ent.atual=String(id);WA.ent.msgs=null;WA.ent.mobile=true;
+  document.getElementById('wa2-ent-layout')?.classList.add('chat-aberto');
+  _waEntLista();_waEntChat();
+  const r=await integChamar('ent_mensagens',{id});
+  if(WA.ent.atual!==String(id)) return;
+  if(!r.ok){showToast(r.erro,'ti-alert-triangle','#dc2626');WA.ent.msgs=[];_waEntChat();return;}
+  const i=WA.ent.lista.findIndex(e=>e.id===r.entrevista.id);
+  if(i>=0) WA.ent.lista[i]={...WA.ent.lista[i],...r.entrevista};
+  WA.ent.msgs=r.mensagens||[];
+  _waEntChat();
+}
+function waFecharEntrevista(){WA.ent.mobile=false;WA.ent.atual=null;document.getElementById('wa2-ent-layout')?.classList.remove('chat-aberto');_waEntLista();_waEntChat();}
+function _waEntChat(){
+  const box=document.getElementById('wa2-ent-chat');
+  if(!box) return;
+  const e=WA.ent.atual&&WA.ent.lista.find(x=>x.id===WA.ent.atual);
+  if(!e){box.innerHTML=`<div class="wa2-chat-vazio"><i class="ti ti-clipboard-list"></i><div>Escolha uma entrevista ao lado para ler a conversa do candidato com a IA.</div></div>`;return;}
+  const nome=e.nome||'Candidato';
+  const msgs=WA.ent.msgs;
+  let corpo;
+  if(msgs===null) corpo=integCarregando('Carregando mensagens…');
+  else if(!msgs.length) corpo=`<div class="wa2-chat-vazio peq"><i class="ti ti-message-circle"></i><div>Nenhuma mensagem nesta entrevista.</div></div>`;
+  else{
+    let dia='';
+    corpo=msgs.map(m=>{
+      const d=new Date(m.criado_em).toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'});
+      const sep=d!==dia?`<div class="wa2-dia"><span>${esc(d)}</span></div>`:'';
+      dia=d;
+      return `${sep}<div class="wa2-msg ${m.direcao==='saida'?'saida':'entrada'}">
+        <div class="wa2-msg-txt">${esc(m.conteudo||'')}</div>
+        <div class="wa2-msg-meta">${m.direcao==='saida'?'<span class="wa2-quem ia"><i class="ti ti-robot"></i>IA</span>':''}<span>${new Date(m.criado_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span></div>
+      </div>`;}).join('');
+  }
+  const ativa=e.status==='ativa';
+  const barra=ativa
+    ?`<div class="wa2-ia on"><i class="ti ti-robot"></i><span>A IA está entrevistando este candidato (${e.mensagens_ia||0} resposta${e.mensagens_ia===1?'':'s'}).</span><button class="btn bg bsm" onclick="waEntStatus('encerrada')">Encerrar entrevista</button></div>`
+    :`<div class="wa2-ia off"><i class="ti ti-circle-check"></i><span>Entrevista encerrada · ${e.mensagens_ia||0} resposta${e.mensagens_ia===1?'':'s'} da IA.</span><button class="btn bg bsm" onclick="waEntStatus('ativa')">Reabrir para a IA</button></div>`;
+  const tel=String(e.contato||'').replace(/\D/g,'');
+  box.innerHTML=`<div class="wa2-chat-topo">
+      <button class="wa2-voltar" onclick="waFecharEntrevista()" title="Voltar"><i class="ti ti-arrow-left"></i></button>
+      <span class="wa2-av">${esc(_waIniciais(nome))}</span>
+      <div class="wa2-chat-id"><div class="wa2-chat-nome">${esc(nome)}</div><div class="integ2-mini">${esc(formatTelefone(e.contato||''))} · começou ${esc(integHaQuanto(e.criado_em))}</div></div>
+      ${tel?`<button class="btn bg bsm" onclick="_waEntCopiar('${esc(tel)}')" title="Copiar telefone"><i class="ti ti-copy"></i><span class="wa2-esconde-cel">Copiar telefone</span></button>`:''}
+    </div>${barra}
+    <div class="wa2-msgs" id="wa2-ent-msgs">${corpo}</div>
+    <div class="wa2-compositor bloq"><i class="ti ti-info-circle"></i>Esta conversa é da IA de entrevista e não vira lead. Para falar com o candidato, use o WhatsApp do celular.</div>`;
+  const mb=document.getElementById('wa2-ent-msgs');
+  if(mb) mb.scrollTop=mb.scrollHeight;
+}
+function _waEntCopiar(t){
+  try{navigator.clipboard.writeText(t).then(()=>showToast('Telefone copiado.','ti-copy'),()=>showToast(t,'ti-phone'));}catch(_){showToast(t,'ti-phone');}
+}
+async function waEntStatus(status){
+  const id=WA.ent.atual;if(!id)return;
+  const r=await integChamar('ent_status',{id,status});
+  if(!r.ok){showToast(r.erro,'ti-alert-triangle','#dc2626');return;}
+  const i=WA.ent.lista.findIndex(e=>e.id===id);
+  if(i>=0) WA.ent.lista[i]={...WA.ent.lista[i],...r.entrevista};
+  showToast(status==='ativa'?'A IA volta a responder este candidato.':'Entrevista encerrada. A IA não responde mais este candidato.','ti-clipboard-list');
+  _waEntLista();_waEntChat();
 }
 
 // ── Tempo real ──────────────────────────────────────────────────────────────

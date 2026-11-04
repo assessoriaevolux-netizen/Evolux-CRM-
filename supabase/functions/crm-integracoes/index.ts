@@ -463,6 +463,19 @@ Passo a passo:
 4. Pergunte, de 0 a 10, o quanto ele recomendaria a empresa para um amigo.
 5. Peça indicação: alguém que também queira comprar imóvel, carro ou moto. Se ele passar nome e telefone, agradeça e passe para o consultor.
 6. Agradeça e diga que fica à disposição por aqui.`,
+  entrevista: `Objetivo: fazer uma primeira entrevista com quem respondeu ao anúncio de vaga da {{empresa}} e deixar um resumo pronto para a equipe.
+
+Passo a passo (uma pergunta por vez):
+1. Cumprimente, diga que é a assistente virtual da {{empresa}} e agradeça o interesse na vaga.
+2. Pergunte o nome completo e a cidade/bairro onde mora.
+3. Pergunte se já trabalhou com vendas (consórcio, financiamento, seguros, veículos ou imóveis) e por quanto tempo.
+4. Pergunte qual foi o último emprego e por que saiu.
+5. Pergunte a disponibilidade de horário e se pode começar logo.
+6. Pergunte o que mais motiva a pessoa a trabalhar com vendas.
+7. Peça para enviar o currículo por aqui (PDF ou foto), se tiver.
+8. Agradeça, diga que a equipe vai analisar e retornar pelo WhatsApp, e encerre.
+
+Não prometa salário, comissão nem contratação. Se perguntarem sobre valores, diga que a equipe explica na próxima etapa.`,
 }
 function montarSistema(tipo: string, roteiro: string, c: { empresa: string; lead: any }) {
   const lead = c.lead || {}
@@ -643,7 +656,7 @@ async function empresaDoNumero(numeroId: string): Promise<any> {
 }
 
 function montarSistemaEntrevista(roteiro: string, empresa: string, nome: string) {
-  const texto = (roteiro || '').trim()
+  const texto = (roteiro || '').trim().split('{{empresa}}').join(empresa).split('{{nome}}').join(primeiroNome(nome) || 'candidato')
   return `Você é a assistente virtual de entrevistas por WhatsApp da empresa ${empresa}.
 
 Regras que valem sempre:
@@ -1484,10 +1497,47 @@ const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>
     const mensagem = textoLimpo(c.mensagem, 2000)
     if (!mensagem) throw new Falha(400, 'Escreva a mensagem do cliente.')
     historico.push({ role: 'user', content: mensagem })
-    const r = await perguntarIA(modelo, [{ role: 'system', content: montarSistema(tipo, roteiro, { empresa: ctx.empresa_nome || 'Evolux', lead }) }, ...historico])
+    const empresaNome = ctx.empresa_nome || 'Evolux'
+    const sistema = tipo === 'entrevista'
+      ? montarSistemaEntrevista(roteiro, empresaNome, textoLimpo(c.nome, 80) || '')
+      : montarSistema(tipo, roteiro, { empresa: empresaNome, lead })
+    const r = await perguntarIA(modelo, [{ role: 'system', content: sistema }, ...historico])
     if (!r.ok) throw new Falha(400, r.erro)
     const marcas = lerMarcas(r.texto)
     return { resposta: marcas.texto, transferir: marcas.transferir, encerrar: marcas.encerrar, tokens: r.uso, custo_usd: custoUSD(modelo, r.uso), modelo }
+  },
+  // ── Entrevistas (candidatos; não viram lead) ──
+  async ent_listar(ctx, c) {
+    exigirPerm(ctx, 'ia_manage', 'Somente quem gerencia a IA pode ver as entrevistas.')
+    let q = admin.from('ia_entrevistas').select('*').eq('empresa_id', ctx.empresa_id)
+      .order('atualizado_em', { ascending: false }).limit(300)
+    if (c.status === 'ativa' || c.status === 'encerrada') q = q.eq('status', c.status)
+    const { data, error } = await q
+    if (error) throw new Falha(400, 'Não consegui carregar as entrevistas: ' + error.message)
+    const lista = (data || []) as any[]
+    const ultimas: Record<string, any> = {}
+    if (lista.length) {
+      const { data: msgs } = await admin.from('ia_entrevista_msgs').select('entrevista_id,direcao,conteudo,criado_em')
+        .in('entrevista_id', lista.slice(0, 120).map((e) => e.id)).order('criado_em', { ascending: false }).limit(1000)
+      for (const m of (msgs || []) as any[]) if (!ultimas[m.entrevista_id]) ultimas[m.entrevista_id] = m
+    }
+    return { entrevistas: lista.map((e) => ({ ...e, ultima: ultimas[e.id]?.conteudo || '', ultima_direcao: ultimas[e.id]?.direcao || null })) }
+  },
+  async ent_mensagens(ctx, c) {
+    exigirPerm(ctx, 'ia_manage', 'Somente quem gerencia a IA pode ver as entrevistas.')
+    const { data: ent } = await admin.from('ia_entrevistas').select('*').eq('id', String(c.id || '')).eq('empresa_id', ctx.empresa_id).maybeSingle()
+    if (!ent) throw new Falha(404, 'Entrevista não encontrada.')
+    const { data } = await admin.from('ia_entrevista_msgs').select('id,direcao,conteudo,criado_em')
+      .eq('entrevista_id', ent.id).order('criado_em', { ascending: true }).limit(500)
+    return { entrevista: ent, mensagens: data || [] }
+  },
+  async ent_status(ctx, c) {
+    exigirPerm(ctx, 'ia_manage', 'Somente quem gerencia a IA pode mudar as entrevistas.')
+    const status = c.status === 'ativa' ? 'ativa' : 'encerrada'
+    const { data, error } = await admin.from('ia_entrevistas').update({ status, atualizado_em: new Date().toISOString() })
+      .eq('id', String(c.id || '')).eq('empresa_id', ctx.empresa_id).select('*').maybeSingle()
+    if (error || !data) throw new Falha(400, 'Não consegui atualizar a entrevista.')
+    return { entrevista: data }
   },
   ia_padrao() {
     return Promise.resolve({ roteiros: ROTEIRO_PADRAO, modelos_sugeridos: MODELOS_SUGERIDOS.map((m) => ({ nome: m.name, campos: m.campos, categoria: m.category, texto: m.texto })) })
