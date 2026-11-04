@@ -197,8 +197,8 @@ function getSupDeUser(u){ const eq=getEqDeUser(u); return eq?users.find(x=>x.id=
 function getNivelHier(u){ return nivelDe(u); }
 
 // IDs das pessoas cujos leads o usuário logado enxerga (mesma regra do banco):
-// gestor → todos; representante → equipes que representa ou de que participa;
-// supervisor → equipes que supervisiona; demais → só os próprios.
+// gestor → todos; representante → membros e supervisores das equipes que representa
+// (ou de que participa); supervisor → equipes que supervisiona; demais → só os próprios.
 function getVisiveisParaMim(){
   const me=getMe();
   if(!me) return new Set();
@@ -207,6 +207,7 @@ function getVisiveisParaMim(){
   if(me.role==='representante'){
     equipes.filter(e=>e.representanteId===me.id||(e.membroIds||[]).includes(me.id))
       .forEach(e=>(e.membroIds||[]).forEach(mid=>ids.add(mid)));
+    equipes.filter(e=>e.representanteId===me.id&&e.supervisorId).forEach(e=>ids.add(e.supervisorId));
   } else if(me.role==='supervisor'){
     equipes.filter(e=>e.supervisorId===me.id).forEach(e=>(e.membroIds||[]).forEach(mid=>ids.add(mid)));
   }

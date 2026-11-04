@@ -129,8 +129,10 @@ function allHPermIds(){return HPERM_MODULES.flatMap(m=>m.perms.map(p=>p.id));}
 // Permissões padrão (iguais às do banco: crm_garantir_hierarquias_empresa)
 const _PERMS_VEND=['dashboard_view','leads_view','leads_create','leads_edit','funil_view','funil_move','simulador_view',
   'lances_view','lances_create','lances_edit','ranking_view','ranking_team','ranking_all','vendas_view','vendas_create','notif_view'];
-const _PERMS_REP=[..._PERMS_VEND,'leads_import','leads_transfer','notif_team','whatsapp_view','whatsapp_send','ia_view','agenda_view'];
-const _PERMS_SUP=[..._PERMS_REP,'simulador_models','config_view','equipe_view','equipe_view_sellers','equipe_add','equipe_edit','equipe_remove'];
+// Líderes (representante e supervisor): cuidam da própria equipe e gerenciam a IA
+const _PERMS_REP=[..._PERMS_VEND,'leads_import','leads_transfer','notif_team','whatsapp_view','whatsapp_send','ia_view','ia_manage','agenda_view',
+  'config_view','equipe_view','equipe_view_sellers','equipe_add','equipe_edit','equipe_remove'];
+const _PERMS_SUP=[..._PERMS_REP,'simulador_models'];
 function _permsDe(lista){return Object.fromEntries(allHPermIds().map(id=>[id,lista.includes(id)]));}
 const HPERM_DEFAULTS={
   gestor: Object.fromEntries(allHPermIds().map(id=>[id,true])),
@@ -154,7 +156,7 @@ function nivelDe(u){
 }
 function _permsPadraoRole(role){
   const r=(role||'').toLowerCase();
-  if(r==='supervisor'||r==='representante')return _permsDe([..._PERMS_REP,'config_view']);
+  if(r==='supervisor'||r==='representante')return _permsDe(_PERMS_REP);
   return _permsDe(_PERMS_VEND);
 }
 // Permissões novas que, quando o cargo ainda não tem a chave, seguem outra (igual ao banco: integ_tem_perm_de)

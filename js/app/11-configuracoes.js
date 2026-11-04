@@ -468,7 +468,13 @@ function cfgRenderSection(){
     renderUserList();
     populateSelects();
     const es=document.getElementById('uEquipe');
-    if(es)es.innerHTML='<option value="">Equipe (opcional)</option>'+_equipesAtribuiveis().map(e=>`<option value="${e.id}">${esc(e.nome)}</option>`).join('');
+    if(es){
+      // gestor pode deixar sem equipe; supervisor/representante cadastra sempre na própria equipe
+      const livre=isGestor()||can('config_users');
+      const eqs=_equipesAtribuiveis();
+      es.innerHTML=(livre?'<option value="">Equipe (opcional)</option>':'')+eqs.map(e=>`<option value="${e.id}">${esc(e.nome)}</option>`).join('');
+      if(!livre&&!eqs.length) es.innerHTML='<option value="">Você ainda não tem equipe</option>';
+    }
     const btnInvite=document.getElementById('btn-invite-user');
     if(btnInvite)btnInvite.addEventListener('click',function(){inviteUser();});
     const formWrap=document.getElementById('form-add-user-wrap');

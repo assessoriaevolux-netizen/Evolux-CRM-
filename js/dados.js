@@ -1023,6 +1023,12 @@
       canal('vendas-sync','vendas','*',()=>{ _recarregarRanking(); _recarregarPerfis(); });
       canal('atividades-sync','atividades','INSERT',()=>_recarregarAtividades());
       canal('equipes-sync','equipes','*',()=>_recarregarEquipes());
+      // Plano da empresa mudou (ex.: virou Master): abas e IA mudam na hora
+      sb.channel('empresa-sync').on('postgres_changes',{event:'UPDATE',schema:'public',table:'empresas',filter:`id=eq.${window._empresaIdDireto}`},_debounce(async()=>{
+        await window._loadEmpresa();
+        try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
+        try{window._renderTudo&&window._renderTudo();}catch(e){}
+      },500)).subscribe();
       // Integrações: mensagens do WhatsApp, conversas da IA e disparos
       canal('wa-sync','wa_mensagens','*',p=>window._integRealtime&&window._integRealtime('wa_mensagens',p));
       canal('ia-conv-sync','ia_conversas','*',p=>window._integRealtime&&window._integRealtime('ia_conversas',p));

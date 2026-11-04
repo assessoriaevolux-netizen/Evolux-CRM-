@@ -56,6 +56,7 @@ async function inviteUser(){
   const equipeEl=document.getElementById('uEquipe');
   const eqVal=equipeEl?String(equipeEl.value||''):'';
   const eq=eqVal?_equipesAtribuiveis().find(e=>String(e.id)===eqVal||String(e.sb_id)===eqVal):null;
+  if(!eq&&!isGestor()&&!can('config_users')){showToast('Você ainda não tem uma equipe. Peça ao gestor para criar a sua equipe em Configurações → Equipes.','ti-alert-triangle','#d97706');return;}
   const btn=document.getElementById('btn-invite-user');
   _cadastrando=true;
   if(btn){btn.disabled=true;btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>Cadastrando...';}
