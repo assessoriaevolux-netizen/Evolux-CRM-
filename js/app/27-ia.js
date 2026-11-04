@@ -1,6 +1,6 @@
 // ─── IA DE ATENDIMENTO (primeiro atendimento e pós-venda) ────────────────────
 // Roteiros editáveis pelo gestor, teste de conversa e acompanhamento das conversas.
-const IA={roteiros:{},padrao:null,servidor:null,editando:null,teste:{tipo:'primeiro_atendimento',hist:[],enviando:false},conversas:[],filtro:'',modelos:null};
+const IA={roteiros:{},padrao:null,servidor:null,editando:null,imgs:{tipo:null,lista:[]},teste:{tipo:'primeiro_atendimento',hist:[],enviando:false},conversas:[],filtro:'',modelos:null};
 const IA_TIPOS={
   primeiro_atendimento:{tit:'Primeiro atendimento',ic:'ti-message-chatbot',desc:'Responde os leads novos no WhatsApp na hora, qualifica (bem, valor, prazo, lance) e marca a conversa com o consultor.'},
   pos_venda:{tit:'Pós-venda',ic:'ti-heart-handshake',desc:'Depois que a venda fecha, puxa conversa para ver se está tudo certo, tira dúvidas simples e pede indicações.'},
@@ -82,6 +82,7 @@ function _iaEditor(tipo){
     <div class="field"><label>Roteiro (o que a IA deve fazer, em português simples)</label>
       <textarea class="fi ia2-roteiro" id="ia-ed-roteiro" rows="12" maxlength="12000">${esc(texto)}</textarea>
       <div class="integ2-mini">${tipo==='entrevista'?'Pode usar {{empresa}} e {{nome}}. Escreva as perguntas na ordem; a IA faz uma por vez. As regras de segurança (não pedir documentos, encerrar quando pedirem para parar) já valem sempre.':'Pode usar {{empresa}}, {{responsavel}}, {{nome}}, {{tipo}} e {{credito}}. As regras de segurança (não inventar valores, passar para o consultor, respeitar quem pede para parar) já valem sempre.'}</div></div>
+    ${_iaImagensEditor(tipo)}
     <div class="g2">
       <div class="field"><label>Modelo de IA</label><select class="fi" id="ia-ed-ia" onchange="document.getElementById('ia-ed-ia-outro').hidden=this.value!=='outro'">${IA_MODELOS.map(([k,t])=>`<option value="${k}"${k===modelo?' selected':''}>${t}</option>`).join('')}<option value="outro"${outro?' selected':''}>Outro…</option></select>
         <input class="fi" id="ia-ed-ia-outro" placeholder="nome do modelo na OpenAI" value="${outro?esc(modelo):''}"${outro?'':' hidden'} style="margin-top:6px"></div>
@@ -97,9 +98,55 @@ function _iaEditor(tipo){
       <button class="btn bp" onclick="iaSalvar('${tipo}')" id="ia-ed-salvar"><i class="ti ti-check"></i>Salvar roteiro</button>
       <button class="btn bg" onclick="IA.teste.tipo='${tipo}';IA.teste.hist=[];_iaTesteDesenhar();document.getElementById('ia2-teste')?.scrollIntoView({behavior:'smooth'})"><i class="ti ti-flask"></i>Testar este texto</button>
       <button class="btn bg" onclick="document.getElementById('ia-ed-roteiro').value=(IA.padrao&&IA.padrao.roteiros['${tipo}'])||''"><i class="ti ti-restore"></i>Roteiro padrão</button>
-      <button class="btn bg" onclick="IA.editando=null;renderIA()">Fechar</button>
+      <button class="btn bg" onclick="IA.editando=null;IA.imgs={tipo:null,lista:[]};renderIA()">Fechar</button>
     </div>
   </div>`;
+}
+// ── Imagens que a IA pode enviar ────────────────────────────────────────────
+function _iaImagensAtuais(tipo){
+  if(IA.imgs.tipo!==tipo){
+    const cfg=(IA.roteiros[tipo]||{}).config||{};
+    IA.imgs={tipo,lista:(Array.isArray(cfg.imagens)?cfg.imagens:[]).map(i=>({...i}))};
+  }
+  return IA.imgs.lista;
+}
+function _iaImagensEditor(tipo){
+  const lista=_iaImagensAtuais(tipo);
+  return `<div class="field"><label>Imagens que a IA pode enviar <span class="integ2-mini">(JPG ou PNG, até 5 MB, no máximo 20)</span></label>
+    <div class="ia2-imgs" id="ia-ed-imgs">${lista.map((im,i)=>`<div class="ia2-img">
+        <img src="${esc(im.url)}" alt="">
+        <textarea class="fi" rows="2" maxlength="300" placeholder="Quando mandar esta imagem? Ex.: foto da equipe, mandar ao explicar como é o trabalho" oninput="IA.imgs.lista[${i}].descricao=this.value">${esc(im.descricao||'')}</textarea>
+        <button class="btn bd bsm" title="Tirar esta imagem" onclick="IA.imgs.lista.splice(${i},1);_iaImagensRedesenhar('${tipo}')"><i class="ti ti-trash"></i></button>
+      </div>`).join('')||'<div class="integ2-mini">Nenhuma imagem ainda.</div>'}</div>
+    <label class="btn bg bsm" style="margin-top:8px;width:max-content;cursor:pointer"><i class="ti ti-photo-plus"></i>Adicionar imagens
+      <input type="file" accept="image/jpeg,image/png" multiple hidden onchange="iaEnviarImagens('${tipo}',this)"></label>
+    <div class="integ2-mini">A IA decide quando mandar cada imagem pela descrição que você escrever. A imagem chega no WhatsApp logo depois da mensagem dela. Clique em <strong>Salvar roteiro</strong> para valer.</div></div>`;
+}
+function _iaImagensRedesenhar(tipo){
+  const box=document.getElementById('ia-ed-imgs');
+  if(!box) return;
+  const tmp=document.createElement('div');tmp.innerHTML=_iaImagensEditor(tipo);
+  const novo=tmp.querySelector('#ia-ed-imgs');if(novo) box.replaceWith(novo);
+}
+async function iaEnviarImagens(tipo,input){
+  const arquivos=[...(input.files||[])];input.value='';
+  const lista=_iaImagensAtuais(tipo);
+  const emp=String(window._empresaIdDireto||'');
+  if(!emp) return;
+  for(const f of arquivos){
+    if(lista.length>=20){showToast('Máximo de 20 imagens por roteiro.','ti-alert-triangle','#d97706');break;}
+    if(!/^image\/(jpeg|png)$/.test(f.type)){showToast(`${f.name}: use JPG ou PNG.`,'ti-alert-triangle','#d97706');continue;}
+    if(f.size>5*1024*1024){showToast(`${f.name}: a imagem passa de 5 MB.`,'ti-alert-triangle','#d97706');continue;}
+    const ext=f.type==='image/png'?'png':'jpg';
+    const path=`${emp}/${tipo}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+    showToast(`Enviando ${f.name}…`,'ti-loader-2');
+    const {error}=await window._sb.storage.from('ia-midias').upload(path,f,{contentType:f.type,upsert:false});
+    if(error){showToast('Não consegui enviar a imagem: '+(error.message||'erro')+(/bucket|not found/i.test(error.message||'')?' (rode o SQL das imagens da IA no Supabase)':''),'ti-alert-triangle','#dc2626');continue;}
+    const url=window._sb.storage.from('ia-midias').getPublicUrl(path).data.publicUrl;
+    lista.push({url,path,descricao:''});
+    _iaImagensRedesenhar(tipo);
+  }
+  if(arquivos.length) showToast('Escreva quando a IA deve mandar cada imagem e clique em Salvar roteiro.','ti-photo');
 }
 function _iaModeloIniSel(){const [n,i]=(document.getElementById('ia-ed-modelo-ini')?.value||'').split('|');return (IA.modelos||[]).find(m=>m.nome===n&&m.idioma===i)||null;}
 function _iaCamposModelo(tipo){
@@ -137,13 +184,22 @@ async function iaSalvar(tipo){
     if(m){cfg.modelo_inicial=m.nome;cfg.modelo_inicial_idioma=m.idioma;cfg.modelo_inicial_campos=m.variaveis.map((v,i)=>_waLerCampo('ia-ed-v'+i));}
     else{delete cfg.modelo_inicial;delete cfg.modelo_inicial_idioma;delete cfg.modelo_inicial_campos;}
   }
+  // imagens que a IA pode enviar
+  const antigas=Array.isArray(cfg.imagens)?cfg.imagens:[];
+  const imgs=_iaImagensAtuais(tipo).map(i=>({url:i.url,path:i.path||null,descricao:String(i.descricao||'').trim()}));
+  if(imgs.some(i=>!i.descricao)){showToast('Escreva em cada imagem quando a IA deve mandar (ex.: "foto da loja, mandar quando perguntarem onde fica").','ti-photo','#d97706');return;}
+  cfg.imagens=imgs;
   const b=document.getElementById('ia-ed-salvar');if(b)b.disabled=true;
   const linha={empresa_id:window._empresaIdDireto,tipo,roteiro:document.getElementById('ia-ed-roteiro').value.trim(),modelo,config:cfg,ativo:!!r.ativo};
   const {error}=await window._sb.from('ia_roteiros').upsert(linha,{onConflict:'empresa_id,tipo'});
   if(b)b.disabled=false;
   if(error){showToast('Não salvou: '+error.message,'ti-alert-triangle','#dc2626');return;}
+  // apaga do armazenamento as imagens que saíram do roteiro
+  const ficaram=new Set(imgs.map(i=>i.path).filter(Boolean));
+  const sair=antigas.map(i=>i&&i.path).filter(p=>p&&!ficaram.has(p));
+  if(sair.length) window._sb.storage.from('ia-midias').remove(sair).catch(()=>{});
   showToast('Roteiro salvo.','ti-check');
-  IA.editando=null;
+  IA.editando=null;IA.imgs={tipo:null,lista:[]};
   await renderIA();
 }
 async function iaLigar(tipo,on){
@@ -181,7 +237,7 @@ function _iaTesteDesenhar(){
   const lb=document.getElementById('ia2-t-nome-lbl');if(lb)lb.textContent=ent?'Nome do candidato (teste)':'Nome do cliente (teste)';
   const bb=document.getElementById('ia2-t-bem-box');if(bb)bb.hidden=ent;
   const box=document.getElementById('ia2-t-chat');if(!box)return;
-  box.innerHTML=IA.teste.hist.length?IA.teste.hist.map(m=>`<div class="wa2-msg ${m.de==='ia'?'saida':'entrada'}"><div class="wa2-msg-txt">${esc(m.texto)}</div>
+  box.innerHTML=IA.teste.hist.length?IA.teste.hist.map(m=>m.img?`<div class="wa2-msg saida"><img class="ia2-img-msg" src="${esc(m.img)}" alt=""><div class="wa2-msg-meta"><span class="wa2-quem ia"><i class="ti ti-robot"></i>IA</span><span>imagem</span></div></div>`:`<div class="wa2-msg ${m.de==='ia'?'saida':'entrada'}"><div class="wa2-msg-txt">${esc(m.texto)}</div>
       ${m.de==='ia'?`<div class="wa2-msg-meta"><span class="wa2-quem ia"><i class="ti ti-robot"></i>IA</span>${m.transferir?'<span class="integ2-st pend"><i class="ti ti-user-share"></i>passaria para o consultor</span>':''}${m.encerrar?`<span class="integ2-st erro"><i class="ti ti-bell-off"></i>${IA.teste.tipo==='entrevista'?'encerraria a entrevista':'encerraria a conversa'}</span>`:''}${m.custo?`<span>US$ ${m.custo.toFixed(5)}</span>`:''}</div>`:''}</div>`).join('')
     :`<div class="wa2-chat-vazio peq"><i class="ti ti-message-chatbot"></i><div>${IA.teste.tipo==='entrevista'?'Mande algo como “Oi, vi a vaga e quero fazer a entrevista” como se fosse um candidato.':`Mande um “oi” como se fosse um lead de ${IA.teste.tipo==='pos_venda'?'pós-venda':'anúncio'}.`}</div></div>`;
   box.scrollTop=box.scrollHeight;
@@ -198,11 +254,15 @@ async function iaTestar(){
   IA.teste.hist.push({de:'cliente',texto:msg});t.value='';
   IA.teste.enviando=true;_iaTesteDesenhar();
   const b=document.getElementById('ia2-t-enviar');if(b){b.disabled=true;b.innerHTML='<i class="ti ti-loader-2 integ2-gira"></i>';}
-  const res=await integChamar('ia_testar',{tipo,roteiro,modelo,mensagem:msg,historico:hist,nome:document.getElementById('ia2-t-nome')?.value,tipo_bem:document.getElementById('ia2-t-bem')?.value});
+  const imagens=(editor?_iaImagensAtuais(tipo):((r.config||{}).imagens||[])).filter(i=>i&&i.url).map(i=>({url:i.url,descricao:i.descricao||'imagem'}));
+  const res=await integChamar('ia_testar',{tipo,roteiro,modelo,mensagem:msg,historico:hist,imagens,nome:document.getElementById('ia2-t-nome')?.value,tipo_bem:document.getElementById('ia2-t-bem')?.value});
   IA.teste.enviando=false;
   if(b){b.disabled=false;b.innerHTML='<i class="ti ti-send"></i>Enviar';}
   if(!res.ok){IA.teste.hist.pop();showToast(res.erro,'ti-alert-triangle','#dc2626');_iaTesteDesenhar();return;}
-  IA.teste.hist.push({de:'ia',texto:res.resposta||'(a IA não escreveu nada — só passaria para o consultor)',transferir:res.transferir,encerrar:res.encerrar,custo:res.custo_usd});
+  const fotos=Array.isArray(res.imagens)?res.imagens.filter(Boolean):[];
+  IA.teste.hist.push({de:'ia',texto:res.resposta||(fotos.length?'':'(a IA não escreveu nada — só passaria para o consultor)'),transferir:res.transferir,encerrar:res.encerrar,custo:res.custo_usd});
+  // no histórico do teste, a imagem conta como mensagem da IA (igual no WhatsApp)
+  fotos.forEach(f=>IA.teste.hist.push({de:'ia',texto:`[imagem enviada: ${f.descricao}]`,img:f.url}));
   _iaTesteDesenhar();
 }
 

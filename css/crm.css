@@ -1528,3 +1528,11 @@ html.crm-suspenso .kcard{cursor:pointer}
 .sms-confirma .fi{flex:1;min-width:0;letter-spacing:.2em;font-weight:700}
 .sms-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;margin-top:16px}
 @media (max-width:900px){.sms-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* ── IA: imagens do roteiro ─────────────────────────────────────────────── */
+.ia2-imgs{display:flex;flex-direction:column;gap:8px}
+.ia2-img{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px;border:1px solid var(--c2);border-radius:10px;background:var(--c0)}
+.ia2-img img{width:72px;height:72px;object-fit:cover;border-radius:8px;background:var(--c1)}
+.ia2-img textarea{min-height:56px;resize:vertical}
+.ia2-img-msg{display:block;max-width:220px;width:100%;border-radius:8px;margin-bottom:4px}
+@media (max-width:560px){.ia2-img{grid-template-columns:56px minmax(0,1fr) auto}.ia2-img img{width:56px;height:56px}}

@@ -188,7 +188,7 @@ function _waRenderChat(){
       const quem=m.direcao==='saida'?(m.ia?'<span class="wa2-quem ia"><i class="ti ti-robot"></i>IA</span>':(m.enviado_por?`<span class="wa2-quem">${esc(_waPrimeiroNome(integNomeUser(m.enviado_por)))}</span>`:(m.disparo_id||m.tipo==='template'?'':'<span class="wa2-quem"><i class="ti ti-device-mobile"></i>celular</span>'))):'';
       return `${sep}<div class="wa2-msg ${m.direcao==='saida'?'saida':'entrada'}${m.status==='falhou'?' falhou':''}">
         ${m.tipo==='template'?`<div class="wa2-modelo-tag"><i class="ti ti-template"></i>${esc(m.template_nome||'modelo')}</div>`:''}
-        <div class="wa2-msg-txt">${esc(m.conteudo||'')}</div>
+        ${m.midia_url&&/^https:\/\//.test(m.midia_url)?`<img class="ia2-img-msg" src="${esc(m.midia_url)}" alt="" loading="lazy">`:`<div class="wa2-msg-txt">${esc(m.conteudo||'')}</div>`}
         <div class="wa2-msg-meta">${quem}<span>${new Date(m.criado_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>${_waStatusIcone(m)}</div>
         ${m.status==='falhou'&&m.erro?`<div class="wa2-msg-erro">${esc(m.erro)}</div>`:''}
       </div>`;}).join('');

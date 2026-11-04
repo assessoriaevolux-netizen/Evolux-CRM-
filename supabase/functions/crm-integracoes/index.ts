@@ -293,6 +293,14 @@ function waTexto(num: any, para: string, texto: string) {
     corpo: { messaging_product: 'whatsapp', recipient_type: 'individual', to: para, type: 'text', text: { preview_url: false, body: texto } },
   })
 }
+function waImagem(num: any, para: string, url: string, legenda?: string) {
+  const image: Record<string, string> = { link: url }
+  if (legenda) image.caption = legenda.slice(0, 1000)
+  return graph(`${num.phone_number_id}/messages`, {
+    metodo: 'POST', token: num.token_efetivo,
+    corpo: { messaging_product: 'whatsapp', recipient_type: 'individual', to: para, type: 'image', image },
+  })
+}
 function waModelo(num: any, para: string, modelo: any, valores: string[]) {
   const vars: string[] = modelo?.variaveis || []
   const nomeados = modelo?.estilo === 'nomeado'
@@ -480,7 +488,7 @@ Passo a passo (uma pergunta por vez):
 
 Não prometa salário, comissão nem contratação. Se perguntarem sobre valores, diga que a equipe explica na próxima etapa.`,
 }
-function montarSistema(tipo: string, roteiro: string, c: { empresa: string; lead: any }) {
+function montarSistema(tipo: string, roteiro: string, c: { empresa: string; lead: any; imagens?: ImagemRoteiro[] }) {
   const lead = c.lead || {}
   const resp = primeiroNome(lead.responsavel_nome) || 'nosso consultor'
   const sub = (t: string) => t
@@ -506,13 +514,38 @@ Agora: ${agoraBrasilia()} (horário de Brasília).
 Cliente: ${String(lead.nome || 'não informado')}. Interesse: ${String(lead.tipo || 'não informado')}. Crédito desejado: ${Number(lead.credito) > 0 ? reais(lead.credito) : 'não informado'}. Etapa no funil: ${String(lead.etapa || 'Novo lead')}. Consultor responsável: ${resp}.${tipo === 'pos_venda' ? '\nEste cliente já fechou um consórcio com a empresa.' : ''}
 
 Roteiro da empresa (siga):
-${sub(texto)}`
+${sub(texto)}${blocoImagens(c.imagens || [])}`
 }
-function lerMarcas(t: string) {
+// ─── Imagens do roteiro ─────────────────────────────────────────────────────
+// Cada roteiro pode ter imagens (config.imagens = [{url, descricao}]). A IA escolhe
+// quando mandar escrevendo [IMAGEM 1], [IMAGEM 2]… e o servidor envia a imagem.
+type ImagemRoteiro = { url: string; descricao: string }
+function imagensDoRoteiro(cfg: any): ImagemRoteiro[] {
+  const lista = Array.isArray(cfg?.imagens) ? cfg.imagens : []
+  return lista
+    .filter((i: any) => i && /^https:\/\//i.test(String(i.url || '')))
+    .slice(0, 20)
+    .map((i: any) => ({ url: String(i.url), descricao: textoLimpo(i.descricao, 300) || 'imagem' }))
+}
+function blocoImagens(imgs: ImagemRoteiro[]) {
+  if (!imgs.length) return ''
+  return `
+
+Imagens que você PODE enviar pelo WhatsApp (o cliente recebe a imagem logo depois do seu texto):
+${imgs.map((im, i) => `[IMAGEM ${i + 1}] — ${im.descricao}`).join('\n')}
+Para enviar, escreva a marca exatamente assim (ex.: [IMAGEM 1]) em uma linha própria, no fim da resposta. Envie no máximo 2 imagens por resposta, só quando fizer sentido no roteiro, e não repita uma imagem que você já enviou nesta conversa. Nunca diga que não consegue enviar imagens.`
+}
+function lerMarcas(t: string, totalImagens = 0) {
   const transferir = /\[\s*TRANSFERIR\s*\]/i.test(t)
   const encerrar = /\[\s*ENCERRAR\s*\]/i.test(t)
-  const texto = t.replace(/\[\s*(TRANSFERIR|ENCERRAR)\s*\]/gi, '').replace(/[ \t]+\n/g, '\n').trim().slice(0, 1500)
-  return { texto, transferir, encerrar }
+  const imagens: number[] = []
+  for (const m of t.matchAll(/\[\s*IMAGEM\s*:?\s*(\d{1,2})\s*\]/gi)) {
+    const i = Number(m[1]) - 1
+    if (i >= 0 && i < totalImagens && !imagens.includes(i) && imagens.length < 3) imagens.push(i)
+  }
+  const texto = t.replace(/\[\s*(TRANSFERIR|ENCERRAR)\s*\]/gi, '').replace(/\[\s*IMAGEM\s*:?\s*\d{1,2}\s*\]/gi, '')
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 1500)
+  return { texto, transferir, encerrar, imagens }
 }
 async function historicoIA(lead: string) {
   const { data } = await admin.from('wa_mensagens').select('direcao,conteudo,tipo,template_nome,criado_em')
@@ -613,9 +646,10 @@ async function responderComIA(r: any, contato: string, numeroId: string, tipoMsg
 
   const empresa = await nomeEmpresa(emp)
   const modelo = modeloValido(rot.modelo) || MODELO_PADRAO
-  const resp = await perguntarIA(modelo, [{ role: 'system', content: montarSistema(tipo, rot.roteiro, { empresa, lead }) }, ...(await historicoIA(lead.id))])
+  const imgs = imagensDoRoteiro(rot.config)
+  const resp = await perguntarIA(modelo, [{ role: 'system', content: montarSistema(tipo, rot.roteiro, { empresa, lead, imagens: imgs }) }, ...(await historicoIA(lead.id))])
   if (!resp.ok) { await erroIA(emp, tipo, resp.erro); return }
-  const { texto, transferir, encerrar } = lerMarcas(resp.texto)
+  const { texto, transferir, encerrar, imagens } = lerMarcas(resp.texto, imgs.length)
   const atual = await conversaDe(emp, lead.id, tipo)
   if (!atual || atual.status !== 'ativa') return // alguém assumiu enquanto a IA pensava
   const { data: nums } = await admin.from('integ_wa_numeros').select('*').eq('phone_number_id', numeroId).maybeSingle()
@@ -631,6 +665,16 @@ async function responderComIA(r: any, contato: string, numeroId: string, tipoMsg
     })
     if (!env.ok) { await erroIA(emp, tipo, 'A IA respondeu, mas o WhatsApp recusou: ' + env.erro); return }
     if (lead.etapa === 'Novo lead') await rpc('integ_srv_lead_contatado', { p_lead: lead.id, p_quem: 'IA' }).catch(console.error)
+  }
+  for (const i of imagens) {
+    const im = imgs[i]
+    const env = await waImagem({ ...num, token_efetivo: token }, contato, im.url)
+    await gravarSaida({
+      empresa_id: emp, lead_id: lead.id, phone_number_id: numeroId, contato, direcao: 'saida', tipo: 'imagem',
+      conteudo: `[imagem enviada: ${im.descricao}]`, midia_url: im.url,
+      wa_id: env.data?.messages?.[0]?.id || null, status: env.ok ? 'enviada' : 'falhou', erro: env.ok ? null : env.erro, ia: true,
+    })
+    if (!env.ok) await erroIA(emp, tipo, 'O WhatsApp recusou uma imagem do roteiro: ' + env.erro)
   }
   await rpc('integ_srv_ia_uso', {
     p_conversa: atual.id, p_entrada: resp.uso?.prompt_tokens || 0, p_saida: resp.uso?.completion_tokens || 0, p_custo: custoUSD(modelo, resp.uso),
@@ -658,7 +702,7 @@ async function empresaDoNumero(numeroId: string): Promise<any> {
   return data
 }
 
-function montarSistemaEntrevista(roteiro: string, empresa: string, nome: string) {
+function montarSistemaEntrevista(roteiro: string, empresa: string, nome: string, imagens: ImagemRoteiro[] = []) {
   const texto = (roteiro || '').trim().split('{{empresa}}').join(empresa).split('{{nome}}').join(primeiroNome(nome) || 'candidato')
   return `Você é a assistente virtual de entrevistas por WhatsApp da empresa ${empresa}.
 
@@ -674,7 +718,7 @@ Agora: ${agoraBrasilia()} (horário de Brasília).
 Candidato: ${nome || 'não informado'}.
 
 Roteiro da entrevista (siga):
-${texto}`
+${texto}${blocoImagens(imagens)}`
 }
 
 async function historicoEntrevista(entrevistaId: string) {
@@ -737,12 +781,13 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
   const modelo = modeloValido(rot.modelo) || MODELO_PADRAO
   const historico = await historicoEntrevista(ent.id)
   const resp = await perguntarIA(modelo, [
-    { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, ent.nome || nome || '') },
+    { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, ent.nome || nome || '', imagensDoRoteiro(rot.config)) },
     ...historico,
   ])
   if (!resp.ok) { console.error('[IA-Entrevista]', resp.erro); return true }
 
-  const { texto, encerrar } = lerMarcas(resp.texto)
+  const imgsEnt = imagensDoRoteiro(rot.config)
+  const { texto, encerrar, imagens } = lerMarcas(resp.texto, imgsEnt.length)
 
   // Buscar token pra enviar
   const { data: num } = await admin.from('integ_wa_numeros').select('*').eq('phone_number_id', numeroId).maybeSingle()
@@ -756,6 +801,12 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
     await admin.from('ia_entrevistas').update({
       mensagens_ia: (ent.mensagens_ia || 0) + 1, atualizado_em: new Date().toISOString(),
     }).eq('id', ent.id)
+  }
+  for (const i of imagens) {
+    const im = imgsEnt[i]
+    const env = await waImagem({ ...(num as any), token_efetivo: token }, contato, im.url)
+    if (!env.ok) console.error('[IA-Entrevista] imagem', env.erro)
+    await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: `[imagem enviada: ${im.descricao}]${env.ok ? '' : ' (o WhatsApp recusou)'}` })
   }
 
   if (encerrar) {
@@ -1567,13 +1618,14 @@ const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>
     if (!mensagem) throw new Falha(400, 'Escreva a mensagem do cliente.')
     historico.push({ role: 'user', content: mensagem })
     const empresaNome = ctx.empresa_nome || 'Evolux'
+    const imgs = imagensDoRoteiro({ imagens: c.imagens })
     const sistema = tipo === 'entrevista'
-      ? montarSistemaEntrevista(roteiro, empresaNome, textoLimpo(c.nome, 80) || '')
-      : montarSistema(tipo, roteiro, { empresa: empresaNome, lead })
+      ? montarSistemaEntrevista(roteiro, empresaNome, textoLimpo(c.nome, 80) || '', imgs)
+      : montarSistema(tipo, roteiro, { empresa: empresaNome, lead, imagens: imgs })
     const r = await perguntarIA(modelo, [{ role: 'system', content: sistema }, ...historico])
     if (!r.ok) throw new Falha(400, r.erro)
-    const marcas = lerMarcas(r.texto)
-    return { resposta: marcas.texto, transferir: marcas.transferir, encerrar: marcas.encerrar, tokens: r.uso, custo_usd: custoUSD(modelo, r.uso), modelo }
+    const marcas = lerMarcas(r.texto, imgs.length)
+    return { resposta: marcas.texto, transferir: marcas.transferir, encerrar: marcas.encerrar, imagens: marcas.imagens.map((i) => imgs[i]), tokens: r.uso, custo_usd: custoUSD(modelo, r.uso), modelo }
   },
   // ── Entrevistas (candidatos; não viram lead) ──
   async ent_listar(ctx, c) {
