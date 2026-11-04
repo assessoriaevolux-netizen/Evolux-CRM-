@@ -28,7 +28,7 @@ function renderRelatorios(){
   const _gestorRel=isGestor();
   const _leadsRelTodos=_gestorRel?leads:leads.filter(l=>_visRel.has(l.responsavelId));
   const _leadsRel=_iniRel
-    ? _leadsRelTodos.filter(l=>{ const d=_parseDataLead(l.data); return d&&d>=_iniRel; })
+    ? _leadsRelTodos.filter(l=>{ const d=_dnData(l); return d&&d>=_iniRel; })
     : _leadsRelTodos;
   const _usersRel=users.filter(u=>_gestorRel||_visRel.has(u.id));
 

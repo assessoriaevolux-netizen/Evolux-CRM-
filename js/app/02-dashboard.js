@@ -85,7 +85,19 @@ function _dnCompacto(v){
   if(v>=1e3) return 'R$ '+Math.round(v/1e3).toLocaleString('pt-BR')+' mil';
   return 'R$ '+Math.round(v).toLocaleString('pt-BR');
 }
-function _dnData(l){ const m=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(l&&l.data||''); return m?new Date(+m[3],+m[2]-1,+m[1]):null; }
+// Data do lead para o painel: o dia em que ele entrou no CRM (importado hoje conta hoje,
+// mesmo com data antiga na planilha). Usa a mais recente entre "entrada" e "data", igual ao funil.
+function _dnParseData(s){
+  s=String(s||'').trim();
+  let m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s); if(m) return new Date(+m[1],+m[2]-1,+m[3]);
+  m=/^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s); if(m) return new Date(+m[3],+m[2]-1,+m[1]);
+  return null;
+}
+function _dnData(l){
+  const a=_dnParseData(l&&l.entrada), b=_dnParseData(l&&l.data);
+  if(a&&b) return a>b?a:b;
+  return a||b;
+}
 function _dnChegou(d){
   if(!d) return '—';
   const hoje=new Date();hoje.setHours(0,0,0,0);
