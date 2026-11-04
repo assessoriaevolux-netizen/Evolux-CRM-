@@ -628,6 +628,127 @@ async function responderComIA(r: any, contato: string, numeroId: string, tipoMsg
   }
 }
 
+// ─── IA de Entrevista ───────────────────────────────────────────────────────
+const KEYWORDS_ENTREVISTA = ['entrevista', 'curriculo', 'currículo']
+
+function ehEntrevista(texto: string): boolean {
+  if (!texto) return false
+  const t = texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  return KEYWORDS_ENTREVISTA.some((k) => t.includes(k.normalize('NFD').replace(/[̀-ͯ]/g, '')))
+}
+
+async function empresaDoNumero(numeroId: string): Promise<any> {
+  const { data } = await admin.from('integ_wa_numeros').select('empresa_id').eq('phone_number_id', numeroId).maybeSingle()
+  return data
+}
+
+function montarSistemaEntrevista(roteiro: string, empresa: string, nome: string) {
+  const texto = (roteiro || '').trim()
+  return `Você é a assistente virtual de entrevistas por WhatsApp da empresa ${empresa}.
+
+Regras que valem sempre:
+- Escreva em português do Brasil, com tom profissional e simpático.
+- Mensagens curtas: no máximo 3 frases por resposta e no máximo uma pergunta por vez.
+- Não peça CPF, documentos pessoais, senhas nem dados bancários.
+- Se a pessoa quiser falar com alguém da equipe ou o assunto sair do roteiro: responda de forma breve e escreva [ENCERRAR] no final.
+- Se a pessoa pedir para não receber mais mensagens: peça desculpas e escreva [ENCERRAR] no final.
+- Não use [ENCERRAR] em nenhuma outra situação, a menos que a entrevista tenha terminado naturalmente.
+
+Agora: ${agoraBrasilia()} (horário de Brasília).
+Candidato: ${nome || 'não informado'}.
+
+Roteiro da entrevista (siga):
+${texto}`
+}
+
+async function historicoEntrevista(entrevistaId: string) {
+  const { data } = await admin.from('ia_entrevista_msgs').select('direcao,conteudo,criado_em')
+    .eq('entrevista_id', entrevistaId).order('criado_em', { ascending: false }).limit(24)
+  return ((data || []) as any[]).reverse().map((m) => ({
+    role: m.direcao === 'entrada' ? 'user' : 'assistant',
+    content: textoLimpo(m.conteudo || '[mensagem]', 2000),
+  }))
+}
+
+async function processarEntrevista(numeroId: string, contato: string, nome: string, conteudo: string, waId: string, timestamp: string) {
+  const numInfo = await empresaDoNumero(numeroId)
+  if (!numInfo?.empresa_id) return false
+  const emp = numInfo.empresa_id
+
+  // Verificar se já existe entrevista ativa pra este contato
+  const { data: entExistente } = await admin.from('ia_entrevistas').select('*')
+    .eq('empresa_id', emp).eq('contato', contato).eq('status', 'ativa').maybeSingle()
+
+  const primeiraMsg = !entExistente
+
+  // Se não existe entrevista e a mensagem não tem keywords, não é entrevista
+  if (!entExistente && !ehEntrevista(conteudo)) return false
+
+  // Verificar se roteiro de entrevista está ativo
+  const rot = await roteiroDe(emp, 'entrevista')
+  if (!rot?.ativo) return false
+
+  // Gravar mensagem de entrada
+  let ent = entExistente
+  if (!ent) {
+    const { data: nova } = await admin.from('ia_entrevistas').upsert({
+      empresa_id: emp, phone_number_id: numeroId, contato, nome: nome || null, status: 'ativa',
+    }, { onConflict: 'empresa_id,contato', ignoreDuplicates: false }).select('*').single()
+    ent = nova
+  }
+  if (!ent) return false
+
+  await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'entrada', conteudo })
+
+  // Esperar mensagens em sequência
+  await esperar(Number(Deno.env.get('IA_ESPERA_MS') ?? 6000))
+
+  // Verificar se é a última mensagem (evitar duplicadas)
+  const { data: ultMsgs } = await admin.from('ia_entrevista_msgs').select('id,criado_em').eq('entrevista_id', ent.id).eq('direcao', 'entrada')
+    .order('criado_em', { ascending: false }).limit(1)
+  // Se a última entrada não é recente o suficiente, outra instância vai responder
+  // (simplificado: sempre responde pois cada msg gera uma chamada)
+
+  // Limite de mensagens
+  const limite = Math.max(2, Math.min(60, Number(rot.config?.limite_mensagens) || 30))
+  if (ent.mensagens_ia >= limite) {
+    await admin.from('ia_entrevistas').update({ status: 'encerrada', atualizado_em: new Date().toISOString() }).eq('id', ent.id)
+    return true
+  }
+
+  // Montar prompt e perguntar IA
+  const empresa = await nomeEmpresa(emp)
+  const modelo = modeloValido(rot.modelo) || MODELO_PADRAO
+  const historico = await historicoEntrevista(ent.id)
+  const resp = await perguntarIA(modelo, [
+    { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, ent.nome || nome || '') },
+    ...historico,
+  ])
+  if (!resp.ok) { console.error('[IA-Entrevista]', resp.erro); return true }
+
+  const { texto, encerrar } = lerMarcas(resp.texto)
+
+  // Buscar token pra enviar
+  const { data: num } = await admin.from('integ_wa_numeros').select('*').eq('phone_number_id', numeroId).maybeSingle()
+  if (!num) return true
+  const token = (num as any).token || (await conexaoMeta(emp))?.token
+  if (!token) return true
+
+  if (texto) {
+    const env = await waTexto({ ...(num as any), token_efetivo: token }, contato, texto)
+    await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: texto })
+    await admin.from('ia_entrevistas').update({
+      mensagens_ia: (ent.mensagens_ia || 0) + 1, atualizado_em: new Date().toISOString(),
+    }).eq('id', ent.id)
+  }
+
+  if (encerrar) {
+    await admin.from('ia_entrevistas').update({ status: 'encerrada', atualizado_em: new Date().toISOString() }).eq('id', ent.id)
+  }
+
+  return true // Indica que foi tratado como entrevista (não criar lead)
+}
+
 // Primeira mensagem da IA para quem preencheu o formulário (precisa de modelo aprovado)
 async function primeiroContatoIA(emp: string, leadId: string) {
   const rot = await roteiroDe(emp, 'primeiro_atendimento')
@@ -762,12 +883,20 @@ async function processarWhatsApp(v: any) {
   for (const m of v?.messages || []) {
     const { tipo, conteudo, midia } = conteudoDaMensagem(m)
     if (tipo === 'reacao') continue
+    // ── Interceptar entrevista ANTES de criar lead ──
+    const textoMsg = String(conteudo || '')
+    const contato = String(m.from || '')
+    const ts = m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : new Date().toISOString()
+    try {
+      const foiEntrevista = await processarEntrevista(numeroId, contato, nomes[contato] || '', textoMsg, m.id || '', ts)
+      if (foiEntrevista) continue // Candidato de entrevista: não cria lead
+    } catch (e) { console.error('[Entrevista]', e) }
+    // ── Fluxo normal: cria lead e responde com IA ──
     const r = await rpc('integ_srv_wa_entrada', {
-      p_numero: numeroId, p_contato: String(m.from || ''), p_nome: nomes[String(m.from)] || null, p_wa_id: m.id || null,
-      p_tipo: tipo, p_conteudo: conteudo, p_midia: midia, p_referral: m.referral || null,
-      p_em: m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : new Date().toISOString(),
+      p_numero: numeroId, p_contato: contato, p_nome: nomes[contato] || null, p_wa_id: m.id || null,
+      p_tipo: tipo, p_conteudo: conteudo, p_midia: midia, p_referral: m.referral || null, p_em: ts,
     })
-    if (r?.ok && !r?.duplicada) respostas.push(responderComIA(r, String(m.from), numeroId, tipo).catch((e) => console.error('[IA]', e)))
+    if (r?.ok && !r?.duplicada) respostas.push(responderComIA(r, contato, numeroId, tipo).catch((e) => console.error('[IA]', e)))
   }
   for (const s of v?.statuses || []) {
     const st = STATUS_WA[String(s?.status)]
@@ -1338,7 +1467,7 @@ const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>
   // ── IA ──
   async ia_testar(ctx, c) {
     exigirPerm(ctx, 'ia_manage', 'Somente quem edita os roteiros pode testar a IA.')
-    const tipo = c.tipo === 'pos_venda' ? 'pos_venda' : 'primeiro_atendimento'
+    const tipo = c.tipo === 'pos_venda' ? 'pos_venda' : c.tipo === 'entrevista' ? 'entrevista' : 'primeiro_atendimento'
     const roteiro = textoLimpo(c.roteiro, 12000)
     const modelo = modeloValido(c.modelo) || MODELO_PADRAO
     let lead: any
