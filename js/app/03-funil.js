@@ -398,7 +398,7 @@ async function saveLeadDetalhe(){
     l.nome=nome;
     l.tel=normalizaTelefone(document.getElementById('ld-tel').value);
     l.tipo=document.getElementById('ld-tipo').value;
-    l.credito=unM(document.getElementById('ld-credito').value)||l.credito;
+    l.credito=unM(document.getElementById('ld-credito').value)||0; // campo vazio = sem crédito definido
     l.origem=document.getElementById('ld-origem').value;
     l.atendimento=document.getElementById('ld-atendimento').value;
     if(l._obsOk!==false) l.obs=document.getElementById('ld-obs').value; // só mexe se a observação foi carregada

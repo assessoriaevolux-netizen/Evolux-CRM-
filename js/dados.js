@@ -547,7 +547,14 @@
       }
       window._leadsCarregadosEm=Date.now();
       window.nextLeadId = nextLeadId;
-    } catch(e) { console.warn('loadLeads error:', e); }
+      window._falhasLeads=0;
+    } catch(e) {
+      console.warn('loadLeads error:', e);
+      // Não deixa a tela vazia em silêncio: avisa e tenta de novo sozinho
+      window._falhasLeads=(window._falhasLeads||0)+1;
+      if(typeof showToast==='function') showToast('Não consegui carregar os leads agora. Confira a internet — tentando de novo…','ti-wifi-off','#d97706');
+      if(window._falhasLeads<=5) setTimeout(async()=>{ await window._loadLeads(); _renderLeadsDebounced(); },Math.min(60000,5000*window._falhasLeads));
+    }
   };
 
   // ── VENDAS ─────────────────────────────────────────────────────────────────

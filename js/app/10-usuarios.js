@@ -91,7 +91,7 @@ async function inviteUser(){
     fetch(`${window._sbUrl}/functions/v1/send-welcome-email`,{
       method:'POST',
       headers:{'Content-Type':'application/json','apikey':window._sbAnon,'Authorization':`Bearer ${session?.access_token||''}`},
-      body:JSON.stringify({nome:nomeVal,email,senha,empresaNome:(window.empresa&&window.empresa.nome)||''})
+      body:JSON.stringify({email})
     }).then(r=>r.json()).then(d=>{if(!d.ok)console.warn('E-mail de boas-vindas não enviado:',d.error);}).catch(()=>{});
   }catch(e){}
   ['uNome','uEmail','uSenha','uSenhaConf'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
