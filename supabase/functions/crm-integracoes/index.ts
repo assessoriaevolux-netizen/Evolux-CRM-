@@ -108,6 +108,18 @@ const reais = (v: unknown) => (Number(v) || 0).toLocaleString('pt-BR', { style: 
 const agoraBrasilia = () => new Intl.DateTimeFormat('pt-BR', {
   timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
 }).format(new Date())
+function diaDaSemana(): number {
+  const agora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+  return agora.getDay() // 0=dom, 6=sab
+}
+function ehFimDeSemana(): boolean { const d = diaDaSemana(); return d === 0 || d === 6 }
+function proximaSegunda(): string {
+  const agora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+  const diasAteSegunda = ((8 - agora.getDay()) % 7) || 7
+  const seg = new Date(agora)
+  seg.setDate(seg.getDate() + diasAteSegunda)
+  return seg.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' })
+}
 function textoLimpo(v: unknown, max = 4000) { return String(v ?? '').replaceAll(String.fromCharCode(0), '').trim().slice(0, max) }
 
 // ─── Meta (Graph API) ────────────────────────────────────────────────────────
@@ -749,14 +761,22 @@ Para enviar, escreva a marca exatamente assim (ex.: [IMAGEM 1]) em uma linha pr�
 function lerMarcas(t: string, totalImagens = 0) {
   const transferir = /\[\s*TRANSFERIR\s*\]/i.test(t)
   const encerrar = /\[\s*ENCERRAR\s*\]/i.test(t)
+  // Capturar [AGENDAR DD/MM/AAAA HH:MM]
+  const agendarMatch = t.match(/\[\s*AGENDAR\s+(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s*\]/i)
+  let dataAgendada: string | null = null
+  if (agendarMatch) {
+    const [, dia, mes, ano, hora, min] = agendarMatch
+    dataAgendada = `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}T${hora.padStart(2, '0')}:${min}:00-03:00`
+  }
   const imagens: number[] = []
   for (const m of t.matchAll(/\[\s*IMAGEM\s*:?\s*(\d{1,2})\s*\]/gi)) {
     const i = Number(m[1]) - 1
     if (i >= 0 && i < totalImagens && !imagens.includes(i) && imagens.length < 3) imagens.push(i)
   }
   const texto = t.replace(/\[\s*(TRANSFERIR|ENCERRAR)\s*\]/gi, '').replace(/\[\s*IMAGEM\s*:?\s*\d{1,2}\s*\]/gi, '')
+    .replace(/\[\s*AGENDAR\s+[^\]]*\]/gi, '')
     .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 1500)
-  return { texto, transferir, encerrar, imagens }
+  return { texto, transferir, encerrar, imagens, dataAgendada }
 }
 async function historicoIA(lead: string) {
   const { data } = await admin.from('wa_mensagens').select('direcao,conteudo,tipo,template_nome,criado_em')
@@ -920,6 +940,9 @@ function montarSistemaEntrevista(roteiro: string, empresa: string, nome: string,
     : fase === 'curriculo_analise'
     ? `\n\nINSTRUÇÃO ESPECIAL: Você acabou de receber o currículo do candidato e já agradeceu. Agora responda como se tivesse realmente analisado: diga que gostou, que acredita no potencial da pessoa para uma parceria, que não exige experiência pois ensinam tudo do zero. Convide para uma seleção presencial informando dia e horários disponíveis. Pergunte qual horário fica melhor. Não envie imagem neste momento.`
     : ''
+  const instrucaoFds = ehFimDeSemana()
+    ? `\n\nINSTRUÇÃO DE FIM DE SEMANA: Hoje é fim de semana. Quando for convidar o candidato para seleção presencial ou quando o candidato quiser agendar, convide SEMPRE para segunda-feira (${proximaSegunda()}) às 09:00. Mencione que terá um café da manhã para recepcionar. Use um tom animado e natural, algo como: "Pela manhã consigo deixar entre 09:00 e 09:30, e vamos ter um café da manhã muito bom pra te recepcionar, só não pode atrasar rs. E caso dê tudo certo na segunda, conseguiria ficar pra fazer um treinamento até as 16:00? Somente um dia. Posso confirmar você na segunda às 09:00?" Adapte a frase ao contexto da conversa mas mantenha a essência: café da manhã às 09:00 na segunda, treinamento até 16:00.`
+    : ''
   const instrucaoImagem = imagens.length
     ? `\n\nSobre imagens: envie imagens APENAS na PRIMEIRA mensagem da conversa (quando cumprimentar o candidato pela primeira vez). NUNCA envie imagem depois de receber currículo ou no final da conversa.`
     : ''
@@ -932,12 +955,13 @@ Regras que valem sempre:
 - Se a pessoa quiser falar com alguém da equipe ou o assunto sair do roteiro: responda de forma breve e escreva [ENCERRAR] no final.
 - Se a pessoa pedir para não receber mais mensagens: peça desculpas e escreva [ENCERRAR] no final.
 - Não use [ENCERRAR] em nenhuma outra situação, a menos que a entrevista tenha terminado naturalmente.
+- IMPORTANTE: quando o candidato CONFIRMAR a data e horário da entrevista/seleção presencial, escreva no final da mensagem a marca [AGENDAR DD/MM/AAAA HH:MM] com a data e hora combinadas. Exemplo: se confirmou segunda dia 11/11/2026 às 09:00, escreva [AGENDAR 11/11/2026 09:00]. Use esta marca APENAS quando o candidato confirmar que vai.
 
 Agora: ${agoraBrasilia()} (horário de Brasília).
 Candidato: ${nome || 'não informado'}.
 
 Roteiro da entrevista (siga):
-${texto}${blocoImagens(imagens)}${instrucaoImagem}${instrucaoFase}`
+${texto}${blocoImagens(imagens)}${instrucaoImagem}${instrucaoFase}${instrucaoFds}`
 }
 
 async function historicoEntrevista(entrevistaId: string) {
@@ -1065,14 +1089,14 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
   ])
   if (!resp.ok) { console.error('[IA-Entrevista]', resp.erro); return true }
 
-  const { texto, encerrar, imagens } = lerMarcas(resp.texto, imgsEnt.length)
+  const { texto, encerrar, imagens, dataAgendada } = lerMarcas(resp.texto, imgsEnt.length)
 
   if (texto) {
     const env = await waTexto({ ...(num as any), token_efetivo: token }, contato, texto)
     await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: texto })
-    await admin.from('ia_entrevistas').update({
-      mensagens_ia: (ent.mensagens_ia || 0) + 1, atualizado_em: new Date().toISOString(),
-    }).eq('id', ent.id)
+    const upd: any = { mensagens_ia: (ent.mensagens_ia || 0) + 1, atualizado_em: new Date().toISOString() }
+    if (dataAgendada) { upd.data_agendada = dataAgendada; console.log(`[entrevista] agendada para ${dataAgendada} contato=${contato}`) }
+    await admin.from('ia_entrevistas').update(upd).eq('id', ent.id)
   }
   // Imagens só na primeira mensagem da conversa
   for (const i of (primeiraMsg ? imagens : [])) {
@@ -1360,7 +1384,54 @@ async function processarFila() {
     }
   }
   if (await rpc('integ_srv_cron_pode', { p_chave: 'limpeza', p_segundos: 6 * 3600 })) await rpc('integ_srv_limpeza', {}).catch(console.error)
+  // Follow-up de entrevistas agendadas pra amanhã (roda 1x ao dia)
+  await followUpEntrevistas().catch(e => console.error('[followup]', e))
   return { ok: true, tarefas: tarefas.length, feitas }
+}
+
+// ─── Follow-up automático: confirmar entrevistas agendadas para amanhã ─────
+async function followUpEntrevistas() {
+  if (!(await rpc('integ_srv_cron_pode', { p_chave: 'followup_entrevistas', p_segundos: 4 * 3600 }))) return
+  // Buscar entrevistas agendadas para amanhã (horário de Brasília)
+  const agora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+  const amanha = new Date(agora)
+  amanha.setDate(amanha.getDate() + 1)
+  const inicioAmanha = `${amanha.getFullYear()}-${String(amanha.getMonth() + 1).padStart(2, '0')}-${String(amanha.getDate()).padStart(2, '0')}T00:00:00-03:00`
+  const fimAmanha = `${amanha.getFullYear()}-${String(amanha.getMonth() + 1).padStart(2, '0')}-${String(amanha.getDate()).padStart(2, '0')}T23:59:59-03:00`
+
+  const { data: entrevistas } = await admin.from('ia_entrevistas')
+    .select('*')
+    .gte('data_agendada', inicioAmanha)
+    .lte('data_agendada', fimAmanha)
+    .is('followup_enviado', null)
+    .in('status', ['ativa', 'com_a_equipe'])
+
+  if (!entrevistas?.length) return console.log('[followup] nenhuma entrevista agendada pra amanhã')
+  console.log(`[followup] ${entrevistas.length} entrevista(s) agendada(s) pra amanhã`)
+
+  for (const ent of entrevistas as any[]) {
+    try {
+      const { data: num } = await admin.from('integ_wa_numeros').select('*').eq('phone_number_id', ent.phone_number_id).maybeSingle()
+      if (!num) continue
+      const token = (num as any).token || (await conexaoMeta(ent.empresa_id))?.token
+      if (!token) continue
+
+      const empresa = await nomeEmpresa(ent.empresa_id)
+      const dataAgendada = new Date(ent.data_agendada)
+      const horaFormatada = dataAgendada.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
+      const diaFormatado = dataAgendada.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit' })
+
+      const nome = primeiroNome(ent.nome) || 'candidato'
+      const msg = `Olá ${nome}! 😊 Tudo bem?\n\nPassando pra confirmar sua presença amanhã (${diaFormatado}) às ${horaFormatada} aqui na ${empresa}.\n\nVocê confirma? Estamos te esperando! 🤝`
+
+      const env = await waTexto({ ...(num as any), token_efetivo: token }, ent.contato, msg)
+      if (env.ok) {
+        await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: msg })
+        await admin.from('ia_entrevistas').update({ followup_enviado: new Date().toISOString() }).eq('id', ent.id)
+        console.log(`[followup] confirmação enviada para ${ent.contato} (${nome})`)
+      }
+    } catch (e) { console.error(`[followup] erro ent=${ent.id}:`, e) }
+  }
 }
 
 // ─── Ações do CRM ────────────────────────────────────────────────────────────
