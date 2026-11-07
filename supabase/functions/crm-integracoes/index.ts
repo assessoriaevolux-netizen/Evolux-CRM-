@@ -970,29 +970,92 @@ Roteiro da entrevista (siga):
 ${texto}${blocoImagens(imagens)}${instrucaoImagem}${instrucaoFase}${instrucaoFds}`
 }
 
+// ─── Continuação da entrevista em outra execução ────────────────────────────
+// O Supabase corta cada execução da função em ~150s. Esperas longas (análise do
+// currículo ~3 min depois, [PAUSA 3]) viram uma nova chamada da própria função,
+// que espera no máximo ESPERA_MAX_MS e, se ainda faltar tempo, encadeia outra.
+const ESPERA_MAX_MS = 100000
+async function tokenInterno() { return hex(await hmac(SERVICE_KEY, 'evolux-entrevista-continuar')) }
+async function continuarEntrevistaDepois(dados: any): Promise<boolean> {
+  try {
+    const r = await fetch(`${URL_WEBHOOK}?tarefa=entrevista_continuar`, {
+      method: 'POST', signal: AbortSignal.timeout(15000),
+      headers: { 'Content-Type': 'application/json', 'x-evolux-interno': await tokenInterno() },
+      body: JSON.stringify(dados),
+    })
+    if (!r.ok) { console.error('[entrevista] continuar status', r.status, await r.text().catch(() => '')); return false }
+    return true
+  } catch (e) { console.error('[entrevista] continuar erro', e); return false }
+}
+async function rotaContinuarEntrevista(req: Request) {
+  if (!igual(req.headers.get('x-evolux-interno') || '', await tokenInterno())) return new Response('negado', { status: 403 })
+  const dados: any = await req.json().catch(() => null)
+  if (!dados?.ent_id) return new Response('dados inválidos', { status: 400 })
+  emSegundoPlano(executarContinuacao(dados))
+  return new Response('ok')
+}
+async function executarContinuacao(d: any) {
+  const espera = Math.max(0, Number(d.espera_ms) || 0)
+  if (espera > ESPERA_MAX_MS) {
+    await esperar(ESPERA_MAX_MS)
+    const ok = await continuarEntrevistaDepois({ ...d, espera_ms: espera - ESPERA_MAX_MS })
+    if (!ok && d.tipo === 'analise') await admin.from('integ_cron').delete().eq('chave', 'entocup:' + d.ent_id)
+    return
+  }
+  await esperar(espera)
+  try {
+    const { data: ent } = await admin.from('ia_entrevistas').select('*').eq('id', d.ent_id).maybeSingle()
+    if (!ent || (ent as any).status !== 'ativa') return
+    const e: any = ent
+    const rot = await roteiroDe(e.empresa_id, 'entrevista')
+    if (!rot?.ativo) return
+    const numeroId = d.numero_id || e.phone_number_id
+    const { data: num } = await admin.from('integ_wa_numeros').select('*').eq('phone_number_id', numeroId).maybeSingle()
+    if (!num) return
+    const token = (num as any).token || (await conexaoMeta(e.empresa_id))?.token
+    if (!token) return
+    const imgsEnt = imagensDoRoteiro(rot.config)
+    if (d.tipo === 'resto') {
+      await enviarRespostaEntrevista(e, num, token, d.contato, String(d.bruto || ''), imgsEnt, false, !!d.agendado)
+      return
+    }
+    if (d.tipo === 'analise') {
+      const empresa = await nomeEmpresa(e.empresa_id)
+      const modelo = modeloValido(rot.modelo) || MODELO_PADRAO
+      const hist = await historicoEntrevista(e.id)
+      const resp = await perguntarIA(modelo, [
+        { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, d.nome || e.nome || '', imgsEnt, 'curriculo_analise') },
+        ...hist,
+      ])
+      if (resp.ok) await enviarRespostaEntrevista(e, num, token, d.contato, resp.texto, imgsEnt)
+      else console.error('[entrevista] análise', resp.erro)
+    }
+  } finally {
+    if (d.tipo === 'analise') await admin.from('integ_cron').delete().eq('chave', 'entocup:' + d.ent_id)
+  }
+}
+
 /** Imagem de "entrevista confirmada / agendamento": só pode sair junto com o agendamento. */
 const ehImagemDeAgendamento = (im: ImagemRoteiro) => /agend|confirmad/i.test(im.descricao)
 const normalizarMsg = (t: string) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
 
 /** Envia a resposta da IA de entrevista: texto, imagens do roteiro (sem repetir) e
- *  partes separadas por [PAUSA n] com alguns minutos de intervalo. */
-async function enviarRespostaEntrevista(ent: any, num: any, token: string, contato: string, bruto: string, imgsEnt: ImagemRoteiro[], primeiraResposta = false) {
+ *  o que vem depois de [PAUSA n] sai alguns minutos depois, em outra execução. */
+async function enviarRespostaEntrevista(ent: any, num: any, token: string, contato: string, bruto: string, imgsEnt: ImagemRoteiro[], primeiraResposta = false, jaAgendado = false) {
   const { data: recentes } = await admin.from('ia_entrevista_msgs').select('conteudo')
     .eq('entrevista_id', ent.id).eq('direcao', 'saida').order('criado_em', { ascending: false }).limit(60)
   const saidas = ((recentes || []) as any[]).map((m) => String(m.conteudo || ''))
   const enviadas = new Set(saidas.filter((c) => c.startsWith('[imagem enviada:')).map((c) => c.replace(' (o WhatsApp recusou)', '')))
   // textos já mandados nas últimas mensagens: não manda de novo o mesmo texto
   const textosRecentes = new Set(saidas.filter((c) => !c.startsWith('[imagem enviada:')).slice(0, 8).map(normalizarMsg))
-  const temAgendamento = lerMarcas(bruto, 0).dataAgendada !== null
-  const partes = String(bruto || '').split(/\[\s*PAUSA\s*(\d{1,2})?\s*\]/i)
-  // split com grupo de captura: [texto, minutos, texto, minutos, texto...]
+  const temAgendamento = jaAgendado || lerMarcas(bruto, 0).dataAgendada !== null
+  // [PAUSA n]: manda o que vem antes agora; o resto sai n minutos depois, em outra execução
+  const mp = /\[\s*PAUSA\s*(\d{1,2})?\s*\]/i.exec(String(bruto || ''))
+  const agoraTxt = mp ? String(bruto).slice(0, mp.index) : String(bruto || '')
+  const depoisTxt = mp ? String(bruto).slice(mp.index + mp[0].length) : ''
   let encerrar = false, dataAgendada: string | null = null, msgs = 0
-  for (let p = 0; p < partes.length; p += 2) {
-    if (p > 0) {
-      const min = Math.min(Math.max(Number(partes[p - 1]) || 3, 1), 3)
-      await esperar(min * 60000)
-    }
-    const m = lerMarcas(partes[p] || '', imgsEnt.length)
+  {
+    const m = lerMarcas(agoraTxt, imgsEnt.length)
     if (m.encerrar) encerrar = true
     if (m.dataAgendada) dataAgendada = m.dataAgendada
     if (m.texto) {
@@ -1008,7 +1071,7 @@ async function enviarRespostaEntrevista(ent: any, num: any, token: string, conta
     }
     const imagens = [...m.imagens]
     // A 1ª imagem (a da vaga) sempre acompanha a primeira resposta da conversa
-    if (primeiraResposta && p === 0 && imgsEnt[0] && !ehImagemDeAgendamento(imgsEnt[0]) && !imagens.includes(0)) imagens.unshift(0)
+    if (primeiraResposta && imgsEnt[0] && !ehImagemDeAgendamento(imgsEnt[0]) && !imagens.includes(0)) imagens.unshift(0)
     for (const i of imagens) {
       const im = imgsEnt[i]
       if (ehImagemDeAgendamento(im) && !temAgendamento) {
@@ -1022,6 +1085,13 @@ async function enviarRespostaEntrevista(ent: any, num: any, token: string, conta
       await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: `${marca}${env.ok ? '' : ' (o WhatsApp recusou)'}` })
       enviadas.add(marca)
     }
+  }
+  if (depoisTxt.trim()) {
+    const min = Math.min(Math.max(Number(mp?.[1]) || 3, 1), 3)
+    await continuarEntrevistaDepois({
+      tipo: 'resto', ent_id: ent.id, numero_id: ent.phone_number_id, contato, bruto: depoisTxt,
+      agendado: temAgendamento, espera_ms: min * 60000,
+    })
   }
   const upd: any = { mensagens_ia: (ent.mensagens_ia || 0) + msgs, atualizado_em: new Date().toISOString() }
   if (dataAgendada) {
@@ -1122,26 +1192,23 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
     await rpc('integ_srv_cron_pode', { p_chave: 'entcv:' + ent.id, p_segundos: 30 * 86400 })
   if (curriculo) {
     await admin.from('integ_cron').upsert({ chave: chaveOcupada, ultimo: new Date().toISOString() })
+    let agendouAnalise = false
     try {
-    // Fase 1: esperar ~60s e agradecer
-    await esperar(55000 + Math.floor(Math.random() * 10000)) // 55-65s
-    const hist1 = await historicoEntrevista(ent.id)
-    const resp1 = await perguntarIA(modelo, [
-      { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, ent.nome || nome || '', imgsEnt, 'curriculo_agradecimento') },
-      ...hist1,
-    ])
-    if (resp1.ok) await enviarRespostaEntrevista(ent, num, token, contato, resp1.texto, []) // sem imagens nesta fase
-
-    // Fase 2: esperar mais ~180s e mandar análise
-    await esperar(170000 + Math.floor(Math.random() * 20000)) // 170-190s
-    const hist2 = await historicoEntrevista(ent.id)
-    const resp2 = await perguntarIA(modelo, [
-      { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, ent.nome || nome || '', imgsEnt, 'curriculo_analise') },
-      ...hist2,
-    ])
-    if (resp2.ok) await enviarRespostaEntrevista(ent, num, token, contato, resp2.texto, imgsEnt)
+      // Fase 1: esperar ~60s e agradecer
+      await esperar(55000 + Math.floor(Math.random() * 10000)) // 55-65s
+      const hist1 = await historicoEntrevista(ent.id)
+      const resp1 = await perguntarIA(modelo, [
+        { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, ent.nome || nome || '', imgsEnt, 'curriculo_agradecimento') },
+        ...hist1,
+      ])
+      if (resp1.ok) await enviarRespostaEntrevista(ent, num, token, contato, resp1.texto, []) // sem imagens nesta fase
+      // Fase 2 (~3 min depois): roda em outra execução, porque esta seria cortada pelo limite de tempo
+      agendouAnalise = await continuarEntrevistaDepois({
+        tipo: 'analise', ent_id: ent.id, numero_id: numeroId, contato, nome: ent.nome || nome || '',
+        espera_ms: 170000 + Math.floor(Math.random() * 20000),
+      })
     } finally {
-      await admin.from('integ_cron').delete().eq('chave', chaveOcupada)
+      if (!agendouAnalise) await admin.from('integ_cron').delete().eq('chave', chaveOcupada)
     }
     return true
   }
@@ -2094,6 +2161,7 @@ Deno.serve(async (req) => {
     }
     if (req.method !== 'POST') return new Response('método não aceito', { status: 405 })
     if (url.searchParams.get('tarefa') === 'fila') return json(200, await processarFila())
+    if (url.searchParams.get('tarefa') === 'entrevista_continuar') return await rotaContinuarEntrevista(req)
     if (req.headers.get('x-hub-signature-256')) return await webhook(req)
     return await acaoCRM(req)
   } catch (e) {
