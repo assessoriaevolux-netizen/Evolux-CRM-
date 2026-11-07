@@ -941,13 +941,13 @@ function montarSistemaEntrevista(roteiro: string, empresa: string, nome: string,
   const instrucaoFase = fase === 'curriculo_agradecimento'
     ? `\n\nMOMENTO ATUAL: o candidato acabou de enviar o currículo. Responda SOMENTE com a mensagem do roteiro para quando o currículo chega (o agradecimento curto, dizendo que vai dar uma olhada). Não analise ainda, não convide ainda e não envie imagem.`
     : fase === 'curriculo_analise'
-    ? `\n\nMOMENTO ATUAL: você já agradeceu pelo currículo e agora "analisou". Envie a mensagem do roteiro para depois da análise do currículo (o convite para a seleção), usando o texto do roteiro quase palavra por palavra, e envie junto a imagem que o roteiro indica para esse momento.`
+    ? `\n\nMOMENTO ATUAL: você já agradeceu pelo currículo e agora "analisou". Envie a mensagem do roteiro para depois da análise do currículo (o convite para a seleção), usando o texto do roteiro quase palavra por palavra. Só envie imagem se o roteiro indicar uma imagem para esse momento e ela ainda não tiver sido enviada.`
     : ''
   const instrucaoFds = ehFimDeSemana()
     ? `\n\nREGRA DE FIM DE SEMANA (vale mais que os horários do roteiro): hoje é ${diaDaSemana() === 6 ? 'sábado' : 'domingo'}. Em qualquer convite ou agendamento, NÃO ofereça os horários de dia de semana do roteiro: convide SEMPRE para segunda-feira (${proximaSegunda()}) às 09:00, com o café da manhã e o treinamento até as 16:00, usando o texto do roteiro para fim de semana.`
     : `\n\nHoje é dia de semana: siga os horários do roteiro normalmente. Não ofereça o horário de segunda às 09:00 com café da manhã, a menos que o candidato peça para remarcar para segunda-feira.`
   const instrucaoImagem = imagens.length
-    ? `\n\nSobre imagens: envie cada imagem exatamente no momento que o roteiro indicar, e nunca repita uma imagem que já foi enviada nesta conversa.`
+    ? `\n\nSobre imagens: envie cada imagem exatamente no momento que o roteiro indicar, e nunca repita uma imagem que já foi enviada nesta conversa. A imagem de agendamento / entrevista confirmada só pode ir junto com a mensagem de AGENDAMENTO, depois que o candidato já escolheu o horário. Nunca repita uma mensagem que você já mandou: se o candidato mandar algo novo, responda ao que ele disse seguindo a próxima etapa do roteiro.`
     : ''
   return `Você conversa com candidatos a vaga de emprego pelo WhatsApp em nome da empresa ${empresa}.
 
@@ -970,12 +970,20 @@ Roteiro da entrevista (siga):
 ${texto}${blocoImagens(imagens)}${instrucaoImagem}${instrucaoFase}${instrucaoFds}`
 }
 
+/** Imagem de "entrevista confirmada / agendamento": só pode sair junto com o agendamento. */
+const ehImagemDeAgendamento = (im: ImagemRoteiro) => /agend|confirmad/i.test(im.descricao)
+const normalizarMsg = (t: string) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+
 /** Envia a resposta da IA de entrevista: texto, imagens do roteiro (sem repetir) e
  *  partes separadas por [PAUSA n] com alguns minutos de intervalo. */
-async function enviarRespostaEntrevista(ent: any, num: any, token: string, contato: string, bruto: string, imgsEnt: ImagemRoteiro[]) {
-  const { data: jaEnviadas } = await admin.from('ia_entrevista_msgs').select('conteudo')
-    .eq('entrevista_id', ent.id).like('conteudo', '[imagem enviada:%')
-  const enviadas = new Set(((jaEnviadas || []) as any[]).map((m) => String(m.conteudo)))
+async function enviarRespostaEntrevista(ent: any, num: any, token: string, contato: string, bruto: string, imgsEnt: ImagemRoteiro[], primeiraResposta = false) {
+  const { data: recentes } = await admin.from('ia_entrevista_msgs').select('conteudo')
+    .eq('entrevista_id', ent.id).eq('direcao', 'saida').order('criado_em', { ascending: false }).limit(60)
+  const saidas = ((recentes || []) as any[]).map((m) => String(m.conteudo || ''))
+  const enviadas = new Set(saidas.filter((c) => c.startsWith('[imagem enviada:')).map((c) => c.replace(' (o WhatsApp recusou)', '')))
+  // textos já mandados nas últimas mensagens: não manda de novo o mesmo texto
+  const textosRecentes = new Set(saidas.filter((c) => !c.startsWith('[imagem enviada:')).slice(0, 8).map(normalizarMsg))
+  const temAgendamento = lerMarcas(bruto, 0).dataAgendada !== null
   const partes = String(bruto || '').split(/\[\s*PAUSA\s*(\d{1,2})?\s*\]/i)
   // split com grupo de captura: [texto, minutos, texto, minutos, texto...]
   let encerrar = false, dataAgendada: string | null = null, msgs = 0
@@ -988,12 +996,25 @@ async function enviarRespostaEntrevista(ent: any, num: any, token: string, conta
     if (m.encerrar) encerrar = true
     if (m.dataAgendada) dataAgendada = m.dataAgendada
     if (m.texto) {
-      await waTexto({ ...num, token_efetivo: token }, contato, m.texto)
-      await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: m.texto })
-      msgs++
+      const chave = normalizarMsg(m.texto)
+      if (textosRecentes.has(chave)) {
+        console.log(`[IA-Entrevista] texto repetido ignorado contato=${contato}`)
+      } else {
+        await waTexto({ ...num, token_efetivo: token }, contato, m.texto)
+        await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: m.texto })
+        textosRecentes.add(chave)
+        msgs++
+      }
     }
-    for (const i of m.imagens) {
+    const imagens = [...m.imagens]
+    // A 1ª imagem (a da vaga) sempre acompanha a primeira resposta da conversa
+    if (primeiraResposta && p === 0 && imgsEnt[0] && !ehImagemDeAgendamento(imgsEnt[0]) && !imagens.includes(0)) imagens.unshift(0)
+    for (const i of imagens) {
       const im = imgsEnt[i]
+      if (ehImagemDeAgendamento(im) && !temAgendamento) {
+        console.log(`[IA-Entrevista] imagem de agendamento segurada: candidato ainda não confirmou (contato=${contato})`)
+        continue
+      }
       const marca = `[imagem enviada: ${im.descricao}]`
       if (enviadas.has(marca)) continue
       const env = await waImagem({ ...num, token_efetivo: token }, contato, im.url)
@@ -1047,6 +1068,9 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
   const rot = await roteiroDe(emp, 'entrevista')
   if (!rot?.ativo) return false
 
+  // A Meta às vezes entrega a mesma mensagem mais de uma vez: processa só uma
+  if (waId && !(await rpc('integ_srv_cron_pode', { p_chave: 'entmsg:' + waId, p_segundos: 30 * 86400 }))) return true
+
   // Gravar mensagem de entrada
   let ent = entExistente
   if (!ent) {
@@ -1057,16 +1081,22 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
   }
   if (!ent) return false
 
-  await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'entrada', conteudo })
+  const { data: minha } = await admin.from('ia_entrevista_msgs')
+    .insert({ entrevista_id: ent.id, direcao: 'entrada', conteudo }).select('id').single()
 
-  // Esperar mensagens em sequência
-  await esperar(Number(Deno.env.get('IA_ESPERA_MS') ?? 6000))
+  // Esperar mensagens em sequência (currículo + foto, várias mensagens seguidas...)
+  await esperar(Number(Deno.env.get('IA_ESPERA_MS') ?? 10000))
 
-  // Verificar se é a última mensagem (evitar duplicadas)
-  const { data: ultMsgs } = await admin.from('ia_entrevista_msgs').select('id,criado_em').eq('entrevista_id', ent.id).eq('direcao', 'entrada')
+  // Só a ÚLTIMA mensagem da sequência responde — uma resposta para o bloco todo
+  const { data: ultMsgs } = await admin.from('ia_entrevista_msgs').select('id').eq('entrevista_id', ent.id).eq('direcao', 'entrada')
     .order('criado_em', { ascending: false }).limit(1)
-  // Se a última entrada não é recente o suficiente, outra instância vai responder
-  // (simplificado: sempre responde pois cada msg gera uma chamada)
+  if ((minha as any)?.id && (ultMsgs as any[])?.[0]?.id && (ultMsgs as any[])[0].id !== (minha as any).id) return true
+
+  // Se o fluxo do currículo ainda está rodando para este candidato, ele mesmo responde
+  // (a mensagem nova já está no histórico que ele vai ler)
+  const chaveOcupada = 'entocup:' + ent.id
+  const { data: ocup } = await admin.from('integ_cron').select('ultimo').eq('chave', chaveOcupada).maybeSingle()
+  if (ocup && Date.now() - new Date((ocup as any).ultimo).getTime() < 6 * 60000) return true
 
   // Limite de mensagens
   const limite = Math.max(2, Math.min(60, Number(rot.config?.limite_mensagens) || 30))
@@ -1087,8 +1117,12 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
 
   // ── Fluxo especial: candidato enviou currículo ──
   // Espera 1 min pra agradecer, depois 3 min pra analisar (parece humano)
-  const curriculo = ehCurriculo(conteudo) && !primeiraMsg
+  // Só uma vez por candidato: depois disso, foto/documento novo segue o fluxo normal
+  const curriculo = ehCurriculo(conteudo) && !primeiraMsg &&
+    await rpc('integ_srv_cron_pode', { p_chave: 'entcv:' + ent.id, p_segundos: 30 * 86400 })
   if (curriculo) {
+    await admin.from('integ_cron').upsert({ chave: chaveOcupada, ultimo: new Date().toISOString() })
+    try {
     // Fase 1: esperar ~60s e agradecer
     await esperar(55000 + Math.floor(Math.random() * 10000)) // 55-65s
     const hist1 = await historicoEntrevista(ent.id)
@@ -1096,16 +1130,7 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
       { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, ent.nome || nome || '', imgsEnt, 'curriculo_agradecimento') },
       ...hist1,
     ])
-    if (resp1.ok) {
-      const { texto: txt1 } = lerMarcas(resp1.texto, 0) // sem imagens nesta fase
-      if (txt1) {
-        await waTexto({ ...(num as any), token_efetivo: token }, contato, txt1)
-        await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: txt1 })
-        await admin.from('ia_entrevistas').update({
-          mensagens_ia: (ent.mensagens_ia || 0) + 1, atualizado_em: new Date().toISOString(),
-        }).eq('id', ent.id)
-      }
-    }
+    if (resp1.ok) await enviarRespostaEntrevista(ent, num, token, contato, resp1.texto, []) // sem imagens nesta fase
 
     // Fase 2: esperar mais ~180s e mandar análise
     await esperar(170000 + Math.floor(Math.random() * 20000)) // 170-190s
@@ -1115,6 +1140,9 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
       ...hist2,
     ])
     if (resp2.ok) await enviarRespostaEntrevista(ent, num, token, contato, resp2.texto, imgsEnt)
+    } finally {
+      await admin.from('integ_cron').delete().eq('chave', chaveOcupada)
+    }
     return true
   }
 
@@ -1126,7 +1154,7 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
   ])
   if (!resp.ok) { console.error('[IA-Entrevista]', resp.erro); return true }
 
-  await enviarRespostaEntrevista(ent, num, token, contato, resp.texto, imgsEnt)
+  await enviarRespostaEntrevista(ent, num, token, contato, resp.texto, imgsEnt, primeiraMsg)
   return true // Indica que foi tratado como entrevista (não criar lead)
 }
 
