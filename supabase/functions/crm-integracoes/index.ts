@@ -22,7 +22,9 @@ const APP_ID = (Deno.env.get('META_APP_ID') ?? '').trim()
 const APP_SECRET = (Deno.env.get('META_APP_SECRET') ?? '').trim()
 const LOGIN_CONFIG_ID = (Deno.env.get('META_LOGIN_CONFIG_ID') ?? '').trim()
 const OPENAI_KEY = (Deno.env.get('OPENAI_API_KEY') ?? '').trim()
-const MODELO_PADRAO = (Deno.env.get('OPENAI_MODEL') ?? '').trim() || 'gpt-6-luna'
+const GEMINI_KEY = (Deno.env.get('GEMINI_API_KEY') ?? '').trim()
+const MODELO_PADRAO = (Deno.env.get('OPENAI_MODEL') ?? '').trim() || (GEMINI_KEY ? 'gemini-2.0-flash' : 'gpt-6-luna')
+const IA_PROVIDER = GEMINI_KEY ? 'gemini' : 'openai' // Gemini tem prioridade se a chave existir
 const GRAPH_VERSAO = (Deno.env.get('META_GRAPH_VERSION') ?? '').trim() || 'v25.0'
 // (as três abaixo só mudam em teste)
 const GRAPH_BASE = (Deno.env.get('META_GRAPH_URL') || 'https://graph.facebook.com').replace(/\/$/, '')
@@ -417,8 +419,47 @@ function traduzOpenAI(status: number, err: any, modelo: string) {
   if (status === 403) return 'A OpenAI recusou o pedido: ' + String(err?.message || 'sem permissão')
   return 'Erro na OpenAI: ' + String(err?.message || status)
 }
-const modeloValido = (m: unknown) => /^[a-z0-9][a-z0-9.-]{1,60}$/.test(String(m || '')) ? String(m) : ''
-async function perguntarIA(modelo: string, mensagens: { role: string; content: string }[]) {
+const modeloValido = (m: unknown) => /^[a-z0-9][a-z0-9./_-]{1,60}$/.test(String(m || '')) ? String(m) : ''
+
+// ── Gemini (Google AI) ──
+function ehModeloGemini(modelo: string) { return modelo.startsWith('gemini-') }
+async function perguntarGemini(modelo: string, mensagens: { role: string; content: string }[]) {
+  if (!GEMINI_KEY) return { ok: false, erro: 'A chave do Gemini não está configurada no Supabase (segredo GEMINI_API_KEY).' } as any
+  // Converter formato OpenAI → Gemini
+  const system = mensagens.filter((m) => m.role === 'system').map((m) => m.content).join('\n')
+  const contents = mensagens.filter((m) => m.role !== 'system').map((m) => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }))
+  const corpo = {
+    system_instruction: system ? { parts: [{ text: system }] } : undefined,
+    contents,
+    generationConfig: { maxOutputTokens: 1500, temperature: 0.7 },
+  }
+  let r: Response
+  try {
+    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${GEMINI_KEY}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corpo), signal: AbortSignal.timeout(60000),
+    })
+  } catch (e) {
+    return { ok: false, erro: 'O Gemini não respondeu (' + String((e as Error)?.message || e) + ').' }
+  }
+  const j: any = await r.json().catch(() => ({}))
+  if (r.ok) {
+    const texto = String(j?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim()
+    if (!texto) return { ok: false, erro: 'O Gemini retornou uma resposta vazia.' }
+    return { ok: true, texto, uso: j?.usageMetadata || {} }
+  }
+  const err = j?.error || {}
+  if (r.status === 429) return { ok: false, status: 429, erro: 'O Gemini está limitando os pedidos agora. Tente de novo em instantes.' }
+  if (r.status === 403) return { ok: false, status: 403, erro: 'A chave do Gemini não tem permissão: ' + String(err?.message || '') }
+  if (r.status === 404) return { ok: false, status: 404, erro: `O modelo "${modelo}" não está disponível no Gemini.` }
+  return { ok: false, status: r.status, erro: 'Erro no Gemini: ' + String(err?.message || r.status) }
+}
+
+// ── OpenAI ──
+async function perguntarOpenAI(modelo: string, mensagens: { role: string; content: string }[]) {
   if (!OPENAI_KEY) return { ok: false, erro: 'A chave da OpenAI não está configurada no Supabase (segredo OPENAI_API_KEY).' } as any
   const corpo: any = { model: modelo, messages: mensagens, max_completion_tokens: 1500, reasoning_effort: 'low' }
   for (let tentativa = 0; tentativa < 4; tentativa++) {
@@ -450,6 +491,17 @@ async function perguntarIA(modelo: string, mensagens: { role: string; content: s
     return { ok: false, status: r.status, erro: traduzOpenAI(r.status, err, modelo) }
   }
   return { ok: false, erro: 'A OpenAI não conseguiu responder.' }
+}
+
+// ── Roteador: escolhe Gemini ou OpenAI automaticamente ──
+async function perguntarIA(modelo: string, mensagens: { role: string; content: string }[]) {
+  // Se o modelo é explicitamente Gemini, usa Gemini
+  if (ehModeloGemini(modelo)) return perguntarGemini(modelo, mensagens)
+  // Se tem chave Gemini e não tem OpenAI, usa Gemini com modelo padrão
+  if (GEMINI_KEY && !OPENAI_KEY) return perguntarGemini(MODELO_PADRAO.startsWith('gemini-') ? MODELO_PADRAO : 'gemini-2.0-flash', mensagens)
+  // Se tem OpenAI, usa OpenAI
+  if (OPENAI_KEY) return perguntarOpenAI(modelo, mensagens)
+  return { ok: false, erro: 'Nenhuma chave de IA configurada. Adicione GEMINI_API_KEY ou OPENAI_API_KEY nos segredos do Supabase.' }
 }
 
 // ─── Transcrição de áudio (Whisper) ─────────────────────────────────────────
@@ -758,8 +810,16 @@ async function empresaDoNumero(numeroId: string): Promise<any> {
   return data
 }
 
-function montarSistemaEntrevista(roteiro: string, empresa: string, nome: string, imagens: ImagemRoteiro[] = []) {
+function montarSistemaEntrevista(roteiro: string, empresa: string, nome: string, imagens: ImagemRoteiro[] = [], fase?: string) {
   const texto = (roteiro || '').trim().split('{{empresa}}').join(empresa).split('{{nome}}').join(primeiroNome(nome) || 'candidato')
+  const instrucaoFase = fase === 'curriculo_agradecimento'
+    ? `\n\nINSTRUÇÃO ESPECIAL: O candidato acabou de enviar o currículo. Responda APENAS com um agradecimento breve e natural por ter enviado, dizendo que vai dar uma olhada. Não analise ainda. Não faça perguntas. Não envie imagem. Máximo 2 frases.`
+    : fase === 'curriculo_analise'
+    ? `\n\nINSTRUÇÃO ESPECIAL: Você acabou de receber o currículo do candidato e já agradeceu. Agora responda como se tivesse realmente analisado: diga que gostou, que acredita no potencial da pessoa para uma parceria, que não exige experiência pois ensinam tudo do zero. Convide para uma seleção presencial informando dia e horários disponíveis. Pergunte qual horário fica melhor. Não envie imagem neste momento.`
+    : ''
+  const instrucaoImagem = imagens.length
+    ? `\n\nSobre imagens: envie imagens APENAS na PRIMEIRA mensagem da conversa (quando cumprimentar o candidato pela primeira vez). NUNCA envie imagem depois de receber currículo ou no final da conversa.`
+    : ''
   return `Você é a assistente virtual de entrevistas por WhatsApp da empresa ${empresa}.
 
 Regras que valem sempre:
@@ -774,7 +834,7 @@ Agora: ${agoraBrasilia()} (horário de Brasília).
 Candidato: ${nome || 'não informado'}.
 
 Roteiro da entrevista (siga):
-${texto}${blocoImagens(imagens)}`
+${texto}${blocoImagens(imagens)}${instrucaoImagem}${instrucaoFase}`
 }
 
 async function historicoEntrevista(entrevistaId: string) {
@@ -784,6 +844,13 @@ async function historicoEntrevista(entrevistaId: string) {
     role: m.direcao === 'entrada' ? 'user' : 'assistant',
     content: textoLimpo(m.conteudo || '[mensagem]', 2000),
   }))
+}
+
+// Detectar se a mensagem é envio de currículo (documento, imagem com legenda, ou texto mencionando)
+function ehCurriculo(conteudo: string): boolean {
+  const t = (conteudo || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  return ['curriculo', 'currículo', 'cv ', 'meu cv', 'segue meu', 'ta ai', 'tá aí', 'enviei', 'documento', '[documento', '[imagem'].some((k) =>
+    t.includes(k.normalize('NFD').replace(/[̀-ͯ]/g, '')))
 }
 
 async function processarEntrevista(numeroId: string, contato: string, nome: string, conteudo: string, waId: string, timestamp: string) {
@@ -832,24 +899,70 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
     return true
   }
 
-  // Montar prompt e perguntar IA
   const empresa = await nomeEmpresa(emp)
   const modelo = modeloValido(rot.modelo) || MODELO_PADRAO
-  const historico = await historicoEntrevista(ent.id)
-  const resp = await perguntarIA(modelo, [
-    { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, ent.nome || nome || '', imagensDoRoteiro(rot.config)) },
-    ...historico,
-  ])
-  if (!resp.ok) { console.error('[IA-Entrevista]', resp.erro); return true }
-
   const imgsEnt = imagensDoRoteiro(rot.config)
-  const { texto, encerrar, imagens } = lerMarcas(resp.texto, imgsEnt.length)
 
   // Buscar token pra enviar
   const { data: num } = await admin.from('integ_wa_numeros').select('*').eq('phone_number_id', numeroId).maybeSingle()
   if (!num) return true
   const token = (num as any).token || (await conexaoMeta(emp))?.token
   if (!token) return true
+
+  // ── Fluxo especial: candidato enviou currículo ──
+  // Espera 1 min pra agradecer, depois 3 min pra analisar (parece humano)
+  const curriculo = ehCurriculo(conteudo) && !primeiraMsg
+  if (curriculo) {
+    // Fase 1: esperar ~60s e agradecer
+    await esperar(55000 + Math.floor(Math.random() * 10000)) // 55-65s
+    const hist1 = await historicoEntrevista(ent.id)
+    const resp1 = await perguntarIA(modelo, [
+      { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, ent.nome || nome || '', imgsEnt, 'curriculo_agradecimento') },
+      ...hist1,
+    ])
+    if (resp1.ok) {
+      const { texto: txt1 } = lerMarcas(resp1.texto, 0) // sem imagens nesta fase
+      if (txt1) {
+        await waTexto({ ...(num as any), token_efetivo: token }, contato, txt1)
+        await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: txt1 })
+        await admin.from('ia_entrevistas').update({
+          mensagens_ia: (ent.mensagens_ia || 0) + 1, atualizado_em: new Date().toISOString(),
+        }).eq('id', ent.id)
+      }
+    }
+
+    // Fase 2: esperar mais ~180s e mandar análise
+    await esperar(170000 + Math.floor(Math.random() * 20000)) // 170-190s
+    const hist2 = await historicoEntrevista(ent.id)
+    const resp2 = await perguntarIA(modelo, [
+      { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, ent.nome || nome || '', imgsEnt, 'curriculo_analise') },
+      ...hist2,
+    ])
+    if (resp2.ok) {
+      const { texto: txt2, encerrar: enc2 } = lerMarcas(resp2.texto, 0) // sem imagens
+      if (txt2) {
+        await waTexto({ ...(num as any), token_efetivo: token }, contato, txt2)
+        await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: txt2 })
+        await admin.from('ia_entrevistas').update({
+          mensagens_ia: (ent.mensagens_ia || 0) + 1, atualizado_em: new Date().toISOString(),
+        }).eq('id', ent.id)
+      }
+      if (enc2) {
+        await admin.from('ia_entrevistas').update({ status: 'encerrada', atualizado_em: new Date().toISOString() }).eq('id', ent.id)
+      }
+    }
+    return true
+  }
+
+  // ── Fluxo normal ──
+  const historico = await historicoEntrevista(ent.id)
+  const resp = await perguntarIA(modelo, [
+    { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, ent.nome || nome || '', imgsEnt) },
+    ...historico,
+  ])
+  if (!resp.ok) { console.error('[IA-Entrevista]', resp.erro); return true }
+
+  const { texto, encerrar, imagens } = lerMarcas(resp.texto, imgsEnt.length)
 
   if (texto) {
     const env = await waTexto({ ...(num as any), token_efetivo: token }, contato, texto)
@@ -858,7 +971,8 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
       mensagens_ia: (ent.mensagens_ia || 0) + 1, atualizado_em: new Date().toISOString(),
     }).eq('id', ent.id)
   }
-  for (const i of imagens) {
+  // Imagens só na primeira mensagem da conversa
+  for (const i of (primeiraMsg ? imagens : [])) {
     const im = imgsEnt[i]
     const env = await waImagem({ ...(num as any), token_efetivo: token }, contato, im.url)
     if (!env.ok) console.error('[IA-Entrevista] imagem', env.erro)
@@ -1179,7 +1293,7 @@ async function assinarState(dados: Record<string, unknown>) {
 const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>> = {
   // Situação da configuração no servidor (para a tela de Configurações apontar o que falta)
   async status(ctx) {
-    const base: any = { meta_app: !!(APP_ID && APP_SECRET), login_config: !!LOGIN_CONFIG_ID, openai: !!OPENAI_KEY, modelo_padrao: MODELO_PADRAO, versao_graph: GRAPH_VERSAO }
+    const base: any = { meta_app: !!(APP_ID && APP_SECRET), login_config: !!LOGIN_CONFIG_ID, openai: !!OPENAI_KEY, gemini: !!GEMINI_KEY, ia_provider: IA_PROVIDER, modelo_padrao: MODELO_PADRAO, versao_graph: GRAPH_VERSAO }
     if (ctx.gestor || ctx.plataforma) { base.webhook_url = URL_WEBHOOK; base.callback_url = URL_CALLBACK }
     if (ctx.plataforma) base.verify_token = APP_SECRET ? await tokenVerificacao() : null
     return base
