@@ -23,7 +23,7 @@ const APP_SECRET = (Deno.env.get('META_APP_SECRET') ?? '').trim()
 const LOGIN_CONFIG_ID = (Deno.env.get('META_LOGIN_CONFIG_ID') ?? '').trim()
 const OPENAI_KEY = (Deno.env.get('OPENAI_API_KEY') ?? '').trim()
 const GEMINI_KEY = (Deno.env.get('GEMINI_API_KEY') ?? '').trim()
-const MODELO_PADRAO = (Deno.env.get('OPENAI_MODEL') ?? '').trim() || (GEMINI_KEY ? 'gemini-2.0-flash' : 'gpt-6-luna')
+const MODELO_PADRAO = (Deno.env.get('OPENAI_MODEL') ?? '').trim() || (GEMINI_KEY ? 'gemini-2.5-flash' : 'gpt-6-luna')
 const IA_PROVIDER = GEMINI_KEY ? 'gemini' : 'openai' // Gemini tem prioridade se a chave existir
 const GRAPH_VERSAO = (Deno.env.get('META_GRAPH_VERSION') ?? '').trim() || 'v25.0'
 // (as três abaixo só mudam em teste)
@@ -498,7 +498,8 @@ async function perguntarIA(modelo: string, mensagens: { role: string; content: s
   // Se o modelo é explicitamente Gemini, usa Gemini
   if (ehModeloGemini(modelo)) return perguntarGemini(modelo, mensagens)
   // Se tem chave Gemini e não tem OpenAI, usa Gemini com modelo padrão
-  if (GEMINI_KEY && !OPENAI_KEY) return perguntarGemini(MODELO_PADRAO.startsWith('gemini-') ? MODELO_PADRAO : 'gemini-2.0-flash', mensagens)
+  // Se tem chave Gemini (prioridade sobre OpenAI), usa Gemini
+  if (GEMINI_KEY) return perguntarGemini(MODELO_PADRAO.startsWith('gemini-') ? MODELO_PADRAO : 'gemini-2.5-flash', mensagens)
   // Se tem OpenAI, usa OpenAI
   if (OPENAI_KEY) return perguntarOpenAI(modelo, mensagens)
   return { ok: false, erro: 'Nenhuma chave de IA configurada. Adicione GEMINI_API_KEY ou OPENAI_API_KEY nos segredos do Supabase.' }
