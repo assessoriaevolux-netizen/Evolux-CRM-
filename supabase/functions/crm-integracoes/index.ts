@@ -424,32 +424,64 @@ const modeloValido = (m: unknown) => /^[a-z0-9][a-z0-9./_-]{1,60}$/.test(String(
 // ── Gemini (Google AI) ──
 function ehModeloGemini(modelo: string) { return modelo.startsWith('gemini-') }
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta'
-let geminiModeloDescoberto = '' // cache por instância
-// Pergunta ao Google quais modelos esta chave pode usar e escolhe o melhor "flash" disponível.
-async function descobrirModeloGemini(): Promise<string> {
-  if (geminiModeloDescoberto) return geminiModeloDescoberto
+let geminiDisponiveis: string[] = [] // cache por instância, em ordem de preferência
+let geminiListadoEm = 0
+const GEMINI_PREFERIDOS = ['gemini-flash-latest', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3-flash', 'gemini-flash-lite-latest',
+  'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
+// Pergunta ao Google quais modelos esta chave pode usar e ordena: preferidos primeiro, depois outros "flash".
+async function listarModelosGemini(): Promise<string[]> {
+  if (geminiDisponiveis.length && Date.now() - geminiListadoEm < 6 * 3600_000) return geminiDisponiveis
   try {
     const r = await fetch(`${GEMINI_BASE}/models?pageSize=200`, { headers: { 'x-goog-api-key': GEMINI_KEY }, signal: AbortSignal.timeout(15000) })
     const j: any = await r.json().catch(() => ({}))
     const nomes: string[] = (j?.models || [])
       .filter((m: any) => (m?.supportedGenerationMethods || []).includes('generateContent'))
       .map((m: any) => String(m?.name || '').replace(/^models\//, ''))
-      .filter((n: string) => n.startsWith('gemini-') && !/(image|tts|audio|live|embedding|vision|thinking-exp)/i.test(n))
-    const preferidos = ['gemini-flash-latest', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3-flash', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-2.5-flash']
-    geminiModeloDescoberto = preferidos.find((p) => nomes.includes(p))
-      || nomes.find((n) => /flash/.test(n) && !/preview|exp/.test(n))
-      || nomes.find((n) => /flash/.test(n)) || nomes[0] || ''
-    console.log('[gemini] modelos disponíveis:', nomes.join(', '), '→ escolhido:', geminiModeloDescoberto)
+      .filter((n: string) => n.startsWith('gemini-') && !/(image|tts|audio|live|embedding|vision|robotics|computer-use|exp)/i.test(n))
+    const pref = GEMINI_PREFERIDOS.filter((p) => nomes.includes(p))
+    const outrosFlash = nomes.filter((n) => /flash/.test(n) && !pref.includes(n)).sort((a, b) => Number(/preview/.test(a)) - Number(/preview/.test(b)))
+    const outros = nomes.filter((n) => !pref.includes(n) && !outrosFlash.includes(n) && !/pro/.test(n))
+    geminiDisponiveis = [...pref, ...outrosFlash, ...outros]
+    geminiListadoEm = Date.now()
+    console.log('[gemini] modelos:', geminiDisponiveis.slice(0, 12).join(', '))
   } catch (e) {
     console.log('[gemini] falha ao listar modelos:', String((e as Error)?.message || e))
   }
-  return geminiModeloDescoberto
+  return geminiDisponiveis
 }
-async function perguntarGemini(modelo: string, mensagens: { role: string; content: string }[], jaTentouOutro = false): Promise<any> {
+// Uma chamada a um modelo. "tentarOutro" = vale a pena tentar outro modelo (sobrecarga, modelo inexistente etc.)
+async function chamarGemini(modelo: string, corpo: any): Promise<any> {
+  let r: Response
+  try {
+    r = await fetch(`${GEMINI_BASE}/models/${encodeURIComponent(modelo)}:generateContent`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY },
+      body: JSON.stringify(corpo), signal: AbortSignal.timeout(35000),
+    })
+  } catch (e) {
+    console.log('[gemini] sem resposta', modelo, String((e as Error)?.message || e))
+    return { ok: false, tentarOutro: true, erro: 'O Gemini não respondeu a tempo.' }
+  }
+  const j: any = await r.json().catch(() => ({}))
+  if (r.ok) {
+    const cand = j?.candidates?.[0] || {}
+    const texto = ((cand?.content?.parts || []) as any[]).filter((p) => !p?.thought && p?.text).map((p) => String(p.text)).join('').trim()
+    console.log('[gemini] ok', modelo, 'finish=' + String(cand?.finishReason || ''), 'chars=' + texto.length)
+    if (!texto) return { ok: false, tentarOutro: true, erro: `O Gemini retornou uma resposta vazia (${String(cand?.finishReason || j?.promptFeedback?.blockReason || 'sem motivo')}).` }
+    return { ok: true, texto, uso: j?.usageMetadata || {}, modelo }
+  }
+  const detalhe = String(j?.error?.message || '').slice(0, 300)
+  console.log('[gemini] erro', r.status, modelo, detalhe)
+  if (r.status === 400 && /api key|API_KEY/i.test(detalhe)) return { ok: false, status: 400, erro: 'A chave do Gemini é inválida: ' + detalhe }
+  if (r.status === 401 || r.status === 403) return { ok: false, status: r.status, erro: 'A chave do Gemini não tem permissão: ' + detalhe }
+  const temporario = r.status === 429 || r.status >= 500
+  return {
+    ok: false, status: r.status, temporario,
+    tentarOutro: temporario || r.status === 404 || (r.status === 400 && /model/i.test(detalhe)),
+    erro: temporario ? 'O Gemini está sobrecarregado agora. Tente de novo em instantes.' : 'Erro no Gemini: ' + (detalhe || r.status),
+  }
+}
+async function perguntarGemini(modelo: string, mensagens: { role: string; content: string }[]): Promise<any> {
   if (!GEMINI_KEY) return { ok: false, erro: 'A chave do Gemini não está configurada no Supabase (segredo GEMINI_API_KEY).' } as any
-  if (geminiModeloDescoberto && !jaTentouOutro) modelo = geminiModeloDescoberto
-  console.log('[gemini] chamando', modelo, 'chave=' + GEMINI_KEY.slice(0, 3) + '…(' + GEMINI_KEY.length + ')')
-  // Converter formato OpenAI → Gemini
   const system = mensagens.filter((m) => m.role === 'system').map((m) => m.content).join('\n')
   const contents = mensagens.filter((m) => m.role !== 'system').map((m) => ({
     role: m.role === 'assistant' ? 'model' : 'user',
@@ -460,38 +492,24 @@ async function perguntarGemini(modelo: string, mensagens: { role: string; conten
     contents,
     generationConfig: { maxOutputTokens: 8192, temperature: 0.7 },
   }
-  let r: Response
-  try {
-    r = await fetch(`${GEMINI_BASE}/models/${encodeURIComponent(modelo)}:generateContent`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY },
-      body: JSON.stringify(corpo), signal: AbortSignal.timeout(40000),
-    })
-  } catch (e) {
-    console.log('[gemini] sem resposta', modelo, String((e as Error)?.message || e))
-    return { ok: false, erro: 'O Gemini não respondeu (' + String((e as Error)?.message || e) + ').' }
+  // Ordem: o último modelo que funcionou, o pedido, depois os disponíveis da chave
+  const lista = await listarModelosGemini()
+  const fila = [...new Set([...(lista.length ? [lista[0]] : []), modelo, ...lista])].filter((m) => ehModeloGemini(m)).slice(0, 5)
+  const inicio = Date.now()
+  let ultimo: any = { ok: false, erro: 'O Gemini não conseguiu responder.' }
+  for (let i = 0; i < fila.length; i++) {
+    if (Date.now() - inicio > 100_000) break // não passa do limite de tempo da função
+    const m = fila[i]
+    let res = await chamarGemini(m, corpo)
+    if (!res.ok && res.temporario && Date.now() - inicio < 70_000) { await esperar(1500); res = await chamarGemini(m, corpo) } // 1 nova tentativa no mesmo modelo
+    if (res.ok) {
+      if (geminiDisponiveis[0] !== m) geminiDisponiveis = [m, ...geminiDisponiveis.filter((x) => x !== m)] // lembra o que funcionou
+      return res
+    }
+    ultimo = res
+    if (!res.tentarOutro) break
   }
-  const j: any = await r.json().catch(() => ({}))
-  if (r.ok) {
-    const cand = j?.candidates?.[0] || {}
-    const texto = ((cand?.content?.parts || []) as any[]).filter((p) => !p?.thought && p?.text).map((p) => String(p.text)).join('').trim()
-    console.log('[gemini] ok', modelo, 'finish=' + String(cand?.finishReason || ''), 'chars=' + texto.length)
-    if (!texto) return { ok: false, erro: `O Gemini retornou uma resposta vazia (${String(cand?.finishReason || j?.promptFeedback?.blockReason || 'sem motivo')}).` }
-    return { ok: true, texto, uso: j?.usageMetadata || {} }
-  }
-  const err = j?.error || {}
-  const detalhe = String(err?.message || '').slice(0, 300)
-  console.log('[gemini] erro', r.status, modelo, detalhe)
-  // Modelo não encontrado: descobre um que a chave pode usar e tenta de novo uma vez
-  if ((r.status === 404 || (r.status === 400 && /model/i.test(detalhe))) && !jaTentouOutro) {
-    geminiModeloDescoberto = ''
-    const outro = await descobrirModeloGemini()
-    if (outro && outro !== modelo) return perguntarGemini(outro, mensagens, true)
-  }
-  if (r.status === 429) return { ok: false, status: 429, erro: 'O Gemini está limitando os pedidos agora. Tente de novo em instantes.' }
-  if (r.status === 400 && /api key|API_KEY/i.test(detalhe)) return { ok: false, status: 400, erro: 'A chave do Gemini é inválida: ' + detalhe }
-  if (r.status === 403) return { ok: false, status: 403, erro: 'A chave do Gemini não tem permissão: ' + detalhe }
-  if (r.status === 404) return { ok: false, status: 404, erro: `O modelo "${modelo}" não está disponível no Gemini. (${detalhe})` }
-  return { ok: false, status: r.status, erro: 'Erro no Gemini: ' + (detalhe || r.status) }
+  return ultimo
 }
 
 // ── OpenAI ──
