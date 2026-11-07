@@ -23,7 +23,7 @@ const APP_SECRET = (Deno.env.get('META_APP_SECRET') ?? '').trim()
 const LOGIN_CONFIG_ID = (Deno.env.get('META_LOGIN_CONFIG_ID') ?? '').trim()
 const OPENAI_KEY = (Deno.env.get('OPENAI_API_KEY') ?? '').trim()
 const GEMINI_KEY = (Deno.env.get('GEMINI_API_KEY') ?? '').trim()
-const MODELO_PADRAO = (Deno.env.get('OPENAI_MODEL') ?? '').trim() || (GEMINI_KEY ? 'gemini-2.5-flash' : 'gpt-6-luna')
+const MODELO_PADRAO = (Deno.env.get('OPENAI_MODEL') ?? '').trim() || (GEMINI_KEY ? 'gemini-flash-latest' : 'gpt-6-luna')
 const IA_PROVIDER = GEMINI_KEY ? 'gemini' : 'openai' // Gemini tem prioridade se a chave existir
 const GRAPH_VERSAO = (Deno.env.get('META_GRAPH_VERSION') ?? '').trim() || 'v25.0'
 // (as três abaixo só mudam em teste)
@@ -423,8 +423,31 @@ const modeloValido = (m: unknown) => /^[a-z0-9][a-z0-9./_-]{1,60}$/.test(String(
 
 // ── Gemini (Google AI) ──
 function ehModeloGemini(modelo: string) { return modelo.startsWith('gemini-') }
-async function perguntarGemini(modelo: string, mensagens: { role: string; content: string }[]) {
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta'
+let geminiModeloDescoberto = '' // cache por instância
+// Pergunta ao Google quais modelos esta chave pode usar e escolhe o melhor "flash" disponível.
+async function descobrirModeloGemini(): Promise<string> {
+  if (geminiModeloDescoberto) return geminiModeloDescoberto
+  try {
+    const r = await fetch(`${GEMINI_BASE}/models?pageSize=200`, { headers: { 'x-goog-api-key': GEMINI_KEY }, signal: AbortSignal.timeout(15000) })
+    const j: any = await r.json().catch(() => ({}))
+    const nomes: string[] = (j?.models || [])
+      .filter((m: any) => (m?.supportedGenerationMethods || []).includes('generateContent'))
+      .map((m: any) => String(m?.name || '').replace(/^models\//, ''))
+      .filter((n: string) => n.startsWith('gemini-') && !/(image|tts|audio|live|embedding|vision|thinking-exp)/i.test(n))
+    const preferidos = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-3-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite']
+    geminiModeloDescoberto = preferidos.find((p) => nomes.includes(p))
+      || nomes.find((n) => /flash/.test(n) && !/preview|exp/.test(n))
+      || nomes.find((n) => /flash/.test(n)) || nomes[0] || ''
+    console.log('[gemini] modelos disponíveis:', nomes.join(', '), '→ escolhido:', geminiModeloDescoberto)
+  } catch (e) {
+    console.log('[gemini] falha ao listar modelos:', String((e as Error)?.message || e))
+  }
+  return geminiModeloDescoberto
+}
+async function perguntarGemini(modelo: string, mensagens: { role: string; content: string }[], jaTentouOutro = false): Promise<any> {
   if (!GEMINI_KEY) return { ok: false, erro: 'A chave do Gemini não está configurada no Supabase (segredo GEMINI_API_KEY).' } as any
+  if (geminiModeloDescoberto && !jaTentouOutro) modelo = geminiModeloDescoberto
   // Converter formato OpenAI → Gemini
   const system = mensagens.filter((m) => m.role === 'system').map((m) => m.content).join('\n')
   const contents = mensagens.filter((m) => m.role !== 'system').map((m) => ({
@@ -438,8 +461,8 @@ async function perguntarGemini(modelo: string, mensagens: { role: string; conten
   }
   let r: Response
   try {
-    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${GEMINI_KEY}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    r = await fetch(`${GEMINI_BASE}/models/${encodeURIComponent(modelo)}:generateContent`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY },
       body: JSON.stringify(corpo), signal: AbortSignal.timeout(60000),
     })
   } catch (e) {
@@ -452,10 +475,19 @@ async function perguntarGemini(modelo: string, mensagens: { role: string; conten
     return { ok: true, texto, uso: j?.usageMetadata || {} }
   }
   const err = j?.error || {}
+  const detalhe = String(err?.message || '').slice(0, 300)
+  console.log('[gemini] erro', r.status, modelo, detalhe)
+  // Modelo não encontrado: descobre um que a chave pode usar e tenta de novo uma vez
+  if ((r.status === 404 || (r.status === 400 && /model/i.test(detalhe))) && !jaTentouOutro) {
+    geminiModeloDescoberto = ''
+    const outro = await descobrirModeloGemini()
+    if (outro && outro !== modelo) return perguntarGemini(outro, mensagens, true)
+  }
   if (r.status === 429) return { ok: false, status: 429, erro: 'O Gemini está limitando os pedidos agora. Tente de novo em instantes.' }
-  if (r.status === 403) return { ok: false, status: 403, erro: 'A chave do Gemini não tem permissão: ' + String(err?.message || '') }
-  if (r.status === 404) return { ok: false, status: 404, erro: `O modelo "${modelo}" não está disponível no Gemini.` }
-  return { ok: false, status: r.status, erro: 'Erro no Gemini: ' + String(err?.message || r.status) }
+  if (r.status === 400 && /api key|API_KEY/i.test(detalhe)) return { ok: false, status: 400, erro: 'A chave do Gemini é inválida: ' + detalhe }
+  if (r.status === 403) return { ok: false, status: 403, erro: 'A chave do Gemini não tem permissão: ' + detalhe }
+  if (r.status === 404) return { ok: false, status: 404, erro: `O modelo "${modelo}" não está disponível no Gemini. (${detalhe})` }
+  return { ok: false, status: r.status, erro: 'Erro no Gemini: ' + (detalhe || r.status) }
 }
 
 // ── OpenAI ──
@@ -499,7 +531,7 @@ async function perguntarIA(modelo: string, mensagens: { role: string; content: s
   if (ehModeloGemini(modelo)) return perguntarGemini(modelo, mensagens)
   // Se tem chave Gemini e não tem OpenAI, usa Gemini com modelo padrão
   // Se tem chave Gemini (prioridade sobre OpenAI), usa Gemini
-  if (GEMINI_KEY) return perguntarGemini(MODELO_PADRAO.startsWith('gemini-') ? MODELO_PADRAO : 'gemini-2.5-flash', mensagens)
+  if (GEMINI_KEY) return perguntarGemini(MODELO_PADRAO.startsWith('gemini-') ? MODELO_PADRAO : 'gemini-flash-latest', mensagens)
   // Se tem OpenAI, usa OpenAI
   if (OPENAI_KEY) return perguntarOpenAI(modelo, mensagens)
   return { ok: false, erro: 'Nenhuma chave de IA configurada. Adicione GEMINI_API_KEY ou OPENAI_API_KEY nos segredos do Supabase.' }

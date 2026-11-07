@@ -32,8 +32,8 @@ async function renderIA(){
   const custo=doMes.reduce((s,c)=>s+Number(c.custo_usd||0),0);
   const msgs=doMes.reduce((s,c)=>s+(c.mensagens_ia||0),0);
   let h=`<div class="ia2-topo"><div class="ads2-tit"><i class="ti ti-robot"></i>IA de atendimento</div>
-    <div class="integ2-mini">Este mês: <strong>${msgs}</strong> resposta${msgs!==1?'s':''} da IA em <strong>${doMes.length}</strong> conversa${doMes.length!==1?'s':''} · custo da OpenAI ≈ <strong>US$ ${custo.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></div></div>`;
-  if(IA.servidor&&!IA.servidor.openai) h+=`<div class="integ2-aviso erro"><i class="ti ti-key"></i><div>Falta a chave da OpenAI no Supabase (segredo <code>OPENAI_API_KEY</code>). Sem ela a IA não responde.</div></div>`;
+    <div class="integ2-mini">Este mês: <strong>${msgs}</strong> resposta${msgs!==1?'s':''} da IA em <strong>${doMes.length}</strong> conversa${doMes.length!==1?'s':''} · custo da IA ≈ <strong>US$ ${custo.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></div></div>`;
+  if(IA.servidor&&!IA.servidor.openai&&!IA.servidor.gemini) h+=`<div class="integ2-aviso erro"><i class="ti ti-key"></i><div>Falta a chave da IA no Supabase (segredo <code>GEMINI_API_KEY</code>). Sem ela a IA não responde.</div></div>`;
   if(!integNumeros().length) h+=`<div class="integ2-aviso"><i class="ti ti-brand-whatsapp"></i><div>A IA conversa pelo WhatsApp: conecte um número em Configurações → WhatsApp Business.${isGestor()?` <button class="btn bg bsm" onclick="integIrPara('whatsapp-cfg')">Configurar</button>`:''}</div></div>`;
   h+=`<div class="ia2-cards">${Object.keys(IA_TIPOS).map(t=>_iaCard(t,gerencia)).join('')}</div>`;
   if(gerencia) h+=_iaTestePainel();
@@ -58,7 +58,7 @@ function _iaCard(tipo,gerencia){
       <div class="ia2-card-txt"><div class="ia2-card-tit">${T.tit} <span class="integ2-st ${ligada?'ok':'pend'}">${ligada?'ligada':'desligada'}</span></div><div class="integ2-mini">${T.desc}</div></div>
       ${gerencia?integToggle('ia-on-'+tipo,ligada,`iaLigar('${tipo}',this.checked)`):''}
     </div>
-    <div class="integ2-mini ia2-resumo">${resumo} · modelo ${esc(r.modelo||'gpt-6-luna')}</div>
+    <div class="integ2-mini ia2-resumo">${resumo} · modelo ${IA.servidor&&IA.servidor.gemini?'Gemini':esc(r.modelo||'gpt-6-luna')}</div>
     ${r.ultimo_erro?`<div class="integ2-aviso erro"><i class="ti ti-alert-triangle"></i><div>${esc(r.ultimo_erro)} <span class="integ2-mini">(${esc(integHaQuanto(r.ultimo_erro_em))})</span></div></div>`:''}
     ${gerencia?(ed?_iaEditor(tipo):`<div class="ia2-acoes"><button class="btn bg bsm" onclick="IA.editando='${tipo}';renderIA()"><i class="ti ti-pencil"></i>Editar roteiro</button><button class="btn bg bsm" onclick="IA.teste.tipo='${tipo}';IA.teste.hist=[];renderIA().then(()=>document.getElementById('ia2-teste')?.scrollIntoView({behavior:'smooth'}))"><i class="ti ti-flask"></i>Testar</button></div>`):''}
   </div>`;
@@ -222,7 +222,7 @@ function _iaTestePainel(){
   return `<div class="ads2-card" id="ia2-teste">
     <div class="ads2-card-topo"><div class="ads2-card-tit"><i class="ti ti-flask"></i> Testar a conversa</div>
       <select class="tfield" id="ia2-t-tipo" onchange="IA.teste.tipo=this.value;IA.teste.hist=[];_iaTesteDesenhar()">${Object.keys(IA_TIPOS).map(t=>`<option value="${t}">${IA_TIPOS[t].tit}</option>`).join('')}</select></div>
-    <div class="integ2-mini" style="margin-bottom:10px">Você faz o papel do cliente. Nada é enviado pelo WhatsApp; só a OpenAI é usada (custa frações de centavo). Se o roteiro estiver aberto para edição, o teste usa o texto que está lá, mesmo sem salvar.</div>
+    <div class="integ2-mini" style="margin-bottom:10px">Você faz o papel do cliente. Nada é enviado pelo WhatsApp; só a IA é usada (custa frações de centavo). Se o roteiro estiver aberto para edição, o teste usa o texto que está lá, mesmo sem salvar.</div>
     <div class="g2 ia2-t-lead"><div class="field"><label id="ia2-t-nome-lbl">Nome do cliente (teste)</label><input class="fi" id="ia2-t-nome" value="Maria Souza"></div>
       <div class="field" id="ia2-t-bem-box"><label>Interesse</label><select class="fi" id="ia2-t-bem">${['Imóvel','Automóvel','Moto','Serviço'].map(t=>`<option>${t}</option>`).join('')}</select></div></div>
     <div class="ia2-t-chat" id="ia2-t-chat"></div>
