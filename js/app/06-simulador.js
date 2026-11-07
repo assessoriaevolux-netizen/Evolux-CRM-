@@ -280,14 +280,18 @@ function calcSim(parcelaOverride){
     ? primeiraParcela+(parcelaCons*(prazo-1))
     : parcelaCons*prazo;
 
-  // ── Financiamento bancário ──────────────────────────────────────────────────
-  // Fórmula: valorFinanciado × taxaMensal (sem %) ÷ prazo = parcela
-  // Exemplo: 21.000 × 2,42 = 50.820 ÷ 60 = R$847/mês
+  // ── Financiamento bancário (Tabela Price — juros compostos) ──────────────────
+  // PMT = PV × [i × (1+i)^n] / [(1+i)^n - 1]
   const entradaFin=Math.round(valor*0.30);
   const valorFinanciado=valor-entradaFin;
-  const totalJurosFin=taxaAnual>0 ? valorFinanciado*taxaAnual : valorFinanciado;
-  const parcelaFin=prazoFin>0 ? Math.round(totalJurosFin/prazoFin) : 0;
-  const totalFin=entradaFin+Math.round(totalJurosFin);   // entrada + total com juros
+  let parcelaFin=0;
+  if(prazoFin>0&&taxaM>0){
+    const fator=Math.pow(1+taxaM,prazoFin);
+    parcelaFin=Math.round(valorFinanciado*(taxaM*fator)/(fator-1));
+  } else if(prazoFin>0){
+    parcelaFin=Math.round(valorFinanciado/prazoFin);
+  }
+  const totalFin=entradaFin+(parcelaFin*prazoFin);
 
   const economia=totalFin-totalConsReal;
   const pct=totalFin>0?Math.round(Math.max(economia,0)/totalFin*100):0;
