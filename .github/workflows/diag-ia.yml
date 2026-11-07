@@ -13,10 +13,11 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           FIM=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          INI=$(date -u -d '-90 minutes' +%Y-%m-%dT%H:%M:%SZ)
-          SQL="select timestamp, event_message from function_logs where event_message like '%[gemini]%' order by timestamp desc limit 30"
-          curl -sS -G "https://api.supabase.com/v1/projects/uekeeutycmqsswrhspwv/analytics/endpoints/logs" \
-            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            --data-urlencode "sql=$SQL" --data-urlencode "iso_timestamp_start=$INI" --data-urlencode "iso_timestamp_end=$FIM" \
-            > out.json; echo "bytes: $(wc -c < out.json)"
-          python3 -c "import json; d=json.load(open('out.json')); print('chaves:', list(d.keys()) if isinstance(d,dict) else type(d)); print('erro:', str(d.get('error') or d.get('message'))[:800] if isinstance(d,dict) else ''); rows=(d.get('result') or []) if isinstance(d,dict) else []; print('linhas:', len(rows)); [print('LOG', r.get('timestamp'), '|', str(r.get('event_message'))[:700]) for r in rows]"
+          INI=$(date -u -d '-120 minutes' +%Y-%m-%dT%H:%M:%SZ)
+          for T in function_logs edge_function_logs function_console_logs functions_logs edge_logs_console deno_logs; do
+            SQL="select timestamp, event_message from $T where event_message like '%[gemini]%' order by timestamp desc limit 30"
+            curl -sS -G "https://api.supabase.com/v1/projects/uekeeutycmqsswrhspwv/analytics/endpoints/logs" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --data-urlencode "sql=$SQL" --data-urlencode "iso_timestamp_start=$INI" --data-urlencode "iso_timestamp_end=$FIM" > out.json
+            python3 -c "import json,sys; d=json.load(open('out.json')); e=d.get('error') or d.get('message'); rows=d.get('result') or []; print('TAB', sys.argv[1], 'erro:', str(e)[:300], 'linhas:', len(rows)); [print('LOG', r.get('timestamp'), '|', str(r.get('event_message'))[:700]) for r in rows]" "$T"
+          done
