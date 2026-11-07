@@ -19,4 +19,4 @@ jobs:
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             --data-urlencode "sql=$SQL" --data-urlencode "iso_timestamp_start=$INI" --data-urlencode "iso_timestamp_end=$FIM" \
             > out.json; echo "bytes: $(wc -c < out.json)"
-          python3 -c "import json; d=json.load(open('out.json')); print('chaves:', list(d.keys()) if isinstance(d,dict) else type(d)); print('erro:', str(d.get('error'))[:800] if isinstance(d,dict) else ''); rows=(d.get('result') or []) if isinstance(d,dict) else []; print('linhas:', len(rows)); [print('LOG', r.get('timestamp'), '|', str(r.get('event_message'))[:700]) for r in rows]"
+          python3 -c "import json; d=json.load(open('out.json')); print('chaves:', list(d.keys()) if isinstance(d,dict) else type(d)); print('erro:', str(d.get('error') or d.get('message'))[:800] if isinstance(d,dict) else ''); rows=(d.get('result') or []) if isinstance(d,dict) else []; print('linhas:', len(rows)); [print('LOG', r.get('timestamp'), '|', str(r.get('event_message'))[:700]) for r in rows]"
