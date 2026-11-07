@@ -648,14 +648,17 @@ async function baixarMidiaWA(midiaId: string, token: string): Promise<Uint8Array
 }
 
 async function transcreverAudio(audio: Uint8Array): Promise<string> {
-  if (!OPENAI_KEY) return ''
+  if (!GROQ_KEY && !OPENAI_KEY) return ''
+  // Groq (grátis) tem preferência; OpenAI fica de reserva
+  const base = GROQ_KEY ? GROQ_BASE : OPENAI_BASE
+  const chave = GROQ_KEY || OPENAI_KEY
   try {
     const form = new FormData()
     form.append('file', new Blob([audio], { type: 'audio/ogg' }), 'audio.ogg')
-    form.append('model', 'whisper-1')
+    form.append('model', GROQ_KEY ? 'whisper-large-v3-turbo' : 'whisper-1')
     form.append('language', 'pt')
-    const r = await fetch(`${OPENAI_BASE}/audio/transcriptions`, {
-      method: 'POST', headers: { Authorization: `Bearer ${OPENAI_KEY}` },
+    const r = await fetch(`${base}/audio/transcriptions`, {
+      method: 'POST', headers: { Authorization: `Bearer ${chave}` },
       body: form, signal: AbortSignal.timeout(60000),
     })
     if (!r.ok) { console.error('[Whisper] status', r.status, await r.text().catch(() => '')); return '' }
@@ -666,7 +669,7 @@ async function transcreverAudio(audio: Uint8Array): Promise<string> {
 
 /** Tenta transcrever um áudio do WhatsApp. Retorna o texto ou '' se falhar. */
 async function transcreverAudioWA(midiaId: string | null, numeroId: string): Promise<string> {
-  if (!midiaId || !OPENAI_KEY) return ''
+  if (!midiaId || (!GROQ_KEY && !OPENAI_KEY)) return ''
   const token = await tokenWAParaNumero(numeroId)
   if (!token) { console.error('[Audio] sem token para numero', numeroId); return '' }
   const audio = await baixarMidiaWA(midiaId, token)
@@ -774,7 +777,7 @@ function lerMarcas(t: string, totalImagens = 0) {
     if (i >= 0 && i < totalImagens && !imagens.includes(i) && imagens.length < 3) imagens.push(i)
   }
   const texto = t.replace(/\[\s*(TRANSFERIR|ENCERRAR)\s*\]/gi, '').replace(/\[\s*IMAGEM\s*:?\s*\d{1,2}\s*\]/gi, '')
-    .replace(/\[\s*AGENDAR\s+[^\]]*\]/gi, '')
+    .replace(/\[\s*AGENDAR\s+[^\]]*\]/gi, '').replace(/\[\s*PAUSA\s*\d{0,2}\s*\]/gi, '')
     .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 1500)
   return { texto, transferir, encerrar, imagens, dataAgendada }
 }
@@ -936,32 +939,78 @@ async function empresaDoNumero(numeroId: string): Promise<any> {
 function montarSistemaEntrevista(roteiro: string, empresa: string, nome: string, imagens: ImagemRoteiro[] = [], fase?: string) {
   const texto = (roteiro || '').trim().split('{{empresa}}').join(empresa).split('{{nome}}').join(primeiroNome(nome) || 'candidato')
   const instrucaoFase = fase === 'curriculo_agradecimento'
-    ? `\n\nINSTRUÇÃO ESPECIAL: O candidato acabou de enviar o currículo. Responda APENAS com um agradecimento breve e natural por ter enviado, dizendo que vai dar uma olhada. Não analise ainda. Não faça perguntas. Não envie imagem. Máximo 2 frases.`
+    ? `\n\nMOMENTO ATUAL: o candidato acabou de enviar o currículo. Responda SOMENTE com a mensagem do roteiro para quando o currículo chega (o agradecimento curto, dizendo que vai dar uma olhada). Não analise ainda, não convide ainda e não envie imagem.`
     : fase === 'curriculo_analise'
-    ? `\n\nINSTRUÇÃO ESPECIAL: Você acabou de receber o currículo do candidato e já agradeceu. Agora responda como se tivesse realmente analisado: diga que gostou, que acredita no potencial da pessoa para uma parceria, que não exige experiência pois ensinam tudo do zero. Convide para uma seleção presencial informando dia e horários disponíveis. Pergunte qual horário fica melhor. Não envie imagem neste momento.`
+    ? `\n\nMOMENTO ATUAL: você já agradeceu pelo currículo e agora "analisou". Envie a mensagem do roteiro para depois da análise do currículo (o convite para a seleção), usando o texto do roteiro quase palavra por palavra, e envie junto a imagem que o roteiro indica para esse momento.`
     : ''
   const instrucaoFds = ehFimDeSemana()
-    ? `\n\nINSTRUÇÃO DE FIM DE SEMANA: Hoje é fim de semana. Quando for convidar o candidato para seleção presencial ou quando o candidato quiser agendar, convide SEMPRE para segunda-feira (${proximaSegunda()}) às 09:00. Mencione que terá um café da manhã para recepcionar. Use um tom animado e natural, algo como: "Pela manhã consigo deixar entre 09:00 e 09:30, e vamos ter um café da manhã muito bom pra te recepcionar, só não pode atrasar rs. E caso dê tudo certo na segunda, conseguiria ficar pra fazer um treinamento até as 16:00? Somente um dia. Posso confirmar você na segunda às 09:00?" Adapte a frase ao contexto da conversa mas mantenha a essência: café da manhã às 09:00 na segunda, treinamento até 16:00.`
-    : ''
+    ? `\n\nREGRA DE FIM DE SEMANA (vale mais que os horários do roteiro): hoje é ${diaDaSemana() === 6 ? 'sábado' : 'domingo'}. Em qualquer convite ou agendamento, NÃO ofereça os horários de dia de semana do roteiro: convide SEMPRE para segunda-feira (${proximaSegunda()}) às 09:00, com o café da manhã e o treinamento até as 16:00, usando o texto do roteiro para fim de semana.`
+    : `\n\nHoje é dia de semana: siga os horários do roteiro normalmente. Não ofereça o horário de segunda às 09:00 com café da manhã, a menos que o candidato peça para remarcar para segunda-feira.`
   const instrucaoImagem = imagens.length
-    ? `\n\nSobre imagens: envie imagens APENAS na PRIMEIRA mensagem da conversa (quando cumprimentar o candidato pela primeira vez). NUNCA envie imagem depois de receber currículo ou no final da conversa.`
+    ? `\n\nSobre imagens: envie cada imagem exatamente no momento que o roteiro indicar, e nunca repita uma imagem que já foi enviada nesta conversa.`
     : ''
-  return `Você é a assistente virtual de entrevistas por WhatsApp da empresa ${empresa}.
+  return `Você conversa com candidatos a vaga de emprego pelo WhatsApp em nome da empresa ${empresa}.
 
 Regras que valem sempre:
-- Escreva em português do Brasil, com tom profissional e simpático.
-- Mensagens curtas: no máximo 3 frases por resposta e no máximo uma pergunta por vez.
+- O ROTEIRO ABAIXO MANDA: siga a persona, o tom, a ordem das etapas e os textos prontos do roteiro. Quando o roteiro tiver um texto pronto para a situação, use esse texto quase palavra por palavra, só trocando o nome e o horário.
+- Nunca diga que é inteligência artificial, assistente virtual ou robô.
+- Escreva em português do Brasil. Fora dos textos prontos do roteiro, seja breve e faça no máximo uma pergunta por vez.
 - Não peça CPF, documentos pessoais, senhas nem dados bancários.
+- Para mandar uma segunda mensagem alguns minutos depois (quando o roteiro pedir isso), escreva [PAUSA 3] entre a primeira e a segunda mensagem.
 - Se a pessoa quiser falar com alguém da equipe ou o assunto sair do roteiro: responda de forma breve e escreva [ENCERRAR] no final.
 - Se a pessoa pedir para não receber mais mensagens: peça desculpas e escreva [ENCERRAR] no final.
 - Não use [ENCERRAR] em nenhuma outra situação, a menos que a entrevista tenha terminado naturalmente.
-- IMPORTANTE: quando o candidato CONFIRMAR a data e horário da entrevista/seleção presencial, escreva no final da mensagem a marca [AGENDAR DD/MM/AAAA HH:MM] com a data e hora combinadas. Exemplo: se confirmou segunda dia 11/11/2026 às 09:00, escreva [AGENDAR 11/11/2026 09:00]. Use esta marca APENAS quando o candidato confirmar que vai.
+- IMPORTANTE: quando o candidato ESCOLHER ou CONFIRMAR a data e horário da entrevista/seleção presencial (inclusive ao remarcar), escreva no final da mensagem a marca [AGENDAR DD/MM/AAAA HH:MM] com a data e hora combinadas, calculando a data a partir de "Agora" abaixo. Exemplo: se combinou segunda dia 09/11/2026 às 09:00, escreva [AGENDAR 09/11/2026 09:00]. Use esta marca só nesse momento.
+- A confirmação da manhã do dia da entrevista é enviada automaticamente pelo sistema; você não precisa mandar. Se o candidato responder a ela, continue a conversa normalmente.
 
 Agora: ${agoraBrasilia()} (horário de Brasília).
 Candidato: ${nome || 'não informado'}.
 
 Roteiro da entrevista (siga):
 ${texto}${blocoImagens(imagens)}${instrucaoImagem}${instrucaoFase}${instrucaoFds}`
+}
+
+/** Envia a resposta da IA de entrevista: texto, imagens do roteiro (sem repetir) e
+ *  partes separadas por [PAUSA n] com alguns minutos de intervalo. */
+async function enviarRespostaEntrevista(ent: any, num: any, token: string, contato: string, bruto: string, imgsEnt: ImagemRoteiro[]) {
+  const { data: jaEnviadas } = await admin.from('ia_entrevista_msgs').select('conteudo')
+    .eq('entrevista_id', ent.id).like('conteudo', '[imagem enviada:%')
+  const enviadas = new Set(((jaEnviadas || []) as any[]).map((m) => String(m.conteudo)))
+  const partes = String(bruto || '').split(/\[\s*PAUSA\s*(\d{1,2})?\s*\]/i)
+  // split com grupo de captura: [texto, minutos, texto, minutos, texto...]
+  let encerrar = false, dataAgendada: string | null = null, msgs = 0
+  for (let p = 0; p < partes.length; p += 2) {
+    if (p > 0) {
+      const min = Math.min(Math.max(Number(partes[p - 1]) || 3, 1), 3)
+      await esperar(min * 60000)
+    }
+    const m = lerMarcas(partes[p] || '', imgsEnt.length)
+    if (m.encerrar) encerrar = true
+    if (m.dataAgendada) dataAgendada = m.dataAgendada
+    if (m.texto) {
+      await waTexto({ ...num, token_efetivo: token }, contato, m.texto)
+      await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: m.texto })
+      msgs++
+    }
+    for (const i of m.imagens) {
+      const im = imgsEnt[i]
+      const marca = `[imagem enviada: ${im.descricao}]`
+      if (enviadas.has(marca)) continue
+      const env = await waImagem({ ...num, token_efetivo: token }, contato, im.url)
+      if (!env.ok) console.error('[IA-Entrevista] imagem', env.erro)
+      await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: `${marca}${env.ok ? '' : ' (o WhatsApp recusou)'}` })
+      enviadas.add(marca)
+    }
+  }
+  const upd: any = { mensagens_ia: (ent.mensagens_ia || 0) + msgs, atualizado_em: new Date().toISOString() }
+  if (dataAgendada) {
+    upd.data_agendada = dataAgendada
+    upd.followup_enviado = null // remarcou: a confirmação da manhã vale para a nova data
+    console.log(`[entrevista] agendada para ${dataAgendada} contato=${contato}`)
+  }
+  if (encerrar) upd.status = 'encerrada'
+  await admin.from('ia_entrevistas').update(upd).eq('id', ent.id)
+  ent.mensagens_ia = upd.mensagens_ia
 }
 
 async function historicoEntrevista(entrevistaId: string) {
@@ -1065,19 +1114,7 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
       { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, ent.nome || nome || '', imgsEnt, 'curriculo_analise') },
       ...hist2,
     ])
-    if (resp2.ok) {
-      const { texto: txt2, encerrar: enc2 } = lerMarcas(resp2.texto, 0) // sem imagens
-      if (txt2) {
-        await waTexto({ ...(num as any), token_efetivo: token }, contato, txt2)
-        await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: txt2 })
-        await admin.from('ia_entrevistas').update({
-          mensagens_ia: (ent.mensagens_ia || 0) + 1, atualizado_em: new Date().toISOString(),
-        }).eq('id', ent.id)
-      }
-      if (enc2) {
-        await admin.from('ia_entrevistas').update({ status: 'encerrada', atualizado_em: new Date().toISOString() }).eq('id', ent.id)
-      }
-    }
+    if (resp2.ok) await enviarRespostaEntrevista(ent, num, token, contato, resp2.texto, imgsEnt)
     return true
   }
 
@@ -1089,27 +1126,7 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
   ])
   if (!resp.ok) { console.error('[IA-Entrevista]', resp.erro); return true }
 
-  const { texto, encerrar, imagens, dataAgendada } = lerMarcas(resp.texto, imgsEnt.length)
-
-  if (texto) {
-    const env = await waTexto({ ...(num as any), token_efetivo: token }, contato, texto)
-    await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: texto })
-    const upd: any = { mensagens_ia: (ent.mensagens_ia || 0) + 1, atualizado_em: new Date().toISOString() }
-    if (dataAgendada) { upd.data_agendada = dataAgendada; console.log(`[entrevista] agendada para ${dataAgendada} contato=${contato}`) }
-    await admin.from('ia_entrevistas').update(upd).eq('id', ent.id)
-  }
-  // Imagens só na primeira mensagem da conversa
-  for (const i of (primeiraMsg ? imagens : [])) {
-    const im = imgsEnt[i]
-    const env = await waImagem({ ...(num as any), token_efetivo: token }, contato, im.url)
-    if (!env.ok) console.error('[IA-Entrevista] imagem', env.erro)
-    await admin.from('ia_entrevista_msgs').insert({ entrevista_id: ent.id, direcao: 'saida', conteudo: `[imagem enviada: ${im.descricao}]${env.ok ? '' : ' (o WhatsApp recusou)'}` })
-  }
-
-  if (encerrar) {
-    await admin.from('ia_entrevistas').update({ status: 'encerrada', atualizado_em: new Date().toISOString() }).eq('id', ent.id)
-  }
-
+  await enviarRespostaEntrevista(ent, num, token, contato, resp.texto, imgsEnt)
   return true // Indica que foi tratado como entrevista (não criar lead)
 }
 
@@ -1389,25 +1406,23 @@ async function processarFila() {
   return { ok: true, tarefas: tarefas.length, feitas }
 }
 
-// ─── Follow-up automático: confirmar entrevistas agendadas para amanhã ─────
+// ─── Follow-up automático: "bom dia" de confirmação na manhã do dia da entrevista ─
 async function followUpEntrevistas() {
-  if (!(await rpc('integ_srv_cron_pode', { p_chave: 'followup_entrevistas', p_segundos: 4 * 3600 }))) return
-  // Buscar entrevistas agendadas para amanhã (horário de Brasília)
   const agora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
-  const amanha = new Date(agora)
-  amanha.setDate(amanha.getDate() + 1)
-  const inicioAmanha = `${amanha.getFullYear()}-${String(amanha.getMonth() + 1).padStart(2, '0')}-${String(amanha.getDate()).padStart(2, '0')}T00:00:00-03:00`
-  const fimAmanha = `${amanha.getFullYear()}-${String(amanha.getMonth() + 1).padStart(2, '0')}-${String(amanha.getDate()).padStart(2, '0')}T23:59:59-03:00`
+  const minutosDoDia = agora.getHours() * 60 + agora.getMinutes()
+  if (minutosDoDia < 8 * 60 + 30 || minutosDoDia >= 12 * 60) return // só entre 08:30 e 12:00
+  if (!(await rpc('integ_srv_cron_pode', { p_chave: 'followup_entrevistas', p_segundos: 300 }))) return
+  const dia = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}`
 
   const { data: entrevistas } = await admin.from('ia_entrevistas')
     .select('*')
-    .gte('data_agendada', inicioAmanha)
-    .lte('data_agendada', fimAmanha)
+    .gte('data_agendada', new Date().toISOString()) // ainda vai acontecer
+    .lte('data_agendada', `${dia}T23:59:59-03:00`)  // e é hoje
     .is('followup_enviado', null)
     .in('status', ['ativa', 'com_a_equipe'])
 
-  if (!entrevistas?.length) return console.log('[followup] nenhuma entrevista agendada pra amanhã')
-  console.log(`[followup] ${entrevistas.length} entrevista(s) agendada(s) pra amanhã`)
+  if (!entrevistas?.length) return
+  console.log(`[followup] ${entrevistas.length} entrevista(s) hoje para confirmar`)
 
   for (const ent of entrevistas as any[]) {
     try {
@@ -1416,13 +1431,11 @@ async function followUpEntrevistas() {
       const token = (num as any).token || (await conexaoMeta(ent.empresa_id))?.token
       if (!token) continue
 
-      const empresa = await nomeEmpresa(ent.empresa_id)
       const dataAgendada = new Date(ent.data_agendada)
       const horaFormatada = dataAgendada.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
-      const diaFormatado = dataAgendada.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit' })
 
-      const nome = primeiroNome(ent.nome) || 'candidato'
-      const msg = `Olá ${nome}! 😊 Tudo bem?\n\nPassando pra confirmar sua presença amanhã (${diaFormatado}) às ${horaFormatada} aqui na ${empresa}.\n\nVocê confirma? Estamos te esperando! 🤝`
+      const nome = primeiroNome(ent.nome) || ''
+      const msg = `Bom dia${nome ? ' ' + nome : ''}! Tudo bem? Vou ficar no seu aguardo hoje às ${horaFormatada}, tá combinado? Caso tenha qualquer imprevisto me avisa aqui 🙏`
 
       const env = await waTexto({ ...(num as any), token_efetivo: token }, ent.contato, msg)
       if (env.ok) {
