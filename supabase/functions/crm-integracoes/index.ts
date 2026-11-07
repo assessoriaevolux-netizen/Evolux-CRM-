@@ -23,13 +23,15 @@ const APP_SECRET = (Deno.env.get('META_APP_SECRET') ?? '').trim()
 const LOGIN_CONFIG_ID = (Deno.env.get('META_LOGIN_CONFIG_ID') ?? '').trim()
 const OPENAI_KEY = (Deno.env.get('OPENAI_API_KEY') ?? '').trim()
 const GEMINI_KEY = (Deno.env.get('GEMINI_API_KEY') ?? '').trim()
-const MODELO_PADRAO = (Deno.env.get('OPENAI_MODEL') ?? '').trim() || (GEMINI_KEY ? 'gemini-flash-latest' : 'gpt-6-luna')
-const IA_PROVIDER = GEMINI_KEY ? 'gemini' : 'openai' // Gemini tem prioridade se a chave existir
+const GROQ_KEY = (Deno.env.get('GROQ_API_KEY') ?? '').trim()
+const MODELO_PADRAO = (Deno.env.get('OPENAI_MODEL') ?? '').trim() || (GROQ_KEY ? 'llama-3.3-70b-versatile' : GEMINI_KEY ? 'gemini-flash-latest' : 'gpt-6-luna')
+const IA_PROVIDER = GROQ_KEY ? 'groq' : GEMINI_KEY ? 'gemini' : 'openai' // Groq > Gemini > OpenAI
 const GRAPH_VERSAO = (Deno.env.get('META_GRAPH_VERSION') ?? '').trim() || 'v25.0'
 // (as três abaixo só mudam em teste)
 const GRAPH_BASE = (Deno.env.get('META_GRAPH_URL') || 'https://graph.facebook.com').replace(/\/$/, '')
 const DIALOGO_BASE = (Deno.env.get('META_DIALOG_URL') || 'https://www.facebook.com').replace(/\/$/, '')
 const OPENAI_BASE = (Deno.env.get('OPENAI_URL') || 'https://api.openai.com/v1').replace(/\/$/, '')
+const GROQ_BASE = 'https://api.groq.com/openai/v1'
 
 const URL_CALLBACK = `${SUPABASE_URL}/functions/v1/meta-callback`
 const URL_WEBHOOK = `${SUPABASE_URL}/functions/v1/crm-integracoes`
@@ -512,6 +514,43 @@ async function perguntarGemini(modelo: string, mensagens: { role: string; conten
   return ultimo
 }
 
+// ── Groq (ultra-rápido, grátis, API compatível com OpenAI) ──
+const GROQ_MODELOS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it']
+async function perguntarGroq(modelo: string, mensagens: { role: string; content: string }[]) {
+  if (!GROQ_KEY) return { ok: false, erro: 'A chave do Groq não está configurada (segredo GROQ_API_KEY).' } as any
+  // Se o modelo pedido não é Groq, usa o padrão
+  const modeloGroq = GROQ_MODELOS.includes(modelo) ? modelo : GROQ_MODELOS[0]
+  const fila = [modeloGroq, ...GROQ_MODELOS.filter(m => m !== modeloGroq)]
+  for (const mod of fila) {
+    let r: Response
+    try {
+      r = await fetch(`${GROQ_BASE}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: mod, messages: mensagens, max_tokens: 4096, temperature: 0.7 }),
+        signal: AbortSignal.timeout(30000),
+      })
+    } catch (e) {
+      console.error(`[groq] timeout/rede ${mod}:`, (e as Error)?.message)
+      continue
+    }
+    const j: any = await r.json().catch(() => ({}))
+    if (r.ok) {
+      const texto = String(j?.choices?.[0]?.message?.content || '').trim()
+      if (texto) {
+        console.log(`[groq] ok modelo=${mod} tokens=${j?.usage?.total_tokens || '?'}`)
+        return { ok: true, texto, uso: j?.usage || {} }
+      }
+      continue // resposta vazia, tenta outro modelo
+    }
+    console.warn(`[groq] erro ${r.status} modelo=${mod}:`, JSON.stringify(j?.error || j).slice(0, 200))
+    if (r.status === 429 || r.status >= 500) { await esperar(1500); continue } // rate limit ou erro temporário
+    if (r.status === 404) continue // modelo não disponível
+    return { ok: false, status: r.status, erro: `Erro no Groq (${r.status}): ${j?.error?.message || 'erro desconhecido'}` }
+  }
+  return { ok: false, erro: 'Groq não conseguiu responder com nenhum modelo.' }
+}
+
 // ── OpenAI ──
 async function perguntarOpenAI(modelo: string, mensagens: { role: string; content: string }[]) {
   if (!OPENAI_KEY) return { ok: false, erro: 'A chave da OpenAI não está configurada no Supabase (segredo OPENAI_API_KEY).' } as any
@@ -547,16 +586,25 @@ async function perguntarOpenAI(modelo: string, mensagens: { role: string; conten
   return { ok: false, erro: 'A OpenAI não conseguiu responder.' }
 }
 
-// ── Roteador: escolhe Gemini ou OpenAI automaticamente ──
+// ── Roteador: escolhe Groq > Gemini > OpenAI automaticamente ──
 async function perguntarIA(modelo: string, mensagens: { role: string; content: string }[]) {
   // Se o modelo é explicitamente Gemini, usa Gemini
   if (ehModeloGemini(modelo)) return perguntarGemini(modelo, mensagens)
-  // Se tem chave Gemini e não tem OpenAI, usa Gemini com modelo padrão
-  // Se tem chave Gemini (prioridade sobre OpenAI), usa Gemini
+  // Se o modelo é explicitamente Groq, usa Groq
+  if (GROQ_MODELOS.includes(modelo)) return perguntarGroq(modelo, mensagens)
+  // Prioridade: Groq (mais rápido e grátis) > Gemini > OpenAI
+  if (GROQ_KEY) {
+    const res = await perguntarGroq(modelo, mensagens)
+    if (res.ok) return res
+    // Se Groq falhou (rate limit etc), tenta Gemini como fallback
+    console.warn('[ia] Groq falhou, tentando fallback...')
+    if (GEMINI_KEY) return perguntarGemini(MODELO_PADRAO.startsWith('gemini-') ? MODELO_PADRAO : 'gemini-flash-latest', mensagens)
+    if (OPENAI_KEY) return perguntarOpenAI(modelo, mensagens)
+    return res // retorna o erro do Groq se não tem fallback
+  }
   if (GEMINI_KEY) return perguntarGemini(MODELO_PADRAO.startsWith('gemini-') ? MODELO_PADRAO : 'gemini-flash-latest', mensagens)
-  // Se tem OpenAI, usa OpenAI
   if (OPENAI_KEY) return perguntarOpenAI(modelo, mensagens)
-  return { ok: false, erro: 'Nenhuma chave de IA configurada. Adicione GEMINI_API_KEY ou OPENAI_API_KEY nos segredos do Supabase.' }
+  return { ok: false, erro: 'Nenhuma chave de IA configurada. Adicione GROQ_API_KEY, GEMINI_API_KEY ou OPENAI_API_KEY nos segredos do Supabase.' }
 }
 
 // ─── Transcrição de áudio (Whisper) ─────────────────────────────────────────
@@ -1348,7 +1396,7 @@ async function assinarState(dados: Record<string, unknown>) {
 const ACOES: Record<string, (ctx: Ctx, c: any, req: Request) => Promise<unknown>> = {
   // Situação da configuração no servidor (para a tela de Configurações apontar o que falta)
   async status(ctx) {
-    const base: any = { meta_app: !!(APP_ID && APP_SECRET), login_config: !!LOGIN_CONFIG_ID, openai: !!OPENAI_KEY, gemini: !!GEMINI_KEY, ia_provider: IA_PROVIDER, modelo_padrao: MODELO_PADRAO, versao_graph: GRAPH_VERSAO }
+    const base: any = { meta_app: !!(APP_ID && APP_SECRET), login_config: !!LOGIN_CONFIG_ID, openai: !!OPENAI_KEY, gemini: !!GEMINI_KEY, groq: !!GROQ_KEY, ia_provider: IA_PROVIDER, modelo_padrao: MODELO_PADRAO, versao_graph: GRAPH_VERSAO }
     if (ctx.gestor || ctx.plataforma) { base.webhook_url = URL_WEBHOOK; base.callback_url = URL_CALLBACK }
     if (ctx.plataforma) base.verify_token = APP_SECRET ? await tokenVerificacao() : null
     return base

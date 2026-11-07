@@ -33,7 +33,7 @@ async function renderIA(){
   const msgs=doMes.reduce((s,c)=>s+(c.mensagens_ia||0),0);
   let h=`<div class="ia2-topo"><div class="ads2-tit"><i class="ti ti-robot"></i>IA de atendimento</div>
     <div class="integ2-mini">Este mês: <strong>${msgs}</strong> resposta${msgs!==1?'s':''} da IA em <strong>${doMes.length}</strong> conversa${doMes.length!==1?'s':''} · custo da IA ≈ <strong>US$ ${custo.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></div></div>`;
-  if(IA.servidor&&!IA.servidor.openai&&!IA.servidor.gemini) h+=`<div class="integ2-aviso erro"><i class="ti ti-key"></i><div>Falta a chave da IA no Supabase (segredo <code>GEMINI_API_KEY</code>). Sem ela a IA não responde.</div></div>`;
+  if(IA.servidor&&!IA.servidor.openai&&!IA.servidor.gemini&&!IA.servidor.groq) h+=`<div class="integ2-aviso erro"><i class="ti ti-key"></i><div>Falta a chave da IA no Supabase (segredo <code>GROQ_API_KEY</code> ou <code>GEMINI_API_KEY</code>). Sem ela a IA não responde.</div></div>`;
   if(!integNumeros().length) h+=`<div class="integ2-aviso"><i class="ti ti-brand-whatsapp"></i><div>A IA conversa pelo WhatsApp: conecte um número em Configurações → WhatsApp Business.${isGestor()?` <button class="btn bg bsm" onclick="integIrPara('whatsapp-cfg')">Configurar</button>`:''}</div></div>`;
   h+=`<div class="ia2-cards">${Object.keys(IA_TIPOS).map(t=>_iaCard(t,gerencia)).join('')}</div>`;
   if(gerencia) h+=_iaTestePainel();
@@ -58,7 +58,7 @@ function _iaCard(tipo,gerencia){
       <div class="ia2-card-txt"><div class="ia2-card-tit">${T.tit} <span class="integ2-st ${ligada?'ok':'pend'}">${ligada?'ligada':'desligada'}</span></div><div class="integ2-mini">${T.desc}</div></div>
       ${gerencia?integToggle('ia-on-'+tipo,ligada,`iaLigar('${tipo}',this.checked)`):''}
     </div>
-    <div class="integ2-mini ia2-resumo">${resumo} · modelo ${IA.servidor&&IA.servidor.gemini?'Gemini':esc(r.modelo||'gpt-6-luna')}</div>
+    <div class="integ2-mini ia2-resumo">${resumo} · modelo ${IA.servidor&&IA.servidor.groq?'Groq':IA.servidor&&IA.servidor.gemini?'Gemini':esc(r.modelo||'gpt-6-luna')}</div>
     ${r.ultimo_erro?`<div class="integ2-aviso erro"><i class="ti ti-alert-triangle"></i><div>${esc(r.ultimo_erro)} <span class="integ2-mini">(${esc(integHaQuanto(r.ultimo_erro_em))})</span></div></div>`:''}
     ${gerencia?(ed?_iaEditor(tipo):`<div class="ia2-acoes"><button class="btn bg bsm" onclick="IA.editando='${tipo}';renderIA()"><i class="ti ti-pencil"></i>Editar roteiro</button><button class="btn bg bsm" onclick="IA.teste.tipo='${tipo}';IA.teste.hist=[];renderIA().then(()=>document.getElementById('ia2-teste')?.scrollIntoView({behavior:'smooth'}))"><i class="ti ti-flask"></i>Testar</button></div>`):''}
   </div>`;
