@@ -435,7 +435,7 @@ async function descobrirModeloGemini(): Promise<string> {
       .filter((m: any) => (m?.supportedGenerationMethods || []).includes('generateContent'))
       .map((m: any) => String(m?.name || '').replace(/^models\//, ''))
       .filter((n: string) => n.startsWith('gemini-') && !/(image|tts|audio|live|embedding|vision|thinking-exp)/i.test(n))
-    const preferidos = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-3-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite']
+    const preferidos = ['gemini-flash-latest', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3-flash', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-2.5-flash']
     geminiModeloDescoberto = preferidos.find((p) => nomes.includes(p))
       || nomes.find((n) => /flash/.test(n) && !/preview|exp/.test(n))
       || nomes.find((n) => /flash/.test(n)) || nomes[0] || ''
