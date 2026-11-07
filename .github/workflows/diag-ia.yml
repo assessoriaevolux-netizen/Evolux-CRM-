@@ -15,7 +15,7 @@ jobs:
           FIM=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           INI=$(date -u -d '-90 minutes' +%Y-%m-%dT%H:%M:%SZ)
           SQL="select timestamp, event_message from function_logs where event_message like '%[gemini]%' order by timestamp desc limit 30"
-          curl -sS -G "https://api.supabase.com/v1/projects/uekeeutycmqsswrhspwv/analytics/endpoints/logs.all" \
+          curl -sS -G "https://api.supabase.com/v1/projects/uekeeutycmqsswrhspwv/analytics/endpoints/logs" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             --data-urlencode "sql=$SQL" --data-urlencode "iso_timestamp_start=$INI" --data-urlencode "iso_timestamp_end=$FIM" \
             > out.json; echo "bytes: $(wc -c < out.json)"
