@@ -18,4 +18,5 @@ jobs:
           curl -sS -G "https://api.supabase.com/v1/projects/uekeeutycmqsswrhspwv/analytics/endpoints/logs.all" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             --data-urlencode "sql=$SQL" --data-urlencode "iso_timestamp_start=$INI" --data-urlencode "iso_timestamp_end=$FIM" \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); rows=d.get('result') or []; print('erro:', d.get('error')) if d.get('error') else None; [print(r.get('timestamp'), '|', str(r.get('event_message'))[:600]) for r in rows]"
+            > out.json; echo "bytes: $(wc -c < out.json)"
+          python3 -c "import json; d=json.load(open('out.json')); print('chaves:', list(d.keys()) if isinstance(d,dict) else type(d)); print('erro:', str(d.get('error'))[:800] if isinstance(d,dict) else ''); rows=(d.get('result') or []) if isinstance(d,dict) else []; print('linhas:', len(rows)); [print('LOG', r.get('timestamp'), '|', str(r.get('event_message'))[:700]) for r in rows]"
