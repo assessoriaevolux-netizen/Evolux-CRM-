@@ -1,0 +1,21 @@
+name: Diagnóstico IA (temporário)
+
+# Lê só as linhas "[gemini]" dos logs da função crm-integracoes (sem dados de leads).
+on:
+  workflow_dispatch:
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Logs do Gemini
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          FIM=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          INI=$(date -u -d '-90 minutes' +%Y-%m-%dT%H:%M:%SZ)
+          SQL="select timestamp, event_message from function_logs where event_message like '%[gemini]%' order by timestamp desc limit 30"
+          curl -sS -G "https://api.supabase.com/v1/projects/uekeeutycmqsswrhspwv/analytics/endpoints/logs.all" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --data-urlencode "sql=$SQL" --data-urlencode "iso_timestamp_start=$INI" --data-urlencode "iso_timestamp_end=$FIM" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); rows=d.get('result') or []; print('erro:', d.get('error')) if d.get('error') else None; [print(r.get('timestamp'), '|', str(r.get('event_message'))[:600]) for r in rows]"

@@ -448,6 +448,7 @@ async function descobrirModeloGemini(): Promise<string> {
 async function perguntarGemini(modelo: string, mensagens: { role: string; content: string }[], jaTentouOutro = false): Promise<any> {
   if (!GEMINI_KEY) return { ok: false, erro: 'A chave do Gemini não está configurada no Supabase (segredo GEMINI_API_KEY).' } as any
   if (geminiModeloDescoberto && !jaTentouOutro) modelo = geminiModeloDescoberto
+  console.log('[gemini] chamando', modelo, 'chave=' + GEMINI_KEY.slice(0, 3) + '…(' + GEMINI_KEY.length + ')')
   // Converter formato OpenAI → Gemini
   const system = mensagens.filter((m) => m.role === 'system').map((m) => m.content).join('\n')
   const contents = mensagens.filter((m) => m.role !== 'system').map((m) => ({
@@ -457,21 +458,24 @@ async function perguntarGemini(modelo: string, mensagens: { role: string; conten
   const corpo = {
     system_instruction: system ? { parts: [{ text: system }] } : undefined,
     contents,
-    generationConfig: { maxOutputTokens: 1500, temperature: 0.7 },
+    generationConfig: { maxOutputTokens: 8192, temperature: 0.7 },
   }
   let r: Response
   try {
     r = await fetch(`${GEMINI_BASE}/models/${encodeURIComponent(modelo)}:generateContent`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY },
-      body: JSON.stringify(corpo), signal: AbortSignal.timeout(60000),
+      body: JSON.stringify(corpo), signal: AbortSignal.timeout(40000),
     })
   } catch (e) {
+    console.log('[gemini] sem resposta', modelo, String((e as Error)?.message || e))
     return { ok: false, erro: 'O Gemini não respondeu (' + String((e as Error)?.message || e) + ').' }
   }
   const j: any = await r.json().catch(() => ({}))
   if (r.ok) {
-    const texto = String(j?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim()
-    if (!texto) return { ok: false, erro: 'O Gemini retornou uma resposta vazia.' }
+    const cand = j?.candidates?.[0] || {}
+    const texto = ((cand?.content?.parts || []) as any[]).filter((p) => !p?.thought && p?.text).map((p) => String(p.text)).join('').trim()
+    console.log('[gemini] ok', modelo, 'finish=' + String(cand?.finishReason || ''), 'chars=' + texto.length)
+    if (!texto) return { ok: false, erro: `O Gemini retornou uma resposta vazia (${String(cand?.finishReason || j?.promptFeedback?.blockReason || 'sem motivo')}).` }
     return { ok: true, texto, uso: j?.usageMetadata || {} }
   }
   const err = j?.error || {}
