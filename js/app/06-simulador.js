@@ -280,17 +280,13 @@ function calcSim(parcelaOverride){
     ? primeiraParcela+(parcelaCons*(prazo-1))
     : parcelaCons*prazo;
 
-  // ── Financiamento bancário (Tabela Price — juros compostos) ──────────────────
-  // PMT = PV × [i × (1+i)^n] / [(1+i)^n - 1]
+  // ── Financiamento bancário (juros simples sobre o valor financiado) ──────────
+  // Juros de cada mês = valorFinanciado × taxa a.m. → quanto maior o prazo, mais juros.
+  // parcela = valorFinanciado ÷ prazo + valorFinanciado × taxa
+  // Ex.: 21.000 em 60x a 2,42% a.m. → 350 + 508 = R$858/mês (total 51.492)
   const entradaFin=Math.round(valor*0.30);
   const valorFinanciado=valor-entradaFin;
-  let parcelaFin=0;
-  if(prazoFin>0&&taxaM>0){
-    const fator=Math.pow(1+taxaM,prazoFin);
-    parcelaFin=Math.round(valorFinanciado*(taxaM*fator)/(fator-1));
-  } else if(prazoFin>0){
-    parcelaFin=Math.round(valorFinanciado/prazoFin);
-  }
+  const parcelaFin=prazoFin>0 ? Math.round(valorFinanciado/prazoFin + valorFinanciado*taxaM) : 0;
   const totalFin=entradaFin+(parcelaFin*prazoFin);
 
   const economia=totalFin-totalConsReal;
@@ -320,7 +316,7 @@ function calcSim(parcelaOverride){
         <div class="rcrow"><span class="rcl">Valor do bem</span><span class="rcv">${fmtR(valor)}</span></div>
         <div class="rcrow" style="background:var(--rs,rgba(220,50,50,.08));border-radius:6px;padding:6px 8px;margin:4px 0"><span class="rcl" style="color:var(--r);font-weight:700">Entrada obrigatória (30%)</span><span class="rcv" style="color:var(--r);font-weight:700;font-size:15px">${fmtR(entradaFin)}</span></div>
         <div class="rcrow"><span class="rcl">Valor financiado (70%)</span><span class="rcv">${fmtR(valorFinanciado)}</span></div>
-        <div class="rcrow"><span class="rcl">Parcela/mês (Price)</span><span class="rcv" style="color:var(--r);font-weight:700;font-size:15px">${fmtR(parcelaFin)}</span></div>
+        <div class="rcrow"><span class="rcl">Parcela/mês</span><span class="rcv" style="color:var(--r);font-weight:700;font-size:15px">${fmtR(parcelaFin)}</span></div>
         <div class="rcrow"><span class="rcl">Prazo</span><span class="rcv">${prazoFin} meses</span></div>
         <div class="rcrow"><span class="rcl">Taxa de juros</span><span class="rcv">${taxaAnual}% a.m.</span></div>
         <div class="rcrow" style="margin-top:7px;padding-top:7px;border-top:1px solid var(--rb)"><span class="rcl"><b>Total pago</b></span><span class="rcv" style="font-size:14px;font-weight:700">${fmtR(totalFin)}</span></div>
