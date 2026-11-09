@@ -970,11 +970,20 @@ Roteiro da entrevista (siga):
 ${texto}${blocoImagens(imagens)}${instrucaoImagem}${instrucaoFase}${instrucaoFds}`
 }
 
-// ─── Continuação da entrevista em outra execução ────────────────────────────
-// O Supabase corta cada execução da função em ~150s. Esperas longas (análise do
-// currículo ~3 min depois, [PAUSA 3]) viram uma nova chamada da própria função,
-// que espera no máximo ESPERA_MAX_MS e, se ainda faltar tempo, encadeia outra.
+// ─── Continuação da entrevista (análise ~3 min depois, [PAUSA n]) ───────────
+// O Supabase corta cada execução da função em ~150s, então nada espera minutos
+// dentro de uma execução. A próxima etapa vai para a tabela ia_entrevista_agenda,
+// que o banco (pg_cron) manda processar a cada minuto (?tarefa=entrevistas).
+// Sem a tabela, cai na chamada direta da própria função (encadeada em blocos).
 const ESPERA_MAX_MS = 100000
+async function agendarEntrevista(d: any, emMs: number): Promise<boolean> {
+  const { error } = await admin.from('ia_entrevista_agenda').insert({
+    entrevista_id: String(d.ent_id), tipo: d.tipo, dados: d, executar_em: new Date(Date.now() + emMs).toISOString(),
+  })
+  if (!error) return true
+  console.error('[entrevista] agenda indisponível, usando chamada direta:', error.message)
+  return continuarEntrevistaDepois({ ...d, espera_ms: emMs })
+}
 async function tokenInterno() { return hex(await hmac(SERVICE_KEY, 'evolux-entrevista-continuar')) }
 async function continuarEntrevistaDepois(dados: any): Promise<boolean> {
   try {
@@ -1019,16 +1028,16 @@ async function executarContinuacao(d: any) {
       await enviarRespostaEntrevista(e, num, token, d.contato, String(d.bruto || ''), imgsEnt, false, !!d.agendado)
       return
     }
-    if (d.tipo === 'analise') {
+    if (d.tipo === 'analise' || d.tipo === 'responder') {
       const empresa = await nomeEmpresa(e.empresa_id)
       const modelo = modeloValido(rot.modelo) || MODELO_PADRAO
       const hist = await historicoEntrevista(e.id)
       const resp = await perguntarIA(modelo, [
-        { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, d.nome || e.nome || '', imgsEnt, 'curriculo_analise') },
+        { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, d.nome || e.nome || '', imgsEnt, d.tipo === 'analise' ? 'curriculo_analise' : undefined) },
         ...hist,
       ])
-      if (resp.ok) await enviarRespostaEntrevista(e, num, token, d.contato, resp.texto, imgsEnt)
-      else console.error('[entrevista] análise', resp.erro)
+      if (resp.ok) await enviarRespostaEntrevista(e, num, token, d.contato || e.contato, resp.texto, imgsEnt)
+      else console.error('[entrevista]', d.tipo, resp.erro)
     }
   } finally {
     if (d.tipo === 'analise') await admin.from('integ_cron').delete().eq('chave', 'entocup:' + d.ent_id)
@@ -1088,10 +1097,10 @@ async function enviarRespostaEntrevista(ent: any, num: any, token: string, conta
   }
   if (depoisTxt.trim()) {
     const min = Math.min(Math.max(Number(mp?.[1]) || 3, 1), 3)
-    await continuarEntrevistaDepois({
+    await agendarEntrevista({
       tipo: 'resto', ent_id: ent.id, numero_id: ent.phone_number_id, contato, bruto: depoisTxt,
-      agendado: temAgendamento, espera_ms: min * 60000,
-    })
+      agendado: temAgendamento,
+    }, min * 60000)
   }
   const upd: any = { mensagens_ia: (ent.mensagens_ia || 0) + msgs, atualizado_em: new Date().toISOString() }
   if (dataAgendada) {
@@ -1166,7 +1175,7 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
   // (a mensagem nova já está no histórico que ele vai ler)
   const chaveOcupada = 'entocup:' + ent.id
   const { data: ocup } = await admin.from('integ_cron').select('ultimo').eq('chave', chaveOcupada).maybeSingle()
-  if (ocup && Date.now() - new Date((ocup as any).ultimo).getTime() < 6 * 60000) return true
+  if (ocup && Date.now() - new Date((ocup as any).ultimo).getTime() < 10 * 60000) return true
 
   // Limite de mensagens
   const limite = Math.max(2, Math.min(60, Number(rot.config?.limite_mensagens) || 30))
@@ -1203,10 +1212,9 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
       ])
       if (resp1.ok) await enviarRespostaEntrevista(ent, num, token, contato, resp1.texto, []) // sem imagens nesta fase
       // Fase 2 (~3 min depois): roda em outra execução, porque esta seria cortada pelo limite de tempo
-      agendouAnalise = await continuarEntrevistaDepois({
+      agendouAnalise = await agendarEntrevista({
         tipo: 'analise', ent_id: ent.id, numero_id: numeroId, contato, nome: ent.nome || nome || '',
-        espera_ms: 170000 + Math.floor(Math.random() * 20000),
-      })
+      }, 170000 + Math.floor(Math.random() * 20000))
     } finally {
       if (!agendouAnalise) await admin.from('integ_cron').delete().eq('chave', chaveOcupada)
     }
@@ -1481,6 +1489,58 @@ async function posVenda(t: any): Promise<{ status: string; erro: string | null }
   await atividade(t.empresa_id, lead.responsavel_id, 'ti-robot', `IA: mensagem de pós-venda enviada para ${lead.nome}`)
   return { status: 'feito', erro: null }
 }
+// ─── Rodada de entrevistas (pg_cron a cada minuto) ──────────────────────────
+async function rodadaEntrevistas() {
+  if (!(await rpc('integ_srv_cron_pode', { p_chave: 'rodada_entrevistas', p_segundos: 40 }))) return { ok: true, pulado: true }
+  let feitas = 0
+  const { data: devidas, error } = await admin.from('ia_entrevista_agenda').select('*')
+    .eq('status', 'pendente').lte('executar_em', new Date().toISOString()).order('executar_em').limit(20)
+  if (error) console.error('[agenda entrevista]', error.message)
+  for (const j of (devidas || []) as any[]) {
+    const { data: pego } = await admin.from('ia_entrevista_agenda').update({ status: 'processando' }).eq('id', j.id).eq('status', 'pendente').select('id')
+    if (!pego?.length) continue
+    let st = 'feito'
+    try { await executarContinuacao({ ...(j.dados || {}), tipo: j.tipo, ent_id: j.entrevista_id, espera_ms: 0 }) }
+    catch (e) { st = 'erro'; console.error('[agenda entrevista] tarefa', j.id, e) }
+    await admin.from('ia_entrevista_agenda').update({ status: st, feito_em: new Date().toISOString() }).eq('id', j.id)
+    feitas++
+  }
+  const retomadas = await retomarEntrevistasParadas().catch((e) => { console.error('[retomar]', e); return 0 })
+  await followUpEntrevistas().catch((e) => console.error('[followup]', e))
+  return { ok: true, feitas, retomadas }
+}
+
+/** Conversas que ficaram sem continuação (ex.: "recebi seu currículo" sem a análise,
+ *  ou mensagem do candidato sem resposta): a IA retoma de onde parou. Uma vez por mensagem. */
+async function retomarEntrevistasParadas() {
+  const desde = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+  const { data: ents } = await admin.from('ia_entrevistas').select('*')
+    .eq('status', 'ativa').gte('atualizado_em', desde).order('atualizado_em', { ascending: false }).limit(100)
+  let n = 0
+  for (const e of (ents || []) as any[]) {
+    if (n >= 8) break // poucas por rodada, pra caber no tempo da execução
+    const { data: ult } = await admin.from('ia_entrevista_msgs').select('id,direcao,conteudo,criado_em')
+      .eq('entrevista_id', e.id).order('criado_em', { ascending: false }).limit(1)
+    const m = (ult as any[])?.[0]
+    if (!m) continue
+    const idade = Date.now() - new Date(m.criado_em).getTime()
+    let tipo = ''
+    if (m.direcao === 'saida' && /recebi (o )?seu curriculo/.test(normalizarMsg(m.conteudo)) && idade > 4 * 60000) tipo = 'analise'
+    else if (m.direcao === 'entrada' && idade > 2 * 60000) tipo = 'responder'
+    if (!tipo) continue
+    const { data: ocup } = await admin.from('integ_cron').select('ultimo').eq('chave', 'entocup:' + e.id).maybeSingle()
+    if (ocup && Date.now() - new Date((ocup as any).ultimo).getTime() < 10 * 60000) continue
+    const { count } = await admin.from('ia_entrevista_agenda').select('id', { count: 'exact', head: true })
+      .eq('entrevista_id', String(e.id)).in('status', ['pendente', 'processando'])
+    if (count) continue
+    if (!(await rpc('integ_srv_cron_pode', { p_chave: 'entret:' + m.id, p_segundos: 30 * 86400 }))) continue
+    console.log(`[retomar] entrevista ${e.id} (${tipo}) parada há ${Math.round(idade / 60000)} min`)
+    await executarContinuacao({ tipo, ent_id: e.id, numero_id: e.phone_number_id, contato: e.contato, nome: e.nome || '', espera_ms: 0 })
+    n++
+  }
+  return n
+}
+
 async function processarFila() {
   if (!(await rpc('integ_srv_cron_pode', { p_chave: 'fila', p_segundos: 45 }))) return { ok: true, pulado: true }
   const tarefas = ((await rpc('integ_srv_fila_pegar', { p_limite: 20 })) || []) as any[]
@@ -2162,6 +2222,7 @@ Deno.serve(async (req) => {
     if (req.method !== 'POST') return new Response('método não aceito', { status: 405 })
     if (url.searchParams.get('tarefa') === 'fila') return json(200, await processarFila())
     if (url.searchParams.get('tarefa') === 'entrevista_continuar') return await rotaContinuarEntrevista(req)
+    if (url.searchParams.get('tarefa') === 'entrevistas') return json(200, await rodadaEntrevistas())
     if (req.headers.get('x-hub-signature-256')) return await webhook(req)
     return await acaoCRM(req)
   } catch (e) {
