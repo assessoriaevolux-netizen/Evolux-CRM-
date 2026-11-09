@@ -1003,42 +1003,47 @@ async function rotaContinuarEntrevista(req: Request) {
   emSegundoPlano(executarContinuacao(dados))
   return new Response('ok')
 }
-async function executarContinuacao(d: any) {
+async function executarContinuacao(d: any): Promise<string> {
   const espera = Math.max(0, Number(d.espera_ms) || 0)
   if (espera > ESPERA_MAX_MS) {
     await esperar(ESPERA_MAX_MS)
     const ok = await continuarEntrevistaDepois({ ...d, espera_ms: espera - ESPERA_MAX_MS })
     if (!ok && d.tipo === 'analise') await admin.from('integ_cron').delete().eq('chave', 'entocup:' + d.ent_id)
-    return
+    return ok ? 'encadeado' : 'falha_encadear'
   }
   await esperar(espera)
   try {
     const { data: ent } = await admin.from('ia_entrevistas').select('*').eq('id', d.ent_id).maybeSingle()
-    if (!ent || (ent as any).status !== 'ativa') return
+    if (!ent) return 'entrevista_nao_encontrada'
     const e: any = ent
+    if (e.status !== 'ativa') return 'entrevista_' + e.status
     const rot = await roteiroDe(e.empresa_id, 'entrevista')
-    if (!rot?.ativo) return
+    if (!rot?.ativo) return 'roteiro_inativo'
     const numeroId = d.numero_id || e.phone_number_id
     const { data: num } = await admin.from('integ_wa_numeros').select('*').eq('phone_number_id', numeroId).maybeSingle()
-    if (!num) return
+    if (!num) return 'numero_nao_encontrado'
     const token = (num as any).token || (await conexaoMeta(e.empresa_id))?.token
-    if (!token) return
+    if (!token) return 'sem_token'
     const imgsEnt = imagensDoRoteiro(rot.config)
+    const contato = d.contato || e.contato
     if (d.tipo === 'resto') {
-      await enviarRespostaEntrevista(e, num, token, d.contato, String(d.bruto || ''), imgsEnt, false, !!d.agendado)
-      return
+      const n = await enviarRespostaEntrevista(e, num, token, contato, String(d.bruto || ''), imgsEnt, false, !!d.agendado)
+      return n ? 'enviado' : 'nada_enviado'
     }
-    if (d.tipo === 'analise' || d.tipo === 'responder') {
-      const empresa = await nomeEmpresa(e.empresa_id)
-      const modelo = modeloValido(rot.modelo) || MODELO_PADRAO
-      const hist = await historicoEntrevista(e.id)
-      const resp = await perguntarIA(modelo, [
-        { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, d.nome || e.nome || '', imgsEnt, d.tipo === 'analise' ? 'curriculo_analise' : undefined) },
-        ...hist,
-      ])
-      if (resp.ok) await enviarRespostaEntrevista(e, num, token, d.contato || e.contato, resp.texto, imgsEnt)
-      else console.error('[entrevista]', d.tipo, resp.erro)
-    }
+    const empresa = await nomeEmpresa(e.empresa_id)
+    const modelo = modeloValido(rot.modelo) || MODELO_PADRAO
+    const aviso = d.tipo === 'analise'
+      ? '[O candidato está aguardando o seu retorno sobre o currículo. Envie agora a mensagem do roteiro para depois da análise do currículo.]'
+      : '[O candidato está aguardando a sua resposta. Continue a conversa de onde parou, seguindo o roteiro.]'
+    const hist = fecharComCandidato(await historicoEntrevista(e.id), aviso)
+    const resp = await perguntarIA(modelo, [
+      { role: 'system', content: montarSistemaEntrevista(rot.roteiro, empresa, d.nome || e.nome || '', imgsEnt, d.tipo === 'analise' ? 'curriculo_analise' : undefined) },
+      ...hist,
+    ])
+    if (!resp.ok) { console.error('[entrevista]', d.tipo, resp.erro); return 'erro_ia: ' + String(resp.erro || '').slice(0, 120) }
+    if (!String(resp.texto || '').trim()) { console.error('[entrevista]', d.tipo, 'IA respondeu vazio'); return 'ia_vazia' }
+    const n = await enviarRespostaEntrevista(e, num, token, contato, resp.texto, imgsEnt)
+    return n ? 'enviado' : 'nada_enviado (texto repetido?)'
   } finally {
     if (d.tipo === 'analise') await admin.from('integ_cron').delete().eq('chave', 'entocup:' + d.ent_id)
   }
@@ -1111,6 +1116,7 @@ async function enviarRespostaEntrevista(ent: any, num: any, token: string, conta
   if (encerrar) upd.status = 'encerrada'
   await admin.from('ia_entrevistas').update(upd).eq('id', ent.id)
   ent.mensagens_ia = upd.mensagens_ia
+  return msgs
 }
 
 async function historicoEntrevista(entrevistaId: string) {
@@ -1120,6 +1126,13 @@ async function historicoEntrevista(entrevistaId: string) {
     role: m.direcao === 'entrada' ? 'user' : 'assistant',
     content: textoLimpo(m.conteudo || '[mensagem]', 2000),
   }))
+}
+
+/** Os modelos só respondem bem quando a última fala é do candidato. Quando a IA vai
+ *  continuar por conta própria (análise do currículo, retomada), fecha com um aviso. */
+function fecharComCandidato(hist: { role: string; content: string }[], aviso: string) {
+  if (hist.length && hist[hist.length - 1].role === 'user') return hist
+  return [...hist, { role: 'user', content: aviso }]
 }
 
 // Detectar se a mensagem é envio de currículo (documento, imagem com legenda, ou texto mencionando)
@@ -1493,6 +1506,7 @@ async function posVenda(t: any): Promise<{ status: string; erro: string | null }
 async function rodadaEntrevistas() {
   if (!(await rpc('integ_srv_cron_pode', { p_chave: 'rodada_entrevistas', p_segundos: 40 }))) return { ok: true, pulado: true }
   let feitas = 0
+  const detalhes: string[] = []
   const { data: devidas, error } = await admin.from('ia_entrevista_agenda').select('*')
     .eq('status', 'pendente').lte('executar_em', new Date().toISOString()).order('executar_em').limit(20)
   if (error) console.error('[agenda entrevista]', error.message)
@@ -1500,22 +1514,26 @@ async function rodadaEntrevistas() {
     const { data: pego } = await admin.from('ia_entrevista_agenda').update({ status: 'processando' }).eq('id', j.id).eq('status', 'pendente').select('id')
     if (!pego?.length) continue
     let st = 'feito'
-    try { await executarContinuacao({ ...(j.dados || {}), tipo: j.tipo, ent_id: j.entrevista_id, espera_ms: 0 }) }
-    catch (e) { st = 'erro'; console.error('[agenda entrevista] tarefa', j.id, e) }
+    try {
+      const r = await executarContinuacao({ ...(j.dados || {}), tipo: j.tipo, ent_id: j.entrevista_id, espera_ms: 0 })
+      detalhes.push(`${j.tipo}:${r}`)
+      if (r !== 'enviado') st = 'erro'
+    } catch (e) { st = 'erro'; detalhes.push(`${j.tipo}:exceção ${String((e as Error)?.message || e).slice(0, 100)}`); console.error('[agenda entrevista] tarefa', j.id, e) }
     await admin.from('ia_entrevista_agenda').update({ status: st, feito_em: new Date().toISOString() }).eq('id', j.id)
     feitas++
   }
-  const retomadas = await retomarEntrevistasParadas().catch((e) => { console.error('[retomar]', e); return 0 })
-  await followUpEntrevistas().catch((e) => console.error('[followup]', e))
-  return { ok: true, feitas, retomadas }
+  const retomadas = await retomarEntrevistasParadas(detalhes).catch((e) => { detalhes.push('retomar:exceção ' + String((e as Error)?.message || e).slice(0, 100)); return 0 })
+  await followUpEntrevistas().catch((e) => { detalhes.push('followup:exceção ' + String((e as Error)?.message || e).slice(0, 100)) })
+  return { ok: true, feitas, retomadas, detalhes }
 }
 
 /** Conversas que ficaram sem continuação (ex.: "recebi seu currículo" sem a análise,
  *  ou mensagem do candidato sem resposta): a IA retoma de onde parou. Uma vez por mensagem. */
-async function retomarEntrevistasParadas() {
+async function retomarEntrevistasParadas(detalhes: string[] = []) {
   const desde = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
-  const { data: ents } = await admin.from('ia_entrevistas').select('*')
+  const { data: ents, error } = await admin.from('ia_entrevistas').select('*')
     .eq('status', 'ativa').gte('atualizado_em', desde).order('atualizado_em', { ascending: false }).limit(100)
+  if (error) detalhes.push('retomar:consulta ' + error.message)
   let n = 0
   for (const e of (ents || []) as any[]) {
     if (n >= 8) break // poucas por rodada, pra caber no tempo da execução
@@ -1533,10 +1551,15 @@ async function retomarEntrevistasParadas() {
     const { count } = await admin.from('ia_entrevista_agenda').select('id', { count: 'exact', head: true })
       .eq('entrevista_id', String(e.id)).in('status', ['pendente', 'processando'])
     if (count) continue
-    if (!(await rpc('integ_srv_cron_pode', { p_chave: 'entret:' + m.id, p_segundos: 30 * 86400 }))) continue
+    // tenta de novo a cada 15 min enquanto continuar parada (até 6h depois da última mensagem)
+    if (idade > 6 * 3600 * 1000) continue
+    if (!(await rpc('integ_srv_cron_pode', { p_chave: 'entret2:' + m.id, p_segundos: 15 * 60 }))) continue
     console.log(`[retomar] entrevista ${e.id} (${tipo}) parada há ${Math.round(idade / 60000)} min`)
-    await executarContinuacao({ tipo, ent_id: e.id, numero_id: e.phone_number_id, contato: e.contato, nome: e.nome || '', espera_ms: 0 })
-    n++
+    let r = ''
+    try { r = await executarContinuacao({ tipo, ent_id: e.id, numero_id: e.phone_number_id, contato: e.contato, nome: e.nome || '', espera_ms: 0 }) }
+    catch (ex) { r = 'exceção ' + String((ex as Error)?.message || ex).slice(0, 100) }
+    detalhes.push(`retomar ${String(e.contato || '').slice(-4)} ${tipo}:${r}`)
+    if (r === 'enviado') n++
   }
   return n
 }
