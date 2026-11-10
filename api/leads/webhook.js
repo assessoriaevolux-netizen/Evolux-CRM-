@@ -35,8 +35,27 @@ function normalizaTelefone(raw) {
   return t;
 }
 
+const TIPOS_VALIDOS = ['Imóvel', 'Automóvel', 'Moto', 'Serviço'];
+
+// Tipo de bem enviado pelo site; fora da lista do CRM cai em 'Serviço'
+function normalizaTipo(raw) {
+  const t = String(raw || '').trim();
+  return TIPOS_VALIDOS.includes(t) ? t : 'Serviço';
+}
+
+// Aceita número (250000) ou texto ("R$ 250.000,00") e devolve número
+function normalizaCredito(raw) {
+  if (typeof raw === 'number') return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  if (!raw) return 0;
+  const limpo = String(raw).replace(/[^\d,]/g, '').replace(',', '.');
+  const n = parseFloat(limpo);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 function montarObs(dados) {
   const linhas = [];
+  if (dados.obs)        linhas.push(String(dados.obs).slice(0, 2000));
+  if (dados.cidade)     linhas.push(`Cidade: ${dados.cidade}`);
   if (dados.empresa)    linhas.push(`Empresa: ${dados.empresa}`);
   if (dados.instagram)  linhas.push(`Instagram: ${dados.instagram}`);
   if (dados.operacao)   linhas.push(`Operação: ${dados.operacao}`);
@@ -76,9 +95,9 @@ async function inserirLead(dados, empresaIdParam) {
     empresa_id: empresaId,
     responsavel_id: null,
     nome: dados.nome || '',
-    telefone: normalizaTelefone(dados.whatsapp),
-    tipo: 'Serviço',
-    credito: 0,
+    telefone: normalizaTelefone(dados.whatsapp || dados.telefone),
+    tipo: normalizaTipo(dados.tipo),
+    credito: normalizaCredito(dados.credito),
     etapa: 'Novo lead',
     origem: 'Site',
     atendimento: '',
@@ -125,7 +144,7 @@ async function enviarNotificacao(dados, leadId, empresaNome) {
     <h2 style="margin:0 0 16px;color:#0a0a0a">Novo lead do site!</h2>
     <table style="width:100%;border-collapse:collapse;font-size:14px">
       <tr><td style="padding:6px 0;color:#666;width:110px"><strong>Nome</strong></td><td>${dados.nome || '—'}</td></tr>
-      <tr><td style="padding:6px 0;color:#666"><strong>WhatsApp</strong></td><td>${dados.whatsapp || '—'}</td></tr>
+      <tr><td style="padding:6px 0;color:#666"><strong>WhatsApp</strong></td><td>${dados.whatsapp || dados.telefone || '—'}</td></tr>
       <tr><td style="padding:6px 0;color:#666"><strong>Empresa</strong></td><td>${dados.empresa || '—'}</td></tr>
       <tr><td style="padding:6px 0;color:#666"><strong>Instagram</strong></td><td>${dados.instagram || '—'}</td></tr>
       <tr><td style="padding:6px 0;color:#666"><strong>Operação</strong></td><td>${dados.operacao || '—'}</td></tr>
@@ -173,7 +192,7 @@ export default async function handler(req) {
     const dados = await req.json();
 
     // Validação mínima
-    if (!dados.nome && !dados.whatsapp) {
+    if (!dados.nome && !dados.whatsapp && !dados.telefone) {
       return json({ ok: false, error: 'nome ou whatsapp obrigatório' }, 400, req);
     }
 
