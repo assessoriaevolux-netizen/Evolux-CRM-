@@ -1,20 +1,20 @@
 // Vercel Serverless Function — POST /api/leads/webhook
-// Recebe leads do formulário do site Evolux e salva no CRM
+// Recebe leads do formulário de sites e salva no CRM
+//
+// Uso:
+//   POST /api/leads/webhook?empresa=UUID   ← cada cliente usa seu próprio UUID
+//   POST /api/leads/webhook                ← fallback para WEBHOOK_EMPRESA_ID (Evolux)
 //
 // Env vars necessárias (configurar no Vercel Dashboard):
-//   SUPABASE_URL, SUPABASE_SERVICE_KEY, RESEND_API_KEY, WEBHOOK_EMPRESA_ID
-
-const ALLOWED_ORIGINS = [
-  'https://assessoriaevolux.com',
-  'https://www.assessoriaevolux.com',
-  'http://assessoriaevolux.com',
-  'http://www.assessoriaevolux.com',
-];
+//   SUPABASE_URL, SUPABASE_SERVICE_KEY
+//   RESEND_API_KEY (opcional — notificação por e-mail)
+//   WEBHOOK_EMPRESA_ID (opcional — fallback quando não passa ?empresa=)
 
 function corsHeaders(req) {
-  const origin = req?.headers?.get?.('origin') || '';
+  // Aceita qualquer origem — cada cliente integra do site dele
+  const origin = req?.headers?.get?.('origin') || '*';
   return {
-    'Access-Control-Allow-Origin': ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+    'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
@@ -47,13 +47,27 @@ function montarObs(dados) {
   return linhas.join('\n');
 }
 
-async function inserirLead(dados) {
+async function validarEmpresa(empresaId, url, key) {
+  const res = await fetch(
+    `${url}/rest/v1/empresas?id=eq.${empresaId}&select=id,nome`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+  );
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return rows[0] || null;
+}
+
+async function inserirLead(dados, empresaIdParam) {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key) throw new Error('Supabase não configurado');
 
-  const empresaId = process.env.WEBHOOK_EMPRESA_ID;
-  if (!empresaId) throw new Error('WEBHOOK_EMPRESA_ID não configurado');
+  const empresaId = empresaIdParam || process.env.WEBHOOK_EMPRESA_ID;
+  if (!empresaId) throw new Error('empresa não informada — use ?empresa=UUID na URL');
+
+  // Valida se a empresa existe no banco
+  const empresa = await validarEmpresa(empresaId, url, key);
+  if (!empresa) throw new Error('empresa não encontrada — verifique o UUID');
 
   const agora = new Date().toISOString();
   const hoje = agora.slice(0, 10);
@@ -91,10 +105,12 @@ async function inserirLead(dados) {
     throw new Error(err.message || `Supabase ${res.status}`);
   }
 
-  return (await res.json())[0];
+  const lead = (await res.json())[0];
+  if (lead) lead.empresa_nome = empresa.nome;
+  return lead;
 }
 
-async function enviarNotificacao(dados, leadId) {
+async function enviarNotificacao(dados, leadId, empresaNome) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return;           // sem chave → pula silenciosamente
 
@@ -119,7 +135,7 @@ async function enviarNotificacao(dados, leadId) {
       <tr><td style="padding:6px 0;color:#666"><strong>Faturamento</strong></td><td>${dados.faturamento || '—'}</td></tr>
     </table>
     <hr style="margin:20px 0;border:none;border-top:1px solid #eee">
-    <p style="margin:0;font-size:13px;color:#888">Lead #${leadId || '?'} • Salvo automaticamente no CRM</p>
+    <p style="margin:0;font-size:13px;color:#888">Lead #${leadId || '?'} • ${empresaNome || 'Evolux'} • Salvo automaticamente no CRM</p>
   </div>
 </div>`;
 
@@ -151,6 +167,9 @@ export default async function handler(req) {
   }
 
   try {
+    const reqUrl = new URL(req.url);
+    const empresaId = reqUrl.searchParams.get('empresa') || null;
+
     const dados = await req.json();
 
     // Validação mínima
@@ -158,10 +177,10 @@ export default async function handler(req) {
       return json({ ok: false, error: 'nome ou whatsapp obrigatório' }, 400, req);
     }
 
-    const lead = await inserirLead(dados);
+    const lead = await inserirLead(dados, empresaId);
 
     // Email de notificação (fire-and-forget, não bloqueia resposta)
-    enviarNotificacao(dados, lead?.id).catch(() => {});
+    enviarNotificacao(dados, lead?.id, lead?.empresa_nome).catch(() => {});
 
     return json({ ok: true, id: lead?.id }, 200, req);
   } catch (e) {
