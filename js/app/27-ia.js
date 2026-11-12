@@ -48,7 +48,7 @@ function _iaCard(tipo,gerencia){
   const ed=IA.editando===tipo;
   const modeloInicial=cfg.modelo_inicial?`<i class="ti ti-template"></i> mensagem inicial: <strong>${esc(cfg.modelo_inicial)}</strong>`:'<span class="txt-y"><i class="ti ti-alert-triangle"></i> sem mensagem inicial escolhida</span>';
   let resumo=tipo==='entrevista'
-    ?`Começa quando a mensagem tem “entrevista” ou “currículo” · até ${Number(cfg.limite_mensagens)||30} respostas por candidato · <a href="#" onclick="event.preventDefault();WA.aba='entrevistas';showTab('whatsapp')">ver entrevistas</a>`
+    ?`Começa quando a mensagem tem “entrevista” ou “currículo”${cfg.anuncios==='nao'?'':cfg.anuncios==='todos'?' ou chega por anúncio':' ou chega por anúncio de vaga'} · até ${Number(cfg.limite_mensagens)||30} respostas por candidato · <a href="#" onclick="event.preventDefault();WA.aba='entrevistas';showTab('whatsapp')">ver entrevistas</a>`
     :tipo==='pos_venda'
     ?`${esc((IA_ATRASOS.find(a=>a[0]===String(cfg.atraso_horas||'24'))||IA_ATRASOS[1])[1])} da venda · ${modeloInicial}`
     :`Responde quem escreve no WhatsApp${(cfg.etapas||[]).length?` (etapas: ${(cfg.etapas).map(e=>esc(etapaLabel(e))).join(', ')})`:' (Novo lead, Primeiro contato e Aguardando resposta)'} · ${cfg.modelo_inicial?modeloInicial+' para leads de formulário':'só responde quem escreve primeiro'}`;
@@ -90,6 +90,13 @@ function _iaEditor(tipo){
         ?`<div class="field"><label>Quando mandar</label><select class="fi" id="ia-ed-atraso">${IA_ATRASOS.map(([k,t])=>`<option value="${k}"${k===String(cfg.atraso_horas||'24')?' selected':''}>${t}</option>`).join('')}</select></div>`
         :`<div class="field"><label>Limite de respostas da IA por conversa</label><input class="fi" id="ia-ed-limite" type="number" min="2" max="60" value="${Number(cfg.limite_mensagens)||(tipo==='entrevista'?30:15)}"><div class="integ2-mini">${tipo==='entrevista'?'Passou disso, a entrevista é encerrada.':'Passou disso, a conversa vai para o responsável.'}</div></div>`}
     </div>
+    ${tipo==='entrevista'?`<div class="field"><label>Quem chega clicando em anúncio (manda só “Olá! Posso ter mais informações sobre isso?”)</label>
+      <select class="fi" id="ia-ed-anuncios">
+        <option value="vaga"${(cfg.anuncios||'vaga')==='vaga'?' selected':''}>É candidato quando o anúncio fala de vaga (contratando, vaga de…, trabalhe conosco)</option>
+        <option value="todos"${cfg.anuncios==='todos'?' selected':''}>Todo mundo que chega por anúncio no WhatsApp é candidato</option>
+        <option value="nao"${cfg.anuncios==='nao'?' selected':''}>Só quem escrever “entrevista” ou “currículo”</option>
+      </select>
+      <div class="integ2-mini">Quem chegou por anúncio nas últimas 24h e ficou sem resposta também é chamado pela IA, uma única vez.</div></div>`:''}
     ${tipo==='primeiro_atendimento'?`<div class="field"><label>A IA responde leads nestas etapas</label><div class="integ2-chips">${ETAPAS.slice(0,5).map(e=>`<label class="integ2-chip"><input type="checkbox" class="ia-ed-etapa" value="${esc(e)}"${etapas.includes(e)?' checked':''}>${esc(etapaLabel(e))}</label>`).join('')}</div></div>`:''}
     ${tipo==='entrevista'?'':`<div class="field"><label>${tipo==='pos_venda'?'Mensagem do pós-venda (modelo aprovado)':'Mensagem inicial para quem preenche formulário do Meta (modelo aprovado)'}</label>
       ${_iaSelModelo(tipo,cfg)}
@@ -173,7 +180,10 @@ async function iaSalvar(tipo){
   const modelo=(iaSel==='outro'?document.getElementById('ia-ed-ia-outro').value:iaSel).trim().toLowerCase();
   if(!/^[a-z0-9][a-z0-9.-]{1,60}$/.test(modelo)){showToast('Nome de modelo inválido.','ti-alert-triangle','#d97706');return;}
   if(tipo==='pos_venda') cfg.atraso_horas=document.getElementById('ia-ed-atraso').value;
-  else if(tipo==='entrevista') cfg.limite_mensagens=Math.max(2,Math.min(60,parseInt(document.getElementById('ia-ed-limite').value)||30));
+  else if(tipo==='entrevista'){
+    cfg.limite_mensagens=Math.max(2,Math.min(60,parseInt(document.getElementById('ia-ed-limite').value)||30));
+    const an=document.getElementById('ia-ed-anuncios'); if(an) cfg.anuncios=an.value;
+  }
   else{
     cfg.limite_mensagens=Math.max(2,Math.min(60,parseInt(document.getElementById('ia-ed-limite').value)||15));
     cfg.etapas=[...document.querySelectorAll('.ia-ed-etapa:checked')].map(i=>i.value);

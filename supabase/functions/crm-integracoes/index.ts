@@ -928,7 +928,30 @@ const KEYWORDS_ENTREVISTA = ['entrevista', 'curriculo', 'currículo']
 function ehEntrevista(texto: string): boolean {
   if (!texto) return false
   const t = texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  if (/(^|[^a-z0-9])cv([^a-z0-9]|$)/.test(t)) return true // "meu CV", "CV Fulano.docx"
   return KEYWORDS_ENTREVISTA.some((k) => t.includes(k.normalize('NFD').replace(/[̀-ͯ]/g, '')))
+}
+// Texto de anúncio que fala de vaga de trabalho
+const PALAVRAS_VAGA = ['contratando', 'contrata-se', 'emprego', 'trabalhe', 'processo seletivo', 'recrutamento', 'entrevista',
+  'curriculo', 'vaga de', 'vagas de', 'vaga para', 'vagas para', 'vaga aberta', 'vagas abertas', 'temos vaga', 'oportunidade de trabalho',
+  'faca parte do nosso time', 'faca parte da nossa equipe', 'time comercial', 'equipe comercial']
+function falaDeVaga(texto: string): boolean {
+  const t = String(texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  return PALAVRAS_VAGA.some((k) => t.includes(k))
+}
+/** Quem chega clicando num anúncio manda só "Olá! Posso ter mais informações sobre isso?" — sem a
+ *  palavra "entrevista". Vale como candidato quando o anúncio fala de vaga, ou quando o gestor
+ *  marcou, no roteiro, que todo anúncio que cai no WhatsApp é de vaga. */
+function candidatoPorAnuncio(rot: any, veioDeAnuncio: boolean, textoAnuncio: string): boolean {
+  if (!veioDeAnuncio) return false
+  const modo = String(rot?.config?.anuncios || 'vaga')
+  if (modo === 'nao') return false
+  if (modo === 'todos') return true
+  return falaDeVaga(textoAnuncio)
+}
+function textoDoReferral(ref: any): string {
+  if (!ref || typeof ref !== 'object') return ''
+  return [ref.headline, ref.body, ref.source_url].filter(Boolean).join(' ')
 }
 
 async function empresaDoNumero(numeroId: string): Promise<any> {
@@ -1142,7 +1165,7 @@ function ehCurriculo(conteudo: string): boolean {
     t.includes(k.normalize('NFD').replace(/[̀-ͯ]/g, '')))
 }
 
-async function processarEntrevista(numeroId: string, contato: string, nome: string, conteudo: string, waId: string, timestamp: string) {
+async function processarEntrevista(numeroId: string, contato: string, nome: string, conteudo: string, waId: string, timestamp: string, referral: any = null) {
   const numInfo = await empresaDoNumero(numeroId)
   if (!numInfo?.empresa_id) return false
   const emp = numInfo.empresa_id
@@ -1153,12 +1176,13 @@ async function processarEntrevista(numeroId: string, contato: string, nome: stri
 
   const primeiraMsg = !entExistente
 
-  // Se não existe entrevista e a mensagem não tem keywords, não é entrevista
-  if (!entExistente && !ehEntrevista(conteudo)) return false
-
   // Verificar se roteiro de entrevista está ativo
   const rot = await roteiroDe(emp, 'entrevista')
   if (!rot?.ativo) return false
+
+  // Não existe entrevista: só começa com as palavras-chave ou vindo de anúncio de vaga
+  if (!entExistente && !ehEntrevista(conteudo)
+      && !candidatoPorAnuncio(rot, !!referral && typeof referral === 'object', textoDoReferral(referral))) return false
 
   // A Meta às vezes entrega a mesma mensagem mais de uma vez: processa só uma
   if (waId && !(await rpc('integ_srv_cron_pode', { p_chave: 'entmsg:' + waId, p_segundos: 30 * 86400 }))) return true
@@ -1390,7 +1414,7 @@ async function processarWhatsApp(v: any) {
     const contato = String(m.from || '')
     const ts = m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : new Date().toISOString()
     try {
-      const foiEntrevista = await processarEntrevista(numeroId, contato, nomes[contato] || '', textoMsg, m.id || '', ts)
+      const foiEntrevista = await processarEntrevista(numeroId, contato, nomes[contato] || '', textoMsg, m.id || '', ts, m.referral || null)
       if (foiEntrevista) continue // Candidato de entrevista: não cria lead
     } catch (e) { console.error('[Entrevista]', e) }
     // ── Fluxo normal: cria lead e responde com IA ──
@@ -1523,8 +1547,9 @@ async function rodadaEntrevistas() {
     feitas++
   }
   const retomadas = await retomarEntrevistasParadas(detalhes).catch((e) => { detalhes.push('retomar:exceção ' + String((e as Error)?.message || e).slice(0, 100)); return 0 })
+  const resgatados = await resgatarCandidatos(detalhes).catch((e) => { detalhes.push('resgate:exceção ' + String((e as Error)?.message || e).slice(0, 100)); return 0 })
   await followUpEntrevistas().catch((e) => { detalhes.push('followup:exceção ' + String((e as Error)?.message || e).slice(0, 100)) })
-  return { ok: true, feitas, retomadas, detalhes }
+  return { ok: true, feitas, retomadas, resgatados, detalhes }
 }
 
 /** Conversas que ficaram sem continuação (ex.: "recebi seu currículo" sem a análise,
@@ -1560,6 +1585,89 @@ async function retomarEntrevistasParadas(detalhes: string[] = []) {
     catch (ex) { r = 'exceção ' + String((ex as Error)?.message || ex).slice(0, 100) }
     detalhes.push(`retomar ${String(e.contato || '').slice(-4)} ${tipo}:${r}`)
     if (r === 'enviado') n++
+  }
+  return n
+}
+
+/** Candidatos que chegaram por anúncio de vaga e ficaram sem resposta (viraram lead comum porque a
+ *  mensagem não tinha "entrevista"): a IA começa a entrevista agora. Uma única vez por contato e só
+ *  para quem escreveu nas últimas 24h (depois disso o WhatsApp não deixa mandar mensagem livre). */
+async function resgatarCandidatos(detalhes: string[] = []) {
+  const { data: rots } = await admin.from('ia_roteiros').select('*').eq('tipo', 'entrevista').eq('ativo', true)
+  let n = 0
+  for (const rot of (rots || []) as any[]) {
+    if (n >= 4) break
+    const emp = String(rot.empresa_id)
+    const desde = new Date(Date.now() - 23.5 * 3600 * 1000).toISOString()
+    const { data: msgs } = await admin.from('wa_mensagens').select('lead_id,phone_number_id,contato,contato_nome,conteudo,criado_em,tipo')
+      .eq('empresa_id', emp).eq('direcao', 'entrada').gte('criado_em', desde).order('criado_em').limit(600)
+    const porContato = new Map<string, any[]>()
+    for (const m of (msgs || []) as any[]) {
+      if (!m.contato || !m.lead_id || m.tipo === 'reacao') continue
+      const l = porContato.get(m.contato) || []
+      l.push(m); porContato.set(m.contato, l)
+    }
+    if (!porContato.size) continue
+    const contatos = [...porContato.keys()]
+    const leadIds = [...new Set([...porContato.values()].map((l) => String(l[0].lead_id)))]
+    // quem já tem entrevista (em qualquer situação) ou já recebeu alguma resposta fica de fora
+    const { data: jaEnt } = await admin.from('ia_entrevistas').select('contato').eq('empresa_id', emp).in('contato', contatos)
+    const comEntrevista = new Set(((jaEnt || []) as any[]).map((e) => String(e.contato)))
+    const { data: saidas } = await admin.from('wa_mensagens').select('lead_id').eq('empresa_id', emp).eq('direcao', 'saida').in('lead_id', leadIds).limit(2000)
+    const respondidos = new Set(((saidas || []) as any[]).map((s) => String(s.lead_id)))
+    const { data: lds } = await admin.from('leads').select('id,nome,etapa,origem,obs').in('id', leadIds)
+    const leadPorId = new Map(((lds || []) as any[]).map((l) => [String(l.id), l]))
+    const { data: convs } = await admin.from('ia_conversas').select('lead_id').eq('empresa_id', emp).in('lead_id', leadIds)
+    const comConversaIA = new Set(((convs || []) as any[]).map((c) => String(c.lead_id)))
+
+    for (const [contato, lista] of porContato) {
+      if (n >= 4) break // poucas por rodada (roda a cada minuto), pra caber no tempo da execução
+      if (comEntrevista.has(contato)) continue
+      const leadId = String(lista[0].lead_id)
+      const lead: any = leadPorId.get(leadId)
+      if (!lead || lead.etapa !== 'Novo lead' || respondidos.has(leadId) || comConversaIA.has(leadId)) continue
+      const falouDeEntrevista = lista.some((m) => ehEntrevista(String(m.conteudo || '')))
+      const veioDeAnuncio = String(lead.origem || '') === 'Meta Ads'
+      if (!falouDeEntrevista && !candidatoPorAnuncio(rot, veioDeAnuncio, String(lead.obs || ''))) continue
+      // espera 3 min depois da última mensagem (não atropela quem ainda está escrevendo)
+      if (Date.now() - new Date(lista[lista.length - 1].criado_em).getTime() < 3 * 60000) continue
+      const numeroId = String(lista[lista.length - 1].phone_number_id)
+      const { data: num } = await admin.from('integ_wa_numeros').select('*').eq('phone_number_id', numeroId).maybeSingle()
+      if (!num) continue
+      const token = (num as any).token || (await conexaoMeta(emp))?.token
+      if (!token) { detalhes.push(`resgate ${contato.slice(-4)}:sem_token`); continue }
+      const nome = String(lista[0].contato_nome || '') || (lead.nome && lead.nome !== 'Contato WhatsApp' ? String(lead.nome) : '')
+      const { data: ent, error: eEnt } = await admin.from('ia_entrevistas').insert({
+        empresa_id: emp, phone_number_id: numeroId, contato, nome: nome || null, status: 'ativa',
+      }).select('*').single()
+      if (eEnt || !ent) continue // outra execução já pegou este contato
+      const chaveOcupada = 'entocup:' + (ent as any).id // a retomada automática não entra enquanto isto roda
+      await admin.from('integ_cron').upsert({ chave: chaveOcupada, ultimo: new Date().toISOString() })
+      let r = ''
+      try {
+        await admin.from('ia_entrevista_msgs').insert(lista.map((m) => ({
+          entrevista_id: (ent as any).id, direcao: 'entrada', conteudo: textoLimpo(m.conteudo || '[mensagem]', 4000), criado_em: m.criado_em,
+        })))
+        const imgsEnt = imagensDoRoteiro(rot.config)
+        const resp = await perguntarIA(modeloValido(rot.modelo) || MODELO_PADRAO, [
+          { role: 'system', content: montarSistemaEntrevista(rot.roteiro, await nomeEmpresa(emp), nome, imgsEnt) },
+          ...(await historicoEntrevista((ent as any).id)),
+        ])
+        if (!resp.ok || !String(resp.texto || '').trim()) r = 'erro_ia: ' + String(resp.erro || 'vazio').slice(0, 100)
+        else r = (await enviarRespostaEntrevista(ent, num, token, contato, resp.texto, imgsEnt, true)) ? 'enviado' : 'nada_enviado'
+      } catch (ex) { r = 'exceção ' + String((ex as Error)?.message || ex).slice(0, 100) }
+      await admin.from('integ_cron').delete().eq('chave', chaveOcupada)
+      detalhes.push(`resgate ${contato.slice(-4)}:${r}`)
+      if (r === 'enviado') {
+        n++
+        await atividade(emp, null, 'ti-clipboard-list', `IA: ${nome || 'candidato'} chegou por anúncio de vaga e a entrevista foi iniciada`).catch(() => {})
+      } else {
+        // não deu certo: desfaz para tentar de novo na próxima rodada
+        await admin.from('ia_entrevista_msgs').delete().eq('entrevista_id', (ent as any).id)
+        await admin.from('ia_entrevistas').delete().eq('id', (ent as any).id)
+        break
+      }
+    }
   }
   return n
 }
