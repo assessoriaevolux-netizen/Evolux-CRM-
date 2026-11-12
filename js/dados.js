@@ -132,6 +132,7 @@
       email: row.email||'',
       role: (row.role||'vendedor').toLowerCase(),
       hierarquiaId: row.hierarquia_id||null,
+      _hierBanco: row.hierarquia_id||null, // como está gravado (hierarquiaId pode ser ajustado para o cargo que vale)
       equipeSbId: row.equipe_id||null,
       equipeId: null,
       managerId: null,
@@ -267,7 +268,7 @@
       const eu=data.find(r=>r.id===window._currentUserId);
       const meAntes=window.users.find(u=>u.sb_id===window._currentUserId);
       if(eu&&eu.ativo===false){ window._conferirAcesso&&window._conferirAcesso(); }
-      const mudouMinhaVisao=!!(eu&&meAntes&&((eu.role||'vendedor').toLowerCase()!==meAntes.role||(eu.hierarquia_id||null)!==(meAntes.hierarquiaId||null)));
+      const mudouMinhaVisao=!!(eu&&meAntes&&((eu.role||'vendedor').toLowerCase()!==meAntes.role||(eu.hierarquia_id||null)!==((meAntes._hierBanco!==undefined?meAntes._hierBanco:meAntes.hierarquiaId)||null)));
       mergeProfilesIntoUsers(data);
       if(mudouMinhaVisao){ setTimeout(async()=>{ await window._loadEquipes(); await window._loadLeads(); try{window._renderTudo&&window._renderTudo();}catch(e){} },0); }
       window._ensureMeHperms&&window._ensureMeHperms();
@@ -283,7 +284,9 @@
   window._ensureMeHperms=function(){
     if(!window.users||!window.hierarquias) return;
     window.users.forEach(u=>{
-      const h=window.hierarquias.find(x=>x.sb_id===u.hierarquiaId||String(x.id)===String(u.hierarquiaId));
+      // cadastro sem cargo válido segue o cargo da empresa que corresponde à função da pessoa
+      const h=window.hierDe?window.hierDe(u):window.hierarquias.find(x=>x.sb_id===u.hierarquiaId||String(x.id)===String(u.hierarquiaId));
+      if(h&&h.sb_id&&String(u.hierarquiaId||'')!==String(h.sb_id)) u.hierarquiaId=h.sb_id;
       u.hperms=h&&h.perms?{...h.perms}:{};
     });
   };
@@ -1022,6 +1025,8 @@
       // Permissões de um cargo mudaram: vale na hora (abas, botões e a tela aberta)
       canal('hierarquias-sync','hierarquias','*',_debounce(async()=>{
         await window._loadHierarquias();
+        // o que a pessoa enxerga pode ter mudado junto com a permissão
+        try{ await window._loadAtividades(); }catch(e){}
         try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
         try{window._renderTudo&&window._renderTudo();}catch(e){}
       },500));

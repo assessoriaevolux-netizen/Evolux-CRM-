@@ -365,7 +365,8 @@ function openLeadDetalhe(id){
   ldEtapa.innerHTML=ETAPAS.map(e=>`<option value="${esc(e)}"${e===l.etapa?' selected':''}>${esc(etapaLabel(e))}</option>`).join('');
   _garantirOpcao(document.getElementById('ld-origem'),l.origem||'');
   const ldResp=document.getElementById('ld-resp');
-  const usersOpt=users.filter(u=>isGestor()||vis.has(u.id));
+  // quem pode transferir escolhe qualquer pessoa da empresa (o servidor confere a permissão)
+  const usersOpt=users.filter(u=>isGestor()||podeTransf||vis.has(u.id)).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   ldResp.innerHTML=(l.responsavelId?'':'<option value="" selected>— sem responsável —</option>')+
     usersOpt.map(u=>`<option value="${u.id}"${u.id===l.responsavelId?' selected':''}>${esc(u.nome)}</option>`).join('');
   document.getElementById('ld-atendimento').value=l.atendimento||'';
@@ -419,9 +420,21 @@ async function saveLeadDetalhe(){
     if(l._obsOk!==false) l.obs=document.getElementById('ld-obs').value; // só mexe se a observação foi carregada
   }
   if(podeMov) l.etapa=document.getElementById('ld-etapa').value;
-  if(podeTransf) l.responsavelId=parseInt(document.getElementById('ld-resp').value)||l.responsavelId;
+  // Troca de responsável: dentro da própria visão vai junto com o resto; para fora dela
+  // (outra equipe) vai pela transferência do servidor, que confere a permissão.
+  const novoResp=podeTransf?(parseInt(document.getElementById('ld-resp').value)||l.responsavelId):l.responsavelId;
+  const transfFora=novoResp!==l.responsavelId&&!isGestor()&&!vis.has(novoResp);
+  if(!transfFora) l.responsavelId=novoResp;
   const ok=await window._syncLead(l);
   if(!ok&&!window._leadPendente(l)){ Object.assign(l,antes); renderKanban();renderTable(); return; }
+  if(transfFora){
+    const dest=users.find(u=>u.id===novoResp);
+    const n=dest&&dest.sb_id?await transferirLeadsPara([l.id],dest):-1;
+    if(n>0){
+      showToast(`${l.nome} transferido para ${dest.nome}.`,'ti-check','#1db954');
+      if(l.etapa==='Fechado / Convertido') _atualizarAposVenda();
+    } else if(n===0) showToast('Não foi possível transferir este lead.','ti-alert-triangle','#d97706');
+  }
   if(antes.etapa!==l.etapa){
     if(window._saveAtividade)window._saveAtividade('ti-arrows-right-left',`${l.nome}: ${etapaLabel(antes.etapa)} → ${etapaLabel(l.etapa)}`);
     if(l.etapa==='Fechado / Convertido'){

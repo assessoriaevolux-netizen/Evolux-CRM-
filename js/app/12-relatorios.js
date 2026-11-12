@@ -93,7 +93,7 @@ function renderRelatorios(){
         <th style="padding:8px 10px;color:var(--tm);font-weight:700;min-width:100px">Progresso (acum.)</th>
       </tr></thead>
       <tbody>${sorted.map((u,i)=>{
-        const h=u.hierarquiaId?getHier(u.hierarquiaId):null;
+        const h=hierDe(u);
         const pct=u.meta?Math.min(Math.round((u.credito||0)/u.meta*100),100):0;
         const bg=i%2===0?'':'var(--c0)';
         return `<tr style="border-bottom:1px solid var(--c1);background:${bg}">

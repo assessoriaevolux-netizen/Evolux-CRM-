@@ -9,28 +9,35 @@ function _podeEditarUsuario(u){
   if(!me||!u||u.id===me.id) return false;           // o próprio perfil é em "Minha conta"
   if(isPlataforma(u)&&!isPlataforma(me)) return false;
   if(isGestor(me)) return true;
-  if(!(can('config_users')||can('equipe_edit'))) return false;
-  return nivelDe(u)>nivelDe(me)&&getVisiveisParaMim().has(u.id);
+  if(isGestor(u)||nivelDe(u)<=nivelDe(me)) return false;       // só quem está abaixo do seu cargo
+  if(can('config_users')) return true;                        // gerencia todos os usuários
+  return can('equipe_edit')&&getVisiveisParaMim().has(u.id);  // só a própria equipe
 }
 function _podeRemoverUsuario(u){
   const me=getMe();
   if(!me||!u||u.id===me.id||isPlataforma(u)) return false;
   if(isGestor(me)) return true;
-  const ok=can('equipe_remove')||can('config_users')||(me.role==='supervisor'&&u.role==='vendedor');
-  return ok&&nivelDe(u)>nivelDe(me)&&getVisiveisParaMim().has(u.id);
+  if(isGestor(u)||nivelDe(u)<=nivelDe(me)) return false;
+  if(can('config_users')) return true;
+  const ok=can('equipe_remove')||(me.role==='supervisor'&&u.role==='vendedor');
+  return ok&&getVisiveisParaMim().has(u.id);
 }
 // Equipes em que quem está logado pode colocar alguém
 function _equipesAtribuiveis(){
   const me=getMe();
   if(!me) return [];
-  if(isGestor(me)||can('config_teams')) return equipes.slice();
-  return equipes.filter(e=>e.supervisorId===me.id||e.representanteId===me.id);
+  if(isGestor(me)||can('config_teams')||can('config_users')) return equipes.slice();
+  const minhas=equipes.filter(e=>e.supervisorId===me.id||e.representanteId===me.id);
+  if(minhas.length) return minhas;
+  // sem equipe para cuidar: quem tem "Cadastrar usuários" cadastra na equipe de que participa
+  return can('equipe_add')?equipes.filter(e=>(e.membroIds||[]).includes(me.id)):[];
 }
 function _usuariosDaLista(){
   const me=getMe();
   if(!me) return [];
   if(isGestor(me)||can('config_users')) return users.slice();
-  const vis=getVisiveisParaMim();
+  // "Ver usuários": a própria equipe (quem a pessoa cuida e os colegas de equipe)
+  const vis=new Set([...getVisiveisParaMim(),...colegasDeEquipe(me)]);
   return users.filter(u=>vis.has(u.id));
 }
 
@@ -116,7 +123,7 @@ function renderUserList(){
   if(!lista.length){list.innerHTML='<div style="color:var(--tm);font-size:13px;padding:12px 0">Nenhum usuário para mostrar.</div>';return;}
   const me=getMe();
   list.innerHTML=lista.map(u=>{
-    const hier=u.hierarquiaId?getHier(u.hierarquiaId):null;
+    const hier=hierDe(u);
     const eq=getEqDeUser(u);
     const foto=safeUrl(u.foto);
     const avatarStyle=foto?`background:url('${foto}') center/cover no-repeat`:`background:linear-gradient(135deg,var(--g),var(--gc))`;
@@ -267,7 +274,7 @@ function removeUser(id){
   if(!u)return;
   if(!_podeRemoverUsuario(u)){showToast('Você não pode remover este usuário.','ti-lock');return;}
   const me=getMe();
-  const destinos=(isGestor(me)?users:users.filter(x=>getVisiveisParaMim().has(x.id))).filter(x=>x.id!==u.id)
+  const destinos=((isGestor(me)||can('config_users'))?users:users.filter(x=>getVisiveisParaMim().has(x.id))).filter(x=>x.id!==u.id)
     .sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   const qtd=leads.filter(l=>l.responsavelId===u.id).length;
   document.getElementById('modal-remover-user')?.remove();

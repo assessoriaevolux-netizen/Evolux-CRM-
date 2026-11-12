@@ -35,7 +35,8 @@ const RC=new Proxy(RC_STATIC,{get(t,k){
 }});
 // Helper: label e classe CSS de hierarquia para um user
 function getHierLabel(u){
-  if(u.hierarquiaId){const h=hierarquias&&hierarquias.find(x=>x.sb_id===u.hierarquiaId||x.id===u.hierarquiaId);if(h)return h.nome;}
+  const h=typeof hierDe==='function'?hierDe(u):null;
+  if(h)return h.nome;
   return RL_STATIC[u.role]||u.role||'—';
 }
 function getHierClass(u){return RC_STATIC[u.role]||'rv';}
@@ -151,7 +152,7 @@ function nivelDe(u){
   if(!u)return 99;
   const rn=roleNivel(u.role);
   if(rn<=1)return rn;
-  const h=u.hierarquiaId?getHier(u.hierarquiaId):null;
+  const h=hierDe(u);
   return Math.max(h&&h.ordem?h.ordem:rn,rn);
 }
 function _permsPadraoRole(role){
@@ -177,7 +178,7 @@ function can(perm,u){
   if(PERM_IA.has(perm)&&!iaLiberada())return false;
   if(PERM_LIVRE.has(perm))return true;
   if(isGestor(u))return true;
-  const h=u.hierarquiaId?getHier(u.hierarquiaId):null;
+  const h=hierDe(u);
   const p=h&&h.perms;
   if(p&&typeof p[perm]==='boolean')return p[perm];
   if(PERM_SEGUE[perm])return can(PERM_SEGUE[perm],u);
@@ -199,7 +200,25 @@ let hierarquias=[
 window.hierarquias = hierarquias; // mesma referência
 let nextHierArquiaId=5;
 
-function getHier(id){return hierarquias.find(h=>h.id===id||h.sb_id===id);}
+function getHier(id){
+  if(id===null||id===undefined||id==='')return undefined;
+  return hierarquias.find(h=>h.id===id||h.sb_id===id||(h.sb_id!=null&&String(h.sb_id)===String(id)));
+}
+// Cargo que vale para a pessoa (igual ao banco: crm_hierarquia_de). Se o cadastro dela não
+// aponta para um cargo que existe (cadastro antigo, cargo apagado), vale o cargo da empresa
+// que corresponde à função dela — assim o que o gestor marca no cargo sempre chega na pessoa.
+function hierDoRole(role){
+  let r=(role||'vendedor').toLowerCase();
+  if(r==='admin'||r==='administrador')r='gestor';
+  const lista=hierarquias.filter(h=>slugToRole(h)===r)
+    .sort((a,b)=>((b.slug||'').toLowerCase()===r)-((a.slug||'').toLowerCase()===r)||((b.status!=='inativa')-(a.status!=='inativa'))||((a.ordem||99)-(b.ordem||99)));
+  return lista[0]||null;
+}
+function hierDe(u){
+  if(!u)return null;
+  return (u.hierarquiaId?getHier(u.hierarquiaId):null)||hierDoRole(u.role);
+}
+window.hierDe=hierDe;
 function getHierBySlug(slug){return hierarquias.find(h=>h.slug===slug);}
 // Mapeia slug/ordem de hierarquia para role do sistema, suportando slugs customizados
 function slugToRole(h){
@@ -211,22 +230,22 @@ function slugToRole(h){
   // Fallback por ordem: menor ordem = maior cargo
   const ord=h.ordem||99;
   if(ord===1) return 'gestor';
-  if(ord===2) return 'supervisor';
-  if(ord===3) return 'representante';
+  if(ord===2) return 'representante';
+  if(ord===3) return 'supervisor';
   return 'vendedor';
 }
 window.slugToRole=slugToRole; // expõe para _ensureMeHperms (definida antes)
-function hierUsersCount(hId){const h=getHier(hId);if(!h)return 0;return users.filter(u=>u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id).length;}
+function hierUsersCount(hId){const h=getHier(hId);if(!h)return 0;return users.filter(u=>hierDe(u)===h).length;}
 function hierPermCount(h){return h.perms?Object.values(h.perms).filter(Boolean).length:0;}
 function hierAtivas(){return hierarquias.filter(h=>h.status==='ativa').sort((a,b)=>a.ordem-b.ordem);}
 function applyHierToUser(u){
-  const h=u.hierarquiaId?getHier(u.hierarquiaId):null;
+  const h=hierDe(u);
   if(h&&h.perms) u.hperms={...h.perms};
 }
 function applyHierToAll(hId){
   // As permissões vêm sempre da hierarquia (não são copiadas para o perfil de cada pessoa)
   const h=getHier(hId);if(!h)return;
-  users.filter(u=>u.hierarquiaId===h.sb_id||u.hierarquiaId===h.id).forEach(u=>{u.hperms={...h.perms};});
+  users.filter(u=>hierDe(u)===h).forEach(u=>{u.hperms={...h.perms};});
   try{window.applyNavPermissions&&window.applyNavPermissions();}catch(e){}
 }
 
@@ -370,7 +389,7 @@ function _atividadesVisiveis(){
   const todas=window.activities||activities||[];
   if(!me||isGestor(me))return todas;
   if(can('notif_team')){
-    const vis=new Set([...getVisiveisParaMim()].map(id=>(users.find(u=>u.id===id)||{}).sb_id).filter(Boolean));
+    const vis=new Set([...getVisiveisParaMim(),...colegasDeEquipe(me)].map(id=>(users.find(u=>u.id===id)||{}).sb_id).filter(Boolean));
     return todas.filter(a=>!a._userId||vis.has(a._userId));
   }
   return todas.filter(a=>!a._userId||a._userId===me.sb_id);

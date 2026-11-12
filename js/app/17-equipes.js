@@ -35,9 +35,12 @@ function openEqModal(id){
   const sR=document.getElementById('eq-rep');
   const sM=document.getElementById('eq-mb-sel');
   const opt=u=>`<option value="${u.id}">${esc(u.nome)} (${esc(getHierLabel(u))})</option>`;
-  if(sS) sS.innerHTML='<option value="">Nenhum</option>'+users.filter(u=>u.role==='supervisor'||isGestor(u)||u.role==='representante').map(opt).join('');
+  // Responsáveis da equipe: líderes e também qualquer cargo que o gestor liberou para cuidar de equipe
+  const lideres=users.filter(_podeLiderarEquipe).sort((a,b)=>nivelDe(a)-nivelDe(b)||a.nome.localeCompare(b.nome,'pt-BR'));
+  const comAtual=(lista,idAtual)=>{const a=idAtual?users.find(u=>u.id===idAtual):null;return a&&!lista.includes(a)?[a,...lista]:lista;};
+  if(sS) sS.innerHTML='<option value="">Nenhum</option>'+comAtual(lideres,eqAtual&&eqAtual.supervisorId).map(opt).join('');
   if(sG) sG.innerHTML='<option value="">Selecionar gestor...</option>'+users.filter(u=>isGestor(u)).map(u=>`<option value="${u.id}">${esc(u.nome)}</option>`).join('');
-  if(sR) sR.innerHTML='<option value="">Nenhum</option>'+users.filter(u=>u.role==='representante').map(u=>`<option value="${u.id}">${esc(u.nome)}</option>`).join('');
+  if(sR) sR.innerHTML='<option value="">Nenhum</option>'+comAtual(lideres.filter(u=>!isGestor(u)),eqAtual&&eqAtual.representanteId).map(opt).join('');
   if(sM) sM.innerHTML='<option value="">+ Adicionar membro...</option>'+_candidatosMembro(id||null).map(opt).join('');
   // quem não é gestor não troca os responsáveis da equipe
   [sS,sG,sR].forEach(el=>{if(el) el.disabled=!gestorTotal;});
@@ -196,24 +199,42 @@ function getSupDeUser(u){ const eq=getEqDeUser(u); return eq?users.find(x=>x.id=
 // Nível hierárquico (menor = mais alto): plataforma 0, gestor 1, depois a ordem do cargo
 function getNivelHier(u){ return nivelDe(u); }
 
-// IDs das pessoas cujos leads o usuário logado enxerga (mesma regra do banco):
-// gestor → todos; representante → membros e supervisores das equipes que representa
-// (ou de que participa); supervisor → equipes que supervisiona; demais → só os próprios.
+// IDs das pessoas cujos leads o usuário logado enxerga (mesma regra do banco: crm_visiveis_de).
+// Vale o lugar da pessoa na equipe, seja qual for o cargo dela:
+// gestor → todos; quem é o representante da equipe → membros e o supervisor dela;
+// quem é o supervisor da equipe → membros dela; representante que participa de uma
+// equipe → os membros dela; demais → só os próprios.
 function getVisiveisParaMim(){
   const me=getMe();
   if(!me) return new Set();
   if(isGestor(me)) return new Set(users.map(u=>u.id));
   const ids=new Set([me.id]);
-  if(me.role==='representante'){
-    equipes.filter(e=>e.representanteId===me.id||(e.membroIds||[]).includes(me.id))
-      .forEach(e=>(e.membroIds||[]).forEach(mid=>ids.add(mid)));
-    equipes.filter(e=>e.representanteId===me.id&&e.supervisorId).forEach(e=>ids.add(e.supervisorId));
-  } else if(me.role==='supervisor'){
-    equipes.filter(e=>e.supervisorId===me.id).forEach(e=>(e.membroIds||[]).forEach(mid=>ids.add(mid)));
-  }
+  equipes.forEach(e=>{
+    const membros=e.membroIds||[];
+    const souRep=e.representanteId===me.id, souSup=e.supervisorId===me.id;
+    if(souRep||souSup||(me.role==='representante'&&membros.includes(me.id))) membros.forEach(mid=>ids.add(mid));
+    if(souRep&&e.supervisorId) ids.add(e.supervisorId);
+  });
   return ids;
 }
 window.getVisiveisParaMim=getVisiveisParaMim;
+// Pessoas das equipes de que eu participo ou cuido (para "ver ... da equipe")
+function colegasDeEquipe(me){
+  me=me||getMe();
+  const ids=new Set();
+  if(!me) return ids;
+  ids.add(me.id);
+  equipes.filter(e=>(e.membroIds||[]).includes(me.id)||e.supervisorId===me.id||e.representanteId===me.id)
+    .forEach(e=>{(e.membroIds||[]).forEach(id=>ids.add(id)); if(e.supervisorId) ids.add(e.supervisorId); if(e.representanteId) ids.add(e.representanteId);});
+  return ids;
+}
+window.colegasDeEquipe=colegasDeEquipe;
+// Pode ser colocado como responsável de uma equipe: líderes e qualquer cargo com permissão de equipe
+function _podeLiderarEquipe(u){
+  if(!u) return false;
+  if(isGestor(u)||u.role==='supervisor'||u.role==='representante') return true;
+  return ['equipe_edit','equipe_add','equipe_remove','equipe_view_sellers','config_users','config_teams'].some(p=>can(p,u));
+}
 
 // Pode mexer neste lead? (o lead precisa estar na sua visão)
 function _leadVisivel(lead,vis){

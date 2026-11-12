@@ -5,11 +5,14 @@ let hmEditId=null; // null = novo
 let hmSomenteLeitura=false;
 
 function podeEditarHierarquias(){ return isGestor()||can('config_hierarchy'); }
+// Pode abrir o cargo para alterar: quem gerencia cargos (nome, ordem...) ou quem altera
+// as permissões dos cargos — sempre só os cargos abaixo do seu.
 function podeEditarHier(h){
   if(isGestor()) return true;
-  if(!can('config_hierarchy')||!h) return false;
+  if(!(can('config_hierarchy')||can('config_permissions'))||!h) return false;
   return (h.ordem||99)>nivelDe(getMe())&&slugToRole(h)!=='gestor';
 }
+function podeMexerDadosCargo(){ return isGestor()||can('config_hierarchy'); }
 function podeMexerPermissoes(){ return isGestor()||can('config_permissions'); }
 
 function _hmPreencherSuperior(excluirId,valor){
@@ -19,7 +22,7 @@ function _hmPreencherSuperior(excluirId,valor){
   sup.value=valor||'';
 }
 function _hmAplicarModo(){
-  ['hm-nome','hm-descricao','hm-ordem','hm-status','hm-superior'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=hmSomenteLeitura;});
+  ['hm-nome','hm-descricao','hm-ordem','hm-status','hm-superior'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=hmSomenteLeitura||!podeMexerDadosCargo();});
   const permsBloq=hmSomenteLeitura||!podeMexerPermissoes();
   ['hm-btn-sel-all','hm-btn-desel-all','hm-btn-restore'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=permsBloq?'none':'';});
   const save=document.getElementById('hm-btn-save');
@@ -151,6 +154,7 @@ async function saveHierModal(){
   const permsTela=hierGetCurrentPerms();
   let h=hmEditId?getHier(hmEditId):null;
   const novo=!h;
+  if(novo&&!podeEditarHierarquias()){showToast('Você não tem permissão para criar cargos.','ti-lock');return;}
   if(!novo&&!podeEditarHier(h)){showToast('Você não pode alterar este cargo.','ti-lock');return;}
   const antes=h?{...h,perms:{...(h.perms||{})}}:null;
   const perms=podeMexerPermissoes()?permsTela:(h?h.perms||{}:{});
@@ -158,7 +162,8 @@ async function saveHierModal(){
     const slug=nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'');
     h={id:nextHierArquiaId++,slug,nome,descricao,ordem,superiorId,status,perms};
     hierarquias.push(h);
-  } else Object.assign(h,{nome,descricao,ordem,status,superiorId,perms});
+  } else if(podeMexerDadosCargo()) Object.assign(h,{nome,descricao,ordem,status,superiorId,perms});
+  else Object.assign(h,{perms}); // só altera as permissões
   _salvandoHier=true;
   const ok=await window._syncHierarquia(h);
   _salvandoHier=false;
