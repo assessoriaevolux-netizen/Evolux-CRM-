@@ -1057,50 +1057,70 @@ body{display:flex;flex-direction:row;min-height:100vh;transition:background .25s
 .rank-wrap.rg-dark #rank-loja-filtro option{background:#111613;color:#ECF2EE}
 .rank-wrap.rg-dark #rank-cal-popup{background:#111613;border-color:#232B26}
 
-/* Hero panel */
-.rg-hero{position:relative;overflow:hidden;padding:28px 30px 26px;border:1px solid #232B26;border-radius:22px;background:#111613;margin:0 20px}
+/* Hero panel — tema CLARO (padrão) */
+.rg-hero{position:relative;overflow:hidden;padding:28px 30px 26px;border:1px solid var(--c2);border-radius:22px;background:var(--bg);margin:0 20px}
 .rg-live-dot{width:9px;height:9px;border-radius:50%;background:#1DB954;animation:rg-pulso 1.8s infinite;flex-shrink:0}
-.rg-hero-label{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:#9AA69F;display:flex;align-items:center;gap:10px}
-.rg-hero-volume{margin-top:6px;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(44px,6.4vw,82px);letter-spacing:-.045em;line-height:.95;font-variant-numeric:tabular-nums;color:#ECF2EE}
+.rg-hero-label{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--tm);display:flex;align-items:center;gap:10px}
+.rg-hero-volume{margin-top:6px;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(44px,6.4vw,82px);letter-spacing:-.045em;line-height:.95;font-variant-numeric:tabular-nums;color:var(--tx)}
 .rg-hero-stats{display:flex;gap:36px;margin-top:12px}
-.rg-hero-stat-val{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:36px;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums;color:#ECF2EE}
-.rg-hero-stat-lbl{margin-top:4px;font-size:12px;color:#9AA69F}
+.rg-hero-stat-val{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:36px;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums;color:var(--tx)}
+.rg-hero-stat-lbl{margin-top:4px;font-size:12px;color:var(--tm)}
 /* Share bar */
 .rg-share-bar{display:flex;gap:4px;height:14px;margin-top:18px}
 .rg-share-seg{border-radius:7px;position:relative;overflow:hidden;transition:width .8s ease}
 .rg-share-seg.green{background:#1DB954}
 .rg-share-seg.gold{background:#F5C451}
-.rg-share-seg.empty{background:#1C231F;flex:1}
+.rg-share-seg.empty{background:var(--c2);flex:1}
 .rg-share-shimmer{position:absolute;inset:0;width:40%;background:rgba(255,255,255,.35);animation:rg-brilho 2.6s ease-in-out infinite}
-.rg-share-legend{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px 22px;font-size:12px;color:#C5CFC9}
+.rg-share-legend{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px 22px;font-size:12px;color:var(--tm)}
 .rg-share-legend span{display:flex;align-items:center;gap:7px}
 .rg-share-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
 
-/* Loja card */
-.rg-loja{position:relative;padding:20px 24px;border:1px solid #232B26;border-radius:18px;background:#111613;display:flex;flex-wrap:wrap;align-items:center;gap:14px 22px;margin:0 20px;animation:rg-sobe .6s cubic-bezier(.2,.8,.2,1) both}
-.rg-loja.rg-lider{border-color:rgba(245,196,81,.3);background:linear-gradient(135deg,rgba(245,196,81,.06),#111613)}
-.rg-loja-pos{width:50px;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:32px;letter-spacing:-.05em;line-height:1;color:#4A5550;text-align:center;flex-shrink:0}
+/* Loja card — tema CLARO (padrão) */
+.rg-loja{position:relative;padding:20px 24px;border:1px solid var(--c2);border-radius:18px;background:var(--bg);display:flex;flex-wrap:wrap;align-items:center;gap:14px 22px;margin:0 20px;animation:rg-sobe .6s cubic-bezier(.2,.8,.2,1) both}
+.rg-loja.rg-lider{border-color:rgba(245,196,81,.35);background:linear-gradient(135deg,rgba(245,196,81,.08),var(--bg))}
+.rg-loja-pos{width:50px;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:32px;letter-spacing:-.05em;line-height:1;color:var(--tm);text-align:center;flex-shrink:0}
 .rg-loja.rg-lider .rg-loja-pos{font-size:40px;color:#F5C451}
-.rg-loja-av{width:56px;height:56px;flex:none;border-radius:50%;background:#171D19;border:2px solid #2A332D;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:#ECF2EE;overflow:hidden;flex-shrink:0}
+.rg-loja-av{width:56px;height:56px;flex:none;border-radius:50%;background:var(--gs);border:2px solid var(--c2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:var(--tx);overflow:hidden;flex-shrink:0}
 .rg-loja.rg-lider .rg-loja-av{width:64px;height:64px;border-color:#F5C451;box-shadow:0 0 0 3px rgba(245,196,81,.2)}
 .rg-loja-av img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
 .rg-loja-body{flex:1 1 240px;min-width:0;display:flex;flex-direction:column;gap:8px}
-.rg-loja-nome{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:16px;letter-spacing:-.02em;color:#ECF2EE}
+.rg-loja-nome{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:16px;letter-spacing:-.02em;color:var(--tx)}
 .rg-loja.rg-lider .rg-loja-nome{font-size:18px}
 .rg-loja-badge{padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;display:inline-flex;align-items:center;gap:5px}
-.rg-loja-badge.minha{background:rgba(29,185,84,.14);color:#5fe08d}
-.rg-loja-badge.lider{background:rgba(245,196,81,.14);color:#F5C451}
-.rg-loja-meta{font-size:12.5px;color:#9AA69F}
-.rg-loja-bar{flex:1;height:8px;border-radius:4px;background:#1C231F;overflow:hidden}
+.rg-loja-badge.minha{background:rgba(29,185,84,.14);color:#1DB954}
+.rg-loja-badge.lider{background:rgba(245,196,81,.14);color:#c9a030}
+.rg-loja-meta{font-size:12.5px;color:var(--tm)}
+.rg-loja-bar{flex:1;height:8px;border-radius:4px;background:var(--c2);overflow:hidden}
 .rg-loja-bar-fill{height:100%;border-radius:4px;animation:rg-barra .8s ease both}
 .rg-loja-bar-fill.green{background:#1DB954}
 .rg-loja-bar-fill.gold{background:#F5C451}
-.rg-loja-pct{width:42px;text-align:right;font-size:12px;font-weight:600;color:#C5CFC9;font-variant-numeric:tabular-nums}
+.rg-loja-pct{width:42px;text-align:right;font-size:12px;font-weight:600;color:var(--tm);font-variant-numeric:tabular-nums}
 .rg-loja-nums{display:flex;gap:28px;text-align:right;flex-shrink:0}
-.rg-loja-num-val{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:24px;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums;color:#ECF2EE}
+.rg-loja-num-val{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:24px;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--tx)}
 .rg-loja.rg-lider .rg-loja-num-val{font-size:28px}
 .rg-loja-num-val.green{color:#1DB954}
-.rg-loja-num-lbl{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#9AA69F}
+.rg-loja-num-lbl{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--tm)}
+
+/* Hero + Loja — overrides DARK */
+.rank-wrap.rg-dark .rg-hero{border-color:#232B26;background:#111613}
+.rank-wrap.rg-dark .rg-hero-label{color:#9AA69F}
+.rank-wrap.rg-dark .rg-hero-volume,.rank-wrap.rg-dark .rg-hero-stat-val{color:#ECF2EE}
+.rank-wrap.rg-dark .rg-hero-stat-lbl{color:#9AA69F}
+.rank-wrap.rg-dark .rg-share-seg.empty{background:#1C231F}
+.rank-wrap.rg-dark .rg-share-legend{color:#C5CFC9}
+.rank-wrap.rg-dark .rg-loja{border-color:#232B26;background:#111613}
+.rank-wrap.rg-dark .rg-loja.rg-lider{border-color:rgba(245,196,81,.3);background:linear-gradient(135deg,rgba(245,196,81,.06),#111613)}
+.rank-wrap.rg-dark .rg-loja-pos{color:#4A5550}
+.rank-wrap.rg-dark .rg-loja-av{background:#171D19;border-color:#2A332D;color:#ECF2EE}
+.rank-wrap.rg-dark .rg-loja-nome{color:#ECF2EE}
+.rank-wrap.rg-dark .rg-loja-badge.minha{color:#5fe08d}
+.rank-wrap.rg-dark .rg-loja-badge.lider{color:#F5C451}
+.rank-wrap.rg-dark .rg-loja-meta{color:#9AA69F}
+.rank-wrap.rg-dark .rg-loja-bar{background:#1C231F}
+.rank-wrap.rg-dark .rg-loja-pct{color:#C5CFC9}
+.rank-wrap.rg-dark .rg-loja-num-val{color:#ECF2EE}
+.rank-wrap.rg-dark .rg-loja-num-lbl{color:#9AA69F}
 
 /* Equipes/Todos dark */
 .rank-wrap.rg-dark .rq-card{background:#111613;border-color:#1C231F;color:#ECF2EE;animation:rg-sobe .5s cubic-bezier(.2,.8,.2,1) both}

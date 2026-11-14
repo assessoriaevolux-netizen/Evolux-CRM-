@@ -389,8 +389,9 @@ function _rankGestaoRender() {
   }
   const comFiltro = rankView === 'equipes' || rankView === 'todos';
   if (sel) sel.style.display = comFiltro ? '' : 'none';
-  // Toggle dark mode: dark quando renderiza gestão, light quando volta pra Minha Loja
-  const ativarDark = rankView !== 'loja';
+  // Toggle dark mode: dark quando renderiza gestão E o CRM está em tema escuro
+  const temaCRM = document.documentElement.getAttribute('data-theme') === 'dark';
+  const ativarDark = rankView !== 'loja' && temaCRM;
   if (rankWrap) rankWrap.classList.toggle('rg-dark', ativarDark);
   if (rankLayout) rankLayout.classList.toggle('rg-dark-layout', ativarDark);
   if (rankView === 'loja') return false;
