@@ -540,6 +540,7 @@ function showTab(id,btn){
 function applyNavPermissions(){
   const me=getMe();
   document.querySelectorAll('.sb-superadmin-only').forEach(el=>{el.style.display=isPlataforma(me)?'':'none';});
+  try{ if(typeof _initGestao==='function') _initGestao(window._acesso); }catch(e){}
   if(!me) return;
   Object.keys(TAB_PERM).forEach(tabId=>{
     if(tabId==='empresas')return;

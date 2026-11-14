@@ -144,8 +144,12 @@ function _renderGestaoContent(container) {
 
 
 // ─── Administração de gestões (plataforma, dentro da aba Empresas) ──
+// O administrador escolhe a empresa master, o responsável (gestor dela) e
+// marca as outras empresas que entram na gestão.
 
 let _gestoesCache = [];
+let _gestoresCache = [];   // gestores ativos de todas as empresas (quem pode ser master)
+let _gestaoEditId = null;
 
 async function _loadGestoes() {
   const { data, error } = await window._rpc('crm_admin_listar_gestoes', {});
@@ -160,7 +164,7 @@ async function renderGestoesAdmin() {
   if (!list) return;
 
   if (!_gestoesCache.length) {
-    list.innerHTML = '<p style="color:var(--tm);font-size:13px">Nenhuma gestão cadastrada ainda.</p>';
+    list.innerHTML = '<p style="color:var(--tm);font-size:13px">Nenhuma gestão cadastrada ainda. Clique em "Nova gestão" para escolher a empresa master e as empresas que ela acompanha.</p>';
     return;
   }
 
@@ -169,73 +173,113 @@ async function renderGestoesAdmin() {
     const empresas = g.empresas || [];
     return `<div style="background:var(--w);border:1px solid var(--c2);border-radius:12px;padding:16px;${!ativo ? 'opacity:.6' : ''}">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
-        <div style="width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;font-weight:700;flex-shrink:0"><i class="ti ti-hierarchy-3"></i></div>
+        <div style="width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,var(--g),var(--gc));display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;flex-shrink:0"><i class="ti ti-hierarchy-3"></i></div>
         <div style="flex:1;min-width:140px">
-          <div style="font-weight:700;font-size:14px">${esc(g.nome)}</div>
-          <div style="font-size:12px;color:var(--tm)">Master: <strong>${esc(g.master_nome || '—')}</strong> (${esc(g.master_email || '—')}) · ${esc(g.master_empresa_nome || '—')}</div>
+          <div style="font-weight:700;font-size:14px">${esc(g.nome)}${ativo ? '' : ' <span style="font-size:11px;color:#dc2626">(desativada)</span>'}</div>
+          <div style="font-size:12px;color:var(--tm)">Empresa master: <strong>${esc(g.master_empresa_nome || '—')}</strong> · Responsável: ${esc(g.master_nome || '—')} (${esc(g.master_email || '—')})</div>
         </div>
         <div style="display:flex;gap:8px;flex-shrink:0">
-          <button class="btn bd bsm" onclick="openGestaoEditModal(${g.id})" title="Editar"><i class="ti ti-pencil"></i></button>
+          <button class="btn bg bsm" onclick="openGestaoModal(${g.id})"><i class="ti ti-pencil"></i>Editar empresas</button>
           <button class="btn ${ativo ? 'bd' : 'bp'} bsm" onclick="toggleGestaoAtivo(${g.id},${ativo})"><i class="ti ${ativo ? 'ti-eye-off' : 'ti-eye'}"></i>${ativo ? 'Desativar' : 'Ativar'}</button>
         </div>
       </div>
-      <div style="font-size:12px;color:var(--tm);margin-bottom:6px">Empresas vinculadas (${empresas.length}):</div>
+      <div style="font-size:12px;color:var(--tm);margin-bottom:6px">Empresas acompanhadas (${empresas.length}):</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${empresas.map(e => `<span style="background:var(--c0);border:1px solid var(--c2);border-radius:6px;padding:3px 10px;font-size:12px;display:flex;align-items:center;gap:4px">${esc(e.empresa_nome)} <button onclick="removeEmpresaGestao(${g.id},'${esc(e.empresa_id)}')" style="background:none;border:none;color:#dc2626;cursor:pointer;padding:0;font-size:14px;line-height:1" title="Remover">×</button></span>`).join('')}
-        <button onclick="openAddEmpresaGestaoModal(${g.id})" style="background:var(--gs);border:1px dashed var(--g);border-radius:6px;padding:3px 10px;font-size:12px;color:var(--g);cursor:pointer;font-weight:600">+ Adicionar</button>
+        ${empresas.length ? empresas.map(e => `<span style="background:var(--c0);border:1px solid var(--c2);border-radius:6px;padding:3px 10px;font-size:12px">${esc(e.empresa_nome)}</span>`).join('') : '<span style="font-size:12px;color:var(--tm)">Nenhuma ainda — clique em "Editar empresas".</span>'}
       </div>
     </div>`;
   }).join('');
 }
 
-async function openNovaGestaoModal() {
+function openNovaGestaoModal() { return openGestaoModal(null); }
+function openGestaoEditModal(id) { return openGestaoModal(id); }
+
+async function openGestaoModal(id) {
   if (!isPlataforma()) return;
-  // Carregar lista de empresas para selecionar
   await loadEmpresas();
-  document.getElementById('modal-nova-gestao')?.remove();
+  const rg = await window._rpc('crm_admin_listar_gestores', {});
+  if (rg.error) { showToast('Não foi possível carregar os gestores: ' + rg.error.message, 'ti-alert-triangle', '#dc2626'); return; }
+  _gestoresCache = rg.data || [];
+  _gestaoEditId = id || null;
+  const g = id ? _gestoesCache.find(x => x.id === id) : null;
 
-  const optsEmpresas = (_empresasCache || []).map(e => `<option value="${esc(e.id)}">${esc(e.nome)}</option>`).join('');
+  document.getElementById('modal-gestao')?.remove();
+  const comGestor = new Set(_gestoresCache.map(x => String(x.empresa_id)));
+  const optsMaster = (_empresasCache || []).map(e => {
+    const tem = comGestor.has(String(e.id));
+    return `<option value="${esc(e.id)}" ${tem ? '' : 'disabled'} ${g && String(g.master_empresa_id) === String(e.id) ? 'selected' : ''}>${esc(e.nome)}${tem ? '' : ' (sem gestor cadastrado)'}</option>`;
+  }).join('');
 
-  const html = `<div id="modal-nova-gestao" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">
-    <div style="background:var(--w);border-radius:16px;padding:28px;width:100%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-      <div style="font-size:17px;font-weight:800;margin-bottom:4px"><i class="ti ti-hierarchy-3" style="color:var(--g)"></i> Nova Gestão</div>
-      <div style="font-size:13px;color:var(--tm);margin-bottom:20px">Configure quem é o master e quais empresas ele gerencia</div>
-      <div class="field" style="margin-bottom:12px"><label>Nome da gestão</label><input type="text" id="ng-nome" class="fi" placeholder="Ex: Gestão Aliança"></div>
-      <div class="field" style="margin-bottom:12px"><label>E-mail do master (gestor)</label><input type="email" id="ng-master" class="fi" placeholder="email@do-master.com"></div>
-      <div class="field" style="margin-bottom:20px"><label>Empresas vinculadas</label><select id="ng-empresas" class="fi" multiple style="min-height:100px">${optsEmpresas}</select><div style="font-size:11px;color:var(--tm);margin-top:4px">Segure Ctrl/Cmd para selecionar várias. A empresa do master é incluída automaticamente.</div></div>
+  const html = `<div id="modal-gestao" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">
+    <div style="background:var(--w);border-radius:16px;padding:24px;width:100%;max-width:520px;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="font-size:17px;font-weight:800;margin-bottom:4px"><i class="ti ti-hierarchy-3" style="color:var(--g)"></i> ${g ? 'Editar gestão' : 'Nova gestão'}</div>
+      <div style="font-size:13px;color:var(--tm);margin-bottom:18px">Escolha a empresa master e marque as empresas que ela acompanha.</div>
+
+      <div class="field" style="margin-bottom:12px"><label>Nome da gestão</label><input type="text" id="gm-nome" class="fi" placeholder="Ex: Gestão Aliança" value="${g ? esc(g.nome) : ''}"></div>
+
+      <div class="field" style="margin-bottom:12px"><label>1. Empresa master</label>
+        <select id="gm-master-emp" class="fi" onchange="_gestaoModalSync()"><option value="">Selecione a empresa master…</option>${optsMaster}</select>
+      </div>
+
+      <div class="field" style="margin-bottom:12px"><label>2. Responsável (quem vê o painel da gestão)</label>
+        <select id="gm-master-user" class="fi"><option value="">Escolha a empresa master primeiro</option></select>
+      </div>
+
+      <div class="field" style="margin-bottom:18px"><label>3. Empresas que fazem parte da gestão</label>
+        <div id="gm-empresas" style="border:1px solid var(--c2);border-radius:8px;max-height:220px;overflow:auto;background:var(--c0)"></div>
+        <div style="font-size:11px;color:var(--tm);margin-top:4px">O master vê só os números dessas empresas — nunca os leads, nomes ou conversas.</div>
+      </div>
+
       <div style="display:flex;gap:10px">
-        <button onclick="document.getElementById('modal-nova-gestao')?.remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
-        <button id="ng-btn" onclick="criarGestaoConfirm()" style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-hierarchy-3"></i> Criar gestão</button>
+        <button onclick="document.getElementById('modal-gestao')?.remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+        <button id="gm-btn" onclick="salvarGestaoConfirm()" style="flex:2;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer"><i class="ti ti-check"></i> Salvar gestão</button>
       </div>
     </div>
   </div>`;
   document.body.insertAdjacentHTML('beforeend', html);
-  setTimeout(() => document.getElementById('ng-nome')?.focus(), 100);
+  _gestaoModalSync(g);
 }
 
-async function criarGestaoConfirm() {
-  const nome = document.getElementById('ng-nome')?.value.trim();
-  const master = document.getElementById('ng-master')?.value.trim();
-  const sel = document.getElementById('ng-empresas');
+// Atualiza a lista de responsáveis e as caixinhas conforme a empresa master escolhida
+function _gestaoModalSync(g) {
+  const masterEmp = document.getElementById('gm-master-emp')?.value || '';
+  const selUser = document.getElementById('gm-master-user');
+  const box = document.getElementById('gm-empresas');
+  if (!selUser || !box) return;
+
+  const gestores = _gestoresCache.filter(x => String(x.empresa_id) === String(masterEmp));
+  selUser.innerHTML = !masterEmp ? '<option value="">Escolha a empresa master primeiro</option>'
+    : gestores.map(x => `<option value="${esc(x.user_id)}" ${g && String(g.master_user_id) === String(x.user_id) ? 'selected' : ''}>${esc(x.nome || x.email)} — ${esc(x.email || '')}</option>`).join('');
+
+  // mantém o que já estava marcado (ou o que veio da gestão em edição)
+  const marcadas = new Set(g ? (g.empresas || []).map(e => String(e.empresa_id))
+    : Array.from(box.querySelectorAll('input:checked')).map(i => i.value));
+  const outras = (_empresasCache || []).filter(e => String(e.id) !== String(masterEmp));
+  box.innerHTML = outras.length ? outras.map(e => `<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--c2);font-size:13px;cursor:pointer">
+      <input type="checkbox" value="${esc(e.id)}" ${marcadas.has(String(e.id)) ? 'checked' : ''} style="width:16px;height:16px;flex-shrink:0">
+      <span>${esc(e.nome)}</span>
+    </label>`).join('') : '<div style="padding:12px;font-size:12px;color:var(--tm)">Nenhuma outra empresa cadastrada.</div>';
+}
+
+async function salvarGestaoConfirm() {
+  const nome = document.getElementById('gm-nome')?.value.trim();
+  const masterEmp = document.getElementById('gm-master-emp')?.value;
+  const masterUser = document.getElementById('gm-master-user')?.value;
+  const empresas = Array.from(document.querySelectorAll('#gm-empresas input:checked')).map(i => i.value);
   if (!nome) { showToast('Informe o nome da gestão.', 'ti-alert-triangle', '#d97706'); return; }
-  if (!master) { showToast('Informe o e-mail do master.', 'ti-alert-triangle', '#d97706'); return; }
+  if (!masterEmp || !masterUser) { showToast('Escolha a empresa master e o responsável.', 'ti-alert-triangle', '#d97706'); return; }
+  if (!empresas.length) { showToast('Marque pelo menos uma empresa para a gestão.', 'ti-alert-triangle', '#d97706'); return; }
 
-  const empresas = sel ? Array.from(sel.selectedOptions).map(o => o.value) : [];
-
-  const btn = document.getElementById('ng-btn');
+  const btn = document.getElementById('gm-btn');
   if (btn) btn.disabled = true;
-
-  const { data, error } = await window._rpc('crm_admin_criar_gestao', {
-    p_nome: nome,
-    p_master_email: master,
-    p_empresas_ids: empresas
+  const { error } = await window._rpc('crm_admin_salvar_gestao', {
+    p_id: _gestaoEditId, p_nome: nome, p_master_user: masterUser, p_empresas: empresas
   });
-
   if (btn) btn.disabled = false;
   if (error) { showToast('Erro: ' + error.message, 'ti-alert-circle', '#dc3545'); return; }
 
-  document.getElementById('modal-nova-gestao')?.remove();
-  showToast('Gestão criada com sucesso!', 'ti-check');
+  document.getElementById('modal-gestao')?.remove();
+  showToast('Gestão salva!', 'ti-check');
   renderGestoesAdmin();
 }
 
@@ -244,52 +288,4 @@ async function toggleGestaoAtivo(id, atual) {
   if (error) { showToast('Erro: ' + error.message, 'ti-alert-circle', '#dc3545'); return; }
   showToast(atual ? 'Gestão desativada.' : 'Gestão reativada.', 'ti-check');
   renderGestoesAdmin();
-}
-
-async function removeEmpresaGestao(gestaoId, empresaId) {
-  if (!confirm('Remover esta empresa da gestão?')) return;
-  const { error } = await window._rpc('crm_admin_gestao_remove_empresa', { p_gestao_id: gestaoId, p_empresa_id: empresaId });
-  if (error) { showToast('Erro: ' + error.message, 'ti-alert-circle', '#dc3545'); return; }
-  showToast('Empresa removida da gestão.', 'ti-check');
-  renderGestoesAdmin();
-}
-
-async function openAddEmpresaGestaoModal(gestaoId) {
-  await loadEmpresas();
-  document.getElementById('modal-add-emp-gestao')?.remove();
-
-  const gestao = _gestoesCache.find(g => g.id === gestaoId);
-  const jaVinculadas = (gestao?.empresas || []).map(e => e.empresa_id);
-  const disponiveis = (_empresasCache || []).filter(e => !jaVinculadas.includes(String(e.id)));
-
-  if (!disponiveis.length) { showToast('Todas as empresas já estão vinculadas.', 'ti-info-circle'); return; }
-
-  const opts = disponiveis.map(e => `<option value="${esc(e.id)}">${esc(e.nome)}</option>`).join('');
-
-  const html = `<div id="modal-add-emp-gestao" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px">
-    <div style="background:var(--w);border-radius:16px;padding:24px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-      <div style="font-size:15px;font-weight:700;margin-bottom:16px">Adicionar empresa à gestão</div>
-      <select id="add-emp-gestao-sel" class="fi" style="margin-bottom:16px">${opts}</select>
-      <div style="display:flex;gap:10px">
-        <button onclick="document.getElementById('modal-add-emp-gestao')?.remove()" style="flex:1;padding:10px;border:1px solid var(--c2);border-radius:8px;background:var(--c0);color:var(--tx);font-size:13px;cursor:pointer">Cancelar</button>
-        <button onclick="addEmpresaGestaoConfirm(${gestaoId})" style="flex:1;padding:10px;border:none;border-radius:8px;background:var(--g);color:#fff;font-size:13px;font-weight:700;cursor:pointer">Adicionar</button>
-      </div>
-    </div>
-  </div>`;
-  document.body.insertAdjacentHTML('beforeend', html);
-}
-
-async function addEmpresaGestaoConfirm(gestaoId) {
-  const sel = document.getElementById('add-emp-gestao-sel');
-  if (!sel?.value) return;
-  const { error } = await window._rpc('crm_admin_gestao_add_empresa', { p_gestao_id: gestaoId, p_empresa_id: sel.value });
-  if (error) { showToast('Erro: ' + error.message, 'ti-alert-circle', '#dc3545'); return; }
-  document.getElementById('modal-add-emp-gestao')?.remove();
-  showToast('Empresa adicionada!', 'ti-check');
-  renderGestoesAdmin();
-}
-
-function openGestaoEditModal(id) {
-  // Por enquanto apenas abre o modal de adicionar/remover empresas
-  showToast('Use os botões × e + Adicionar para gerenciar empresas da gestão.', 'ti-info-circle');
 }
