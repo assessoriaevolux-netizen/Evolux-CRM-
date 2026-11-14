@@ -307,14 +307,18 @@ function _rankGestaoDados() {
   const r = _getRankDateRange(rankPeriodo, rankDataSelecionada);
   const chave = `${r.de || ''}|${r.ate || ''}`;
   const c = _rankGestaoCache;
-  if (c.chave === chave && Date.now() - c.em < 30000) return c;
+  if (c.chave === chave && Date.now() - c.em < 10000) return c;
   if (_rankGestaoCarregando !== chave) {
     _rankGestaoCarregando = chave;
     window._rpc('crm_gestao_ranking_lojas', { p_gestao_id: _gestaoInfo.gestao_id, p_de: r.de || null, p_ate: r.ate || null }).then(res => {
       if (_rankGestaoCarregando !== chave) return;
       _rankGestaoCarregando = null;
-      _rankGestaoCache = { chave, em: Date.now(), dados: res.error ? null : (res.data || {}), erro: res.error ? (res.error.message || 'erro') : null };
-      renderRanking();
+      const novo = { chave, em: Date.now(), dados: res.error ? null : (res.data || {}), erro: res.error ? (res.error.message || 'erro') : null };
+      // atualização automática que falhou: mantém os números que já estavam na tela
+      if (novo.erro && c.chave === chave && c.dados) { c.em = Date.now(); return; }
+      const mudou = c.chave !== chave || JSON.stringify(c.dados) !== JSON.stringify(novo.dados) || c.erro !== novo.erro;
+      _rankGestaoCache = novo;
+      if (mudou) renderRanking();   // só redesenha quando algum número mudou
     });
   }
   return c.chave === chave ? c : null;   // mesmo período: mostra o que já tinha enquanto atualiza
@@ -385,10 +389,10 @@ function _rankGestaoRender() {
       </div>` + lista.map((l, i) => `
       <div class="rq-card${i === 0 && l.credito > 0 ? ' lider' : ''}">
         <div class="rq-pos">${medals[i] || `${i + 1}º`}</div>
-        <div class="rq-av" style="${safeUrl(l.logo) ? 'background:none;font-size:0' : 'font-size:16px'}">${av(l.nome, l.logo)}</div>
+        <div class="rq-av" title="${esc(l.gestor_nome || l.nome)}" style="${safeUrl(l.gestor_foto || l.logo) ? 'background:none;font-size:0;border-radius:50%' : 'font-size:16px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--gc))'}">${av(l.gestor_nome || l.nome, l.gestor_foto || l.logo)}</div>
         <div class="rq-info">
           <div class="rq-nome">${esc(l.nome)}${l.is_master ? ' <span style="font-size:11px;font-weight:700;color:var(--g)">· Minha loja</span>' : ''}</div>
-          <div class="rq-meta">${num(l.vendedores)} pessoa${num(l.vendedores) !== 1 ? 's' : ''} na loja${totC > 0 ? ` · ${Math.round(l.credito / totC * 100)}% do volume da gestão` : ''}</div>
+          <div class="rq-meta">${l.gestor_nome ? `Gestor: ${esc(l.gestor_nome)} · ` : ''}${num(l.vendedores)} pessoa${num(l.vendedores) !== 1 ? 's' : ''} na loja${totC > 0 ? ` · ${Math.round(l.credito / totC * 100)}% do volume da gestão` : ''}</div>
           <div class="rq-stats">
             <div class="rq-stat"><div class="rq-lbl">Vendas</div><div class="rq-val">${l.vendas}</div></div>
             <div class="rq-stat"><div class="rq-lbl">Volume</div><div class="rq-val g">${fmtR(l.credito)}</div></div>
@@ -446,3 +450,17 @@ function _rankGestaoRender() {
     </tr>`).join('')}</tbody></table></div>`;
   return true;
 }
+
+// Atualização automática: enquanto o master está com o ranking da gestão aberto,
+// busca os números de novo a cada 10 segundos (as vendas das outras lojas não
+// chegam por aviso do banco, porque ele não tem acesso às vendas delas).
+setInterval(() => {
+  try {
+    if (!isGestaoMaster() || document.hidden) return;
+    if (!document.getElementById('tab-ranking')?.classList.contains('active')) return;
+    if (rankView === 'loja' || ((rankView === 'equipes' || rankView === 'todos') && (_rankLojaSel[rankView] || 'minha') === 'minha')) return;
+    _rankGestaoCache.em = 0;
+    _rankGestaoDados();
+  } catch (e) {}
+}, 10000);
+document.addEventListener('visibilitychange', () => { try { if (!document.hidden && isGestaoMaster() && document.getElementById('tab-ranking')?.classList.contains('active')) { _rankGestaoCache.em = 0; renderRanking(); } } catch (e) {} });
