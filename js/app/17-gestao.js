@@ -334,17 +334,53 @@ function _rankGestaoFiltro(sel, dados) {
 
 function _rankGestaoAviso(el, emoji, titulo, sub) {
   el.style.display = 'block';
-  el.innerHTML = `<div style="padding:52px 24px;text-align:center"><div style="font-size:44px;margin-bottom:12px">${emoji}</div><div style="font-size:15px;font-weight:800;color:var(--tx);margin-bottom:6px">${esc(titulo)}</div>${sub ? `<div style="font-size:13px;color:var(--tm)">${esc(sub)}</div>` : ''}</div>`;
+  const isDark = document.querySelector('.rank-wrap.rg-dark');
+  const tCor = isDark ? '#ECF2EE' : 'var(--tx)';
+  const sCor = isDark ? '#9AA69F' : 'var(--tm)';
+  el.innerHTML = `<div style="padding:52px 24px;text-align:center"><div style="font-size:44px;margin-bottom:12px">${emoji}</div><div style="font-size:15px;font-weight:800;color:${tCor};margin-bottom:6px">${esc(titulo)}</div>${sub ? `<div style="font-size:13px;color:${sCor}">${esc(sub)}</div>` : ''}</div>`;
 }
+
+// ── Count-up animation helper ──
+function _rgCountUp(el, target, prefix, suffix, duration) {
+  if (!el || !target) { if (el) el.textContent = (prefix || '') + '0' + (suffix || ''); return; }
+  const start = performance.now();
+  const dur = duration || 1200;
+  function tick(now) {
+    const t = Math.min((now - start) / dur, 1);
+    const ease = 1 - Math.pow(1 - t, 3);
+    const v = Math.round(target * ease);
+    el.textContent = (prefix || '') + v.toLocaleString('pt-BR') + (suffix || '');
+    if (t < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+function _rgCountUpR(el, target, duration) {
+  if (!el || !target) { if (el) el.textContent = 'R$ 0'; return; }
+  const start = performance.now();
+  const dur = duration || 1400;
+  function tick(now) {
+    const t = Math.min((now - start) / dur, 1);
+    const ease = 1 - Math.pow(1 - t, 3);
+    const v = Math.round(target * ease);
+    el.textContent = v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    if (t < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+let _rgAnimKey = 0; // incrementa para não rodar animação stale
 
 // Devolve true quando desenhou o ranking da gestão (o ranking normal não roda).
 function _rankGestaoRender() {
   const master = isGestaoMaster();
   const tab = document.getElementById('rv-tab-lojas');
   const sel = document.getElementById('rank-loja-filtro');
+  const rankWrap = document.querySelector('#tab-ranking .rank-wrap');
+  const rankLayout = document.querySelector('#tab-ranking .rank-layout');
   if (tab) tab.style.display = master ? '' : 'none';
   if (!master) {
     if (sel) sel.style.display = 'none';
+    if (rankWrap) rankWrap.classList.remove('rg-dark');
+    if (rankLayout) rankLayout.classList.remove('rg-dark-layout');
     if (rankView === 'lojas') {
       rankView = 'loja';
       document.querySelectorAll('.rv-tab').forEach(b => b.classList.toggle('active', (b.getAttribute('onclick') || '').includes("'loja'")));
@@ -353,13 +389,17 @@ function _rankGestaoRender() {
   }
   const comFiltro = rankView === 'equipes' || rankView === 'todos';
   if (sel) sel.style.display = comFiltro ? '' : 'none';
+  // Toggle dark mode: dark quando renderiza gestão, light quando volta pra Minha Loja
+  const ativarDark = rankView !== 'loja';
+  if (rankWrap) rankWrap.classList.toggle('rg-dark', ativarDark);
+  if (rankLayout) rankLayout.classList.toggle('rg-dark-layout', ativarDark);
   if (rankView === 'loja') return false;
 
   const cache = _rankGestaoDados();
   const dados = cache && cache.dados;
   if (comFiltro) _rankGestaoFiltro(sel, dados);
   const escolha = comFiltro ? (_rankLojaSel[rankView] || 'minha') : 'gestao';
-  if (comFiltro && escolha === 'minha') return false;
+  if (comFiltro && escolha === 'minha') { if (rankWrap) rankWrap.classList.remove('rg-dark'); if (rankLayout) rankLayout.classList.remove('rg-dark-layout'); return false; }
 
   const rqEl = document.getElementById('rk-equipes'), rtEl = document.getElementById('rk-todos');
   ['podio-area', 'ranking-rows', 'rk-equipes', 'rk-todos'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
@@ -376,29 +416,68 @@ function _rankGestaoRender() {
   const num = v => Number(v) || 0;
   const av = (x, logo) => { const f = safeUrl(logo); return f ? `<img src="${f}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" alt="">` : `<span>${esc(_iniciais(x))}</span>`; };
 
-  // ── LOJAS: quanto cada loja da gestão vendeu ──
+  // ── LOJAS: novo design escuro animado ──
   if (rankView === 'lojas') {
     const lista = lojas.map(l => ({ ...l, vendas: num(l.vendas), credito: num(l.credito) }))
       .sort((a, b) => b.credito - a.credito || b.vendas - a.vendas || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
     const totV = lista.reduce((s, l) => s + l.vendas, 0), totC = lista.reduce((s, l) => s + l.credito, 0);
+
+    // Share segments
+    const segs = lista.filter(l => l.credito > 0).map((l, i) => {
+      const pct = totC > 0 ? Math.round(l.credito / totC * 100) : 0;
+      const cor = i === 0 ? 'green' : (i === 1 ? 'gold' : '');
+      const cores = ['#1DB954', '#F5C451', '#3B82F6', '#A855F7', '#EC4899', '#F97316'];
+      return { nome: l.nome, pct, bg: cores[i] || '#6B7A72' };
+    });
+
+    const animKey = ++_rgAnimKey;
     alvo.style.display = 'block';
-    alvo.innerHTML = `<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;padding:16px 20px;background:var(--c0);border-bottom:1px solid var(--c2)">
-        <div style="flex:1;min-width:160px"><div style="font-size:11px;font-weight:700;color:var(--tm);text-transform:uppercase;letter-spacing:.03em">${esc(_gestaoInfo.gestao_nome || 'Gestão')}</div><div style="font-size:13px;color:var(--tm);margin-top:2px">${lista.length} loja${lista.length !== 1 ? 's' : ''}</div></div>
-        <div><div class="rq-lbl">Vendas da gestão</div><div style="font-size:20px;font-weight:800;color:var(--tx)">${totV}</div></div>
-        <div><div class="rq-lbl">Volume da gestão</div><div style="font-size:20px;font-weight:800;color:var(--g)">${fmtR(totC)}</div></div>
-      </div>` + lista.map((l, i) => `
-      <div class="rq-card${i === 0 && l.credito > 0 ? ' lider' : ''}">
-        <div class="rq-pos">${medals[i] || `${i + 1}º`}</div>
-        <div class="rq-av" title="${esc(l.gestor_nome || l.nome)}" style="${safeUrl(l.gestor_foto || l.logo) ? 'background:none;font-size:0;border-radius:50%' : 'font-size:16px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--gc))'}">${av(l.gestor_nome || l.nome, l.gestor_foto || l.logo)}</div>
-        <div class="rq-info">
-          <div class="rq-nome">${esc(l.nome)}${l.is_master ? ' <span style="font-size:11px;font-weight:700;color:var(--g)">· Minha loja</span>' : ''}</div>
-          <div class="rq-meta">${l.gestor_nome ? `Gestor: ${esc(l.gestor_nome)} · ` : ''}${num(l.vendedores)} pessoa${num(l.vendedores) !== 1 ? 's' : ''} na loja${totC > 0 ? ` · ${Math.round(l.credito / totC * 100)}% do volume da gestão` : ''}</div>
-          <div class="rq-stats">
-            <div class="rq-stat"><div class="rq-lbl">Vendas</div><div class="rq-val">${l.vendas}</div></div>
-            <div class="rq-stat"><div class="rq-lbl">Volume</div><div class="rq-val g">${fmtR(l.credito)}</div></div>
-          </div>
+    alvo.innerHTML = `
+      <div class="rg-hero" style="margin-top:16px">
+        <div class="rg-hero-label"><span class="rg-live-dot"></span><span>Volume da gestão · ao vivo</span></div>
+        <div class="rg-hero-volume" data-rg-vol="${totC}">R$ 0</div>
+        <div class="rg-hero-stats">
+          <div><div class="rg-hero-stat-val" data-rg-vendas="${totV}">0</div><div class="rg-hero-stat-lbl">vendas no mês</div></div>
+          <div><div class="rg-hero-stat-val">${lista.length}</div><div class="rg-hero-stat-lbl">lojas na gestão</div></div>
         </div>
-      </div>`).join('');
+        <div class="rg-share-bar">${segs.map(s => `<div class="rg-share-seg" style="width:${s.pct}%;background:${s.bg}">${s.pct >= 15 ? '<span class="rg-share-shimmer"></span>' : ''}</div>`).join('')}<div class="rg-share-seg empty"></div></div>
+        <div class="rg-share-legend">${segs.map(s => `<span><span class="rg-share-dot" style="background:${s.bg}"></span>${esc(s.nome)} · ${s.pct}%</span>`).join('')}<span style="color:#6B7A72">Atualiza a cada 10s</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;padding:16px 0">${lista.map((l, i) => {
+        const isLider = i === 0 && l.credito > 0;
+        const pct = totC > 0 ? Math.round(l.credito / totC * 100) : 0;
+        const fotoSrc = safeUrl(l.gestor_foto || l.logo);
+        return `
+        <div class="rg-loja${isLider ? ' rg-lider' : ''}" style="animation-delay:${i * 120}ms">
+          <div class="rg-loja-pos">${i + 1}º</div>
+          <div class="rg-loja-av">${fotoSrc ? `<img src="${fotoSrc}" alt="">` : `<span>${esc(_iniciais(l.gestor_nome || l.nome))}</span>`}</div>
+          <div class="rg-loja-body">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px">
+              <span class="rg-loja-nome">${esc(l.nome)}</span>
+              ${l.is_master ? '<span class="rg-loja-badge minha">Minha loja</span>' : ''}
+              ${isLider ? '<span class="rg-loja-badge lider"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg>Líder</span>' : ''}
+            </div>
+            <div class="rg-loja-meta">${l.gestor_nome ? `Gestor: ${esc(l.gestor_nome)} · ` : ''}${num(l.vendedores)} pessoa${num(l.vendedores) !== 1 ? 's' : ''} na loja</div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <div class="rg-loja-bar"><div class="rg-loja-bar-fill ${isLider ? 'gold' : 'green'}" style="--rg-w:${pct}%;animation-delay:${i * 120 + 300}ms"></div></div>
+              <span class="rg-loja-pct">${pct}%</span>
+            </div>
+          </div>
+          <div class="rg-loja-nums">
+            <div><div class="rg-loja-num-val" data-rg-v="${l.vendas}">${l.vendas}</div><div class="rg-loja-num-lbl">Vendas</div></div>
+            <div style="min-width:130px"><div class="rg-loja-num-val green" data-rg-c="${l.credito}">${fmtR(l.credito)}</div><div class="rg-loja-num-lbl">Volume</div></div>
+          </div>
+        </div>`;
+      }).join('')}</div>`;
+
+    // Run count-up animations
+    requestAnimationFrame(() => {
+      if (_rgAnimKey !== animKey) return;
+      const volEl = alvo.querySelector('[data-rg-vol]');
+      if (volEl) _rgCountUpR(volEl, totC, 1600);
+      const vendasEl = alvo.querySelector('[data-rg-vendas]');
+      if (vendasEl) _rgCountUp(vendasEl, totV, '', '', 1200);
+    });
     return true;
   }
 
