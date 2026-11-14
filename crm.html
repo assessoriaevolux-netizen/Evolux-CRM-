@@ -507,10 +507,12 @@
       <div class="rank-hdr">
         <h2><i class="ti ti-trophy"></i>Ranking</h2>
         <div class="rv-tabs">
+          <button class="rv-tab" id="rv-tab-lojas" style="display:none" onclick="setRankView('lojas',this)">🏬 Lojas</button>
           <button class="rv-tab active" onclick="setRankView('loja',this)">🏪 Minha Loja</button>
           <button class="rv-tab" onclick="setRankView('equipes',this)">👥 Equipes</button>
           <button class="rv-tab" onclick="setRankView('todos',this)">👤 Todos</button>
         </div>
+        <select id="rank-loja-filtro" onchange="setRankLoja(this.value)" title="Filtrar por loja da gestão" style="display:none;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;max-width:220px"></select>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;position:relative">
             <div class="periodo-tabs">
               <button class="periodo-tab" id="rp-hoje" onclick="setRankPeriodo('hoje',this)">Hoje</button>
@@ -1218,7 +1220,7 @@
 <script src="js/app/05-leads.js?v=20261029r"></script>
 <script src="js/app/06-simulador.js?v=20261029r"></script>
 <script src="js/app/07-lances.js?v=20261029r"></script>
-<script src="js/app/08-ranking.js?v=20261029r"></script>
+<script src="js/app/08-ranking.js?v=20261114c"></script>
 <script src="js/app/09-administradoras.js?v=20261023a"></script>
 <script src="js/app/10-usuarios.js?v=20261112a"></script>
 <script src="js/app/11-configuracoes.js?v=20261104c"></script>
@@ -1227,7 +1229,7 @@
 <script src="js/app/14-whatsapp.js?v=20261104g"></script>
 <script src="js/app/15-diversos.js?v=20261029r"></script>
 <script src="js/app/16-empresas.js?v=20261030a"></script>
-<script src="js/app/17-gestao.js?v=20261114b"></script>
+<script src="js/app/17-gestao.js?v=20261114c"></script>
 <script src="js/app/17-equipes.js?v=20261112a"></script>
 <script src="js/app/18-ui.js?v=20261023a"></script>
 <script src="js/app/19-minhas-vendas.js?v=20261029r"></script>

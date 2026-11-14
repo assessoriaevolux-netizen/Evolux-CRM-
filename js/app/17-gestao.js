@@ -289,3 +289,160 @@ async function toggleGestaoAtivo(id, atual) {
   showToast(atual ? 'Gestão desativada.' : 'Gestão reativada.', 'ti-check');
   renderGestoesAdmin();
 }
+
+// ─── RANKING DO MASTER (aba Lojas + filtro por loja) ────────────────────────
+// Só entra em cena para o master de uma gestão. "Minha loja" continua usando o
+// ranking normal; outra loja ou "Gestão completa" usa números somados no servidor.
+let _rankLojaSel = { equipes: 'minha', todos: 'gestao' };   // filtro de cada aba
+let _rankGestaoCache = { chave: null, em: 0, dados: null, erro: null };
+let _rankGestaoCarregando = null;
+const _ROLE_NOME = { master: 'Gestor', superadmin: 'Gestor', gestor: 'Gestor', representante: 'Representante', supervisor: 'Supervisor', vendedor: 'Vendedor' };
+
+function setRankLoja(v) {
+  if (rankView === 'equipes' || rankView === 'todos') _rankLojaSel[rankView] = v || 'minha';
+  renderRanking();
+}
+
+function _rankGestaoDados() {
+  const r = _getRankDateRange(rankPeriodo, rankDataSelecionada);
+  const chave = `${r.de || ''}|${r.ate || ''}`;
+  const c = _rankGestaoCache;
+  if (c.chave === chave && Date.now() - c.em < 30000) return c;
+  if (_rankGestaoCarregando !== chave) {
+    _rankGestaoCarregando = chave;
+    window._rpc('crm_gestao_ranking_lojas', { p_gestao_id: _gestaoInfo.gestao_id, p_de: r.de || null, p_ate: r.ate || null }).then(res => {
+      if (_rankGestaoCarregando !== chave) return;
+      _rankGestaoCarregando = null;
+      _rankGestaoCache = { chave, em: Date.now(), dados: res.error ? null : (res.data || {}), erro: res.error ? (res.error.message || 'erro') : null };
+      renderRanking();
+    });
+  }
+  return c.chave === chave ? c : null;   // mesmo período: mostra o que já tinha enquanto atualiza
+}
+
+function _rankGestaoFiltro(sel, dados) {
+  if (!sel) return;
+  const atual = _rankLojaSel[rankView] || 'minha';
+  const outras = ((dados && dados.lojas) || []).filter(l => !l.is_master).sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+  const o = (v, t) => `<option value="${esc(v)}" style="color:#111" ${String(v) === String(atual) ? 'selected' : ''}>${esc(t)}</option>`;
+  sel.innerHTML = o('minha', '🏪 Minha loja') + o('gestao', '🏬 Gestão completa') + outras.map(l => o(l.empresa_id, l.nome)).join('');
+}
+
+function _rankGestaoAviso(el, emoji, titulo, sub) {
+  el.style.display = 'block';
+  el.innerHTML = `<div style="padding:52px 24px;text-align:center"><div style="font-size:44px;margin-bottom:12px">${emoji}</div><div style="font-size:15px;font-weight:800;color:var(--tx);margin-bottom:6px">${esc(titulo)}</div>${sub ? `<div style="font-size:13px;color:var(--tm)">${esc(sub)}</div>` : ''}</div>`;
+}
+
+// Devolve true quando desenhou o ranking da gestão (o ranking normal não roda).
+function _rankGestaoRender() {
+  const master = isGestaoMaster();
+  const tab = document.getElementById('rv-tab-lojas');
+  const sel = document.getElementById('rank-loja-filtro');
+  if (tab) tab.style.display = master ? '' : 'none';
+  if (!master) {
+    if (sel) sel.style.display = 'none';
+    if (rankView === 'lojas') {
+      rankView = 'loja';
+      document.querySelectorAll('.rv-tab').forEach(b => b.classList.toggle('active', (b.getAttribute('onclick') || '').includes("'loja'")));
+    }
+    return false;
+  }
+  const comFiltro = rankView === 'equipes' || rankView === 'todos';
+  if (sel) sel.style.display = comFiltro ? '' : 'none';
+  if (rankView === 'loja') return false;
+
+  const cache = _rankGestaoDados();
+  const dados = cache && cache.dados;
+  if (comFiltro) _rankGestaoFiltro(sel, dados);
+  const escolha = comFiltro ? (_rankLojaSel[rankView] || 'minha') : 'gestao';
+  if (comFiltro && escolha === 'minha') return false;
+
+  const rqEl = document.getElementById('rk-equipes'), rtEl = document.getElementById('rk-todos');
+  ['podio-area', 'ranking-rows', 'rk-equipes', 'rk-todos'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  const alvo = rankView === 'todos' ? rtEl : rqEl;
+  if (!alvo) return true;
+  try { rankAtualizarSidebar(); } catch (e) {}
+  if (!cache) { _rankGestaoAviso(alvo, '⏳', 'Carregando números da gestão…'); return true; }
+  if (!dados) { _rankGestaoAviso(alvo, '⚠️', 'Não foi possível carregar o ranking da gestão', cache.erro); return true; }
+
+  const medals = ['🥇', '🥈', '🥉'];
+  const lojas = dados.lojas || [], pessoasTodas = dados.pessoas || [], equipesTodas = dados.equipes || [];
+  const nomeLoja = new Map(lojas.map(l => [String(l.empresa_id), l.nome]));
+  const daLoja = x => escolha === 'gestao' || String(x.empresa_id) === String(escolha);
+  const num = v => Number(v) || 0;
+  const av = (x, logo) => { const f = safeUrl(logo); return f ? `<img src="${f}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" alt="">` : `<span>${esc(_iniciais(x))}</span>`; };
+
+  // ── LOJAS: quanto cada loja da gestão vendeu ──
+  if (rankView === 'lojas') {
+    const lista = lojas.map(l => ({ ...l, vendas: num(l.vendas), credito: num(l.credito) }))
+      .sort((a, b) => b.credito - a.credito || b.vendas - a.vendas || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+    const totV = lista.reduce((s, l) => s + l.vendas, 0), totC = lista.reduce((s, l) => s + l.credito, 0);
+    alvo.style.display = 'block';
+    alvo.innerHTML = `<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;padding:16px 20px;background:var(--c0);border-bottom:1px solid var(--c2)">
+        <div style="flex:1;min-width:160px"><div style="font-size:11px;font-weight:700;color:var(--tm);text-transform:uppercase;letter-spacing:.03em">${esc(_gestaoInfo.gestao_nome || 'Gestão')}</div><div style="font-size:13px;color:var(--tm);margin-top:2px">${lista.length} loja${lista.length !== 1 ? 's' : ''}</div></div>
+        <div><div class="rq-lbl">Vendas da gestão</div><div style="font-size:20px;font-weight:800;color:var(--tx)">${totV}</div></div>
+        <div><div class="rq-lbl">Volume da gestão</div><div style="font-size:20px;font-weight:800;color:var(--g)">${fmtR(totC)}</div></div>
+      </div>` + lista.map((l, i) => `
+      <div class="rq-card${i === 0 && l.credito > 0 ? ' lider' : ''}">
+        <div class="rq-pos">${medals[i] || `${i + 1}º`}</div>
+        <div class="rq-av" style="${safeUrl(l.logo) ? 'background:none;font-size:0' : 'font-size:16px'}">${av(l.nome, l.logo)}</div>
+        <div class="rq-info">
+          <div class="rq-nome">${esc(l.nome)}${l.is_master ? ' <span style="font-size:11px;font-weight:700;color:var(--g)">· Minha loja</span>' : ''}</div>
+          <div class="rq-meta">${num(l.vendedores)} pessoa${num(l.vendedores) !== 1 ? 's' : ''} na loja${totC > 0 ? ` · ${Math.round(l.credito / totC * 100)}% do volume da gestão` : ''}</div>
+          <div class="rq-stats">
+            <div class="rq-stat"><div class="rq-lbl">Vendas</div><div class="rq-val">${l.vendas}</div></div>
+            <div class="rq-stat"><div class="rq-lbl">Volume</div><div class="rq-val g">${fmtR(l.credito)}</div></div>
+          </div>
+        </div>
+      </div>`).join('');
+    return true;
+  }
+
+  const pessoas = pessoasTodas.filter(daLoja).map(p => ({ ...p, vendas: num(p.vendas), credito: num(p.credito) }));
+  const porId = new Map(pessoas.map(p => [String(p.user_id), p]));
+  const eqs = equipesTodas.filter(daLoja);
+
+  // ── EQUIPES da loja escolhida (ou de toda a gestão) ──
+  if (rankView === 'equipes') {
+    const lista = eqs.map(q => {
+      const mbs = (q.membros || []).map(id => porId.get(String(id))).filter(Boolean);
+      return { q, mbs, totC: mbs.reduce((s, u) => s + u.credito, 0), totV: mbs.reduce((s, u) => s + u.vendas, 0) };
+    }).sort((a, b) => b.totC - a.totC || b.totV - a.totV);
+    if (!lista.length) { _rankGestaoAviso(alvo, '🏆', 'Nenhuma equipe cadastrada', escolha === 'gestao' ? 'As lojas da gestão ainda não têm equipes.' : 'Esta loja ainda não tem equipes.'); return true; }
+    alvo.style.display = 'block';
+    alvo.innerHTML = lista.map(({ q, mbs, totC, totV }, i) => `
+      <div class="rq-card${i === 0 && totC > 0 ? ' lider' : ''}">
+        <div class="rq-pos">${medals[i] || `${i + 1}º`}</div>
+        <div class="rq-av" style="${safeUrl(q.foto) ? 'background:none;font-size:0' : 'font-size:16px'}">${av(q.nome, q.foto)}</div>
+        <div class="rq-info">
+          <div class="rq-nome">${esc(q.nome)}</div>
+          <div class="rq-meta">🏬 ${esc(nomeLoja.get(String(q.empresa_id)) || '—')} · ${q.supervisor ? `Supervisor: ${esc(q.supervisor)}` : 'Sem supervisor'} · ${mbs.length} membro${mbs.length !== 1 ? 's' : ''}</div>
+          <div class="rq-stats">
+            <div class="rq-stat"><div class="rq-lbl">Vendas</div><div class="rq-val">${totV}</div></div>
+            <div class="rq-stat"><div class="rq-lbl">Volume</div><div class="rq-val g">${fmtR(totC)}</div></div>
+            ${num(q.meta) ? `<div class="rq-stat"><div class="rq-lbl">Meta</div><div class="rq-val">${fmtR(num(q.meta))}<span style="font-size:10px;font-weight:600;color:var(--tm)">/${({ mensal: 'mês', semanal: 'sem', personalizado: 'per' })[q.periodo] || 'mês'}</span></div></div>` : ''}
+          </div>
+        </div>
+      </div>`).join('');
+    return true;
+  }
+
+  // ── TODOS os vendedores da loja escolhida (ou de toda a gestão) ──
+  const eqDe = new Map();
+  eqs.forEach(q => (q.membros || []).forEach(id => { if (!eqDe.has(String(id))) eqDe.set(String(id), q.nome); }));
+  const sorted = pessoas.sort((a, b) => b.credito - a.credito || b.vendas - a.vendas || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+  if (!sorted.length) { _rankGestaoAviso(alvo, '👤', 'Nenhum vendedor'); return true; }
+  alvo.style.display = 'block';
+  alvo.innerHTML = `<div style="overflow-x:auto"><table class="rt-table"><thead><tr>
+      <th class="rt-pos">#</th><th></th><th>Nome</th><th>Loja</th><th>Equipe</th><th>Vendas</th><th>Volume</th>
+    </tr></thead><tbody>${sorted.map((u, i) => `<tr>
+      <td class="rt-pos">${medals[i] || i + 1}</td>
+      <td><div class="rt-av">${av(u.nome, u.foto)}</div></td>
+      <td><div class="rt-name">${esc(u.nome)}</div><div class="rt-sub">${esc(_ROLE_NOME[u.role] || 'Vendedor')}</div></td>
+      <td style="color:var(--tm)">${esc(nomeLoja.get(String(u.empresa_id)) || '—')}</td>
+      <td style="color:var(--tm)">${esc(eqDe.get(String(u.user_id)) || '—')}</td>
+      <td>${u.vendas}</td>
+      <td class="rt-green">${fmtR(u.credito)}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+  return true;
+}

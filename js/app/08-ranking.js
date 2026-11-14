@@ -71,6 +71,8 @@ function renderRanking(){
   const tituloPeriodo=lbl[rankPeriodo]||mesAtual();
   const elMes=document.getElementById('rank-month'); if(elMes) elMes.textContent=tituloPeriodo;
   const elTv=document.getElementById('tv-month-title'); if(elTv) elTv.textContent=tituloPeriodo;
+  // Master de gestão: aba Lojas e filtro por loja (17-gestao.js). Fora disso, segue igual.
+  try{ if(typeof _rankGestaoRender==='function'&&_rankGestaoRender()) return; }catch(e){ console.warn('[ranking gestão]',e); }
   const pessoas=_usuariosDoRanking().map(u=>Object.assign({},u,_rankStats(u)));
   const porId=new Map(pessoas.map(u=>[u.id,u]));
 
