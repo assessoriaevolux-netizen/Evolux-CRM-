@@ -533,7 +533,7 @@ function showTab(id,btn){
   if(btn) btn.classList.add('active');
   // Persiste aba ativa para restaurar após reload
   try{localStorage.setItem('evolux_last_tab',id);}catch(e){}
-  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,indicador:()=>renderIndicador(),token:()=>renderToken(),simulador:()=>{syncSim();calcSim();},lances:renderLances,minhasvendas:()=>renderMinhasVendas(),ranking:()=>{_invalidarRanking();_aplicarFiltroVendas();},relatorios:renderRelatorios,whatsapp:renderWhatsapp,ia:renderIA,anuncios:renderAnuncios,calendario:renderCalendario,configuracoes:renderConfig,empresas:()=>{try{renderEmpresas();}catch(e){}}})[id]?.();
+  ({dashboard:renderDashboard,funil:renderKanban,leads:renderTable,indicador:()=>renderIndicador(),token:()=>renderToken(),simulador:()=>{syncSim();calcSim();},lances:renderLances,minhasvendas:()=>renderMinhasVendas(),ranking:()=>{_invalidarRanking();_aplicarFiltroVendas();},relatorios:renderRelatorios,whatsapp:renderWhatsapp,ia:renderIA,anuncios:renderAnuncios,calendario:renderCalendario,configuracoes:renderConfig,gestao:()=>{try{renderGestao();}catch(e){}},empresas:()=>{try{renderEmpresas();renderGestoesAdmin();}catch(e){}}})[id]?.();
 }
 // Mostra/esconde abas e botões conforme as permissões da pessoa logada.
 // Botões fixos do HTML usam data-perm="chave" (ou várias separadas por "|": basta uma).

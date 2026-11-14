@@ -248,6 +248,7 @@
     if(tokenConvite){ try{ await sb.auth.updateUser({data:{convite_token:null}}); }catch(e){} }
     window._acesso=acesso;
     if(acesso&&acesso.empresa_id) window._empresaIdDireto=acesso.empresa_id;
+    try{window._initGestao&&window._initGestao(acesso);}catch(e){}
 
     try{
       if(window._empresaIdDireto){
