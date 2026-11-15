@@ -5,6 +5,8 @@
 let _gestaoInfo = null;       // {gestao_id, gestao_nome} do acesso
 let _gestaoMetricas = null;   // array de métricas por empresa
 let _gestaoRanking = null;    // array do ranking geral
+let _gestaoFotos = new Map(); // foto de cada vendedor do ranking (chave: empresa + nome)
+function _gestaoFotoChave(empresa, nome) { return String(empresa || '').trim().toLowerCase() + '|' + String(nome || '').trim().toLowerCase(); }
 
 // ─── Inicialização ──────────────────────────────────────────────
 function _initGestao(acesso) {
@@ -35,9 +37,11 @@ async function renderGestao() {
 
   try {
     // Carregar métricas e ranking em paralelo
-    const [metRes, rankRes] = await Promise.all([
+    // O terceiro pedido só traz as fotos dos vendedores; se falhar, o ranking aparece com as iniciais
+    const [metRes, rankRes, fotoRes] = await Promise.all([
       window._rpc('crm_gestao_metricas', { p_gestao_id: _gestaoInfo.gestao_id, p_de: de, p_ate: ate }),
-      window._rpc('crm_gestao_ranking', { p_gestao_id: _gestaoInfo.gestao_id, p_de: de, p_ate: ate })
+      window._rpc('crm_gestao_ranking', { p_gestao_id: _gestaoInfo.gestao_id, p_de: de, p_ate: ate }),
+      window._rpc('crm_gestao_ranking_lojas', { p_gestao_id: _gestaoInfo.gestao_id, p_de: de, p_ate: ate }).catch(() => ({ data: null }))
     ]);
 
     if (metRes.error) throw metRes.error;
@@ -45,11 +49,29 @@ async function renderGestao() {
 
     _gestaoMetricas = metRes.data || [];
     _gestaoRanking = rankRes.data || [];
+    _gestaoFotos = new Map();
+    try {
+      const fd = (fotoRes && !fotoRes.error && fotoRes.data) || {};
+      const lojaNome = new Map((fd.lojas || []).map(l => [String(l.empresa_id), l.nome]));
+      (fd.pessoas || []).forEach(p => {
+        if (!p.foto) return;
+        const k = _gestaoFotoChave(lojaNome.get(String(p.empresa_id)), p.nome);
+        if (!_gestaoFotos.has(k)) _gestaoFotos.set(k, p.foto);
+      });
+    } catch (e) {}
 
     _renderGestaoContent(container);
   } catch (err) {
     container.innerHTML = `<div style="text-align:center;padding:40px;color:#dc2626"><i class="ti ti-alert-triangle" style="font-size:32px"></i><p style="margin-top:8px">Erro ao carregar: ${esc(err.message || err)}</p></div>`;
   }
+}
+
+// Foto do vendedor no ranking (ou as iniciais, quando ele não tem foto)
+function _gestaoAvatar(r) {
+  const foto = safeUrl(_gestaoFotos.get(_gestaoFotoChave(r.empresa_nome, r.user_nome)));
+  const base = 'width:34px;height:34px;border-radius:50%;flex-shrink:0;';
+  if (foto) return `<img src="${foto}" alt="" loading="lazy" style="${base}object-fit:cover;border:1px solid var(--c2)">`;
+  return `<span style="${base}display:inline-flex;align-items:center;justify-content:center;background:var(--gs);color:var(--g);font-size:12px;font-weight:700">${esc(_iniciais(r.user_nome || '?'))}</span>`;
 }
 
 function _renderGestaoContent(container) {
@@ -130,7 +152,7 @@ function _renderGestaoContent(container) {
       const medal = pos <= 3 ? ['🥇', '🥈', '🥉'][pos - 1] : pos;
       html += `<tr style="border-top:1px solid var(--c2);${pos <= 3 ? 'background:rgba(245,158,11,.04)' : ''}">
         <td style="padding:10px 14px;font-weight:700">${medal}</td>
-        <td style="padding:10px 14px;font-weight:600">${esc(r.user_nome || '—')}</td>
+        <td style="padding:8px 14px;font-weight:600"><div style="display:flex;align-items:center;gap:10px">${_gestaoAvatar(r)}<span>${esc(r.user_nome || '—')}</span></div></td>
         <td style="padding:10px 14px;color:var(--tm)">${esc(r.empresa_nome || '—')}</td>
         <td style="padding:10px 14px;text-align:right;font-weight:700">${fmt(r.vendas)}</td>
         <td style="padding:10px 14px;text-align:right;color:var(--g);font-weight:600">${fmtR(r.credito)}</td>
