@@ -1636,6 +1636,13 @@ html.crm-suspenso .kcard{cursor:pointer}
 .sms-item{border:1px solid var(--c2);border-radius:10px;padding:10px 12px;margin-bottom:8px}
 .sms-item-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .sms-confirma{display:flex;gap:6px;margin-top:8px}
+.sms-item-acoes{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sms-del{border:0;background:transparent;color:var(--tm);cursor:pointer;width:28px;height:28px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-size:15px;flex:none}
+.sms-del:hover,.sms-del:focus-visible{background:rgba(220,38,38,.1);color:#dc2626}
+.sms-hist-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sms-hist-h>span{display:inline-flex;align-items:center;gap:inherit}
+.sms-limpar{border:1px solid var(--c2);background:transparent;color:var(--tm);cursor:pointer;font:inherit;font-size:12px;font-weight:600;padding:4px 9px;border-radius:7px;display:inline-flex;align-items:center;gap:5px}
+.sms-limpar:hover,.sms-limpar:focus-visible{border-color:#dc2626;color:#dc2626}
 .sms-confirma .fi{flex:1;min-width:0;letter-spacing:.2em;font-weight:700}
 .sms-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;margin-top:16px}
 @media (max-width:900px){.sms-grid{grid-template-columns:minmax(0,1fr)}}

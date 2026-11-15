@@ -66,7 +66,7 @@ function renderToken(){
           <button class="btn bp" id="sms-agendar" style="width:100%;justify-content:center;margin-top:12px" onclick="agendarTokenSMS()"><i class="ti ti-send"></i>Agendar SMS</button>
         </div>
         <div class="dn-card">
-          <h3><i class="ti ti-history"></i>Tokens recentes</h3>
+          <h3 class="sms-hist-h"><span><i class="ti ti-history"></i>Tokens recentes</span><button type="button" class="sms-limpar" id="sms-limpar" style="display:none" onclick="smsLimpar()"><i class="ti ti-trash"></i>Limpar lista</button></h3>
           <div id="sms-lista"><div class="ind-mini">Carregando…</div></div>
         </div>
       </div>
@@ -155,13 +155,36 @@ function smsRender(){
   const box=document.getElementById('sms-lista');
   if(!box) return;
   const me=getMe();
+  const bl=document.getElementById('sms-limpar');
+  if(bl) bl.style.display=SMS.lista.some(t=>smsPodeExcluir(t)&&(!me||t.criado_por===me.sb_id))?'':'none';
   if(!SMS.lista.length){ box.innerHTML='<div class="ind-mini">Nenhum token nos últimos 7 dias.</div>'; return; }
   box.innerHTML=SMS.lista.map(t=>`<div class="sms-item">
-    <div class="sms-item-top"><div style="min-width:0"><strong>${esc(t.nome)}</strong> <span class="ind-mini">${esc(formatTelefone(t.telefone))} · ${esc(smsValorTxt(t.valor))}${me&&t.criado_por!==me.sb_id&&t.criado_por_nome?' · por '+esc(t.criado_por_nome):''}</span></div>${smsStatus(t)}</div>
+    <div class="sms-item-top"><div style="min-width:0"><strong>${esc(t.nome)}</strong> <span class="ind-mini">${esc(formatTelefone(t.telefone))} · ${esc(smsValorTxt(t.valor))}${me&&t.criado_por!==me.sb_id&&t.criado_por_nome?' · por '+esc(t.criado_por_nome):''}</span></div><div class="sms-item-acoes">${smsStatus(t)}${smsPodeExcluir(t)?`<button type="button" class="sms-del" title="Excluir da lista" aria-label="Excluir da lista" onclick="smsExcluir('${esc(t.id)}')"><i class="ti ti-trash"></i></button>`:''}</div></div>
     ${t.status==='erro'&&t.erro?`<div class="ind-mini" style="color:#dc2626;margin-top:4px">${esc(t.erro)}</div>`:''}
     ${t.status==='enviado'?`<div class="sms-confirma"><input class="fi" id="sms-cod-${esc(t.id)}" inputmode="numeric" maxlength="6" placeholder="Token que o cliente recebeu" oninput="this.value=this.value.replace(/\\D/g,'')" onkeydown="if(event.key==='Enter')smsConfirmar('${esc(t.id)}')"><button class="btn bp bsm" onclick="smsConfirmar('${esc(t.id)}')"><i class="ti ti-shield-check"></i>Confirmar</button></div>`:''}
     ${t.status==='agendado'?`<div style="margin-top:6px"><button class="btn bg bsm" onclick="smsCancelar('${esc(t.id)}')"><i class="ti ti-x"></i>Cancelar envio</button></div>`:''}
   </div>`).join('');
+}
+// Excluir da lista: só token que já terminou (o que ainda vai sair precisa ser cancelado antes)
+function smsPodeExcluir(t){ return t.status!=='agendado'&&t.status!=='enviando'; }
+function smsErroExcluir(error){
+  const m=String(error.message||error);
+  showToast(/sim_token_(excluir|limpar)|schema cache|does not exist/i.test(m)?'Falta instalar a exclusão de tokens no banco (arquivo 2026-11-15-token-sms-excluir.sql).':(window._msgErro?window._msgErro(error):m),'ti-alert-triangle','#dc2626');
+}
+function smsExcluir(id){
+  showConfirm('Excluir este token da lista?',async()=>{
+    const {error}=await window._rpc('sim_token_excluir',{p_id:id});
+    if(error){smsErroExcluir(error);return;}
+    SMS.lista=SMS.lista.filter(t=>t.id!==id); smsRender();
+    showToast('Token excluído da lista.','ti-trash');
+  });
+}
+function smsLimpar(){
+  showConfirm('Limpar a lista? Os seus tokens já enviados, confirmados ou cancelados saem da tela.',async()=>{
+    const {error}=await window._rpc('sim_token_limpar');
+    if(error){smsErroExcluir(error);return;}
+    showToast('Lista limpa.','ti-trash'); smsCarregar();
+  });
 }
 function smsAtualizarRelogios(){
   let venceu=false;
