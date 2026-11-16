@@ -303,11 +303,20 @@ function fmtMetaVal(v){
   if(!v||v===0)return '';
   return (v/1).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
+// Valor em reais mostrando os centavos só quando existem: 200000 → "200.000", 200000.5 → "200.000,50"
+function fmtC(n){
+  n=Math.round((Number(n)||0)*100)/100;
+  return Number.isInteger(n)?n.toLocaleString('pt-BR'):n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function fmtRC(n){return 'R$ '+fmtC(n);}
 function maskM(el){
-  let v=el.value.replace(/\D/g,'');
-  if(!v){el.value='';return;}
-  // Insere ponto a cada 3 dígitos da direita durante a digitação
-  el.value=v.replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+  // Ponto a cada 3 dígitos durante a digitação; centavos opcionais depois da vírgula (até 2 casas)
+  const bruto=String(el.value||'');
+  const iv=bruto.indexOf(',');
+  const int=(iv<0?bruto:bruto.slice(0,iv)).replace(/\D/g,'');
+  const cent=iv<0?null:bruto.slice(iv+1).replace(/\D/g,'').slice(0,2);
+  if(!int&&!cent){el.value='';return;}
+  el.value=(int||'0').replace(/^0+(?=\d)/,'').replace(/\B(?=(\d{3})+(?!\d))/g,'.')+(cent===null?'':','+cent);
 }
 // Lê valor em reais em qualquer formato: "R$ 1.234,56", "1.234", "1234,5", 1234
 function unM(v){

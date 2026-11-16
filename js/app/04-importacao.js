@@ -557,7 +557,7 @@ async function moverLeadParaEtapa(l,etapa){
   if(window._saveAtividade) window._saveAtividade('ti-arrows-right-left',`${l.nome}: ${etapaLabel(old)} → ${etapaLabel(etapa)}`);
   if(etapa==='Fechado / Convertido'){
     const resp=users.find(x=>x.id===l.responsavelId);
-    if(window._saveAtividade) window._saveAtividade('ti-circle-check',`${l.nome} fechado — ${fmtR(l.credito)}`);
+    if(window._saveAtividade) window._saveAtividade('ti-circle-check',`${l.nome} fechado — ${fmtRC(l.credito)}`);
     setTimeout(()=>showCelebra(resp?resp.nome:'Vendedor',l.credito),100);
   }
   if(etapa==='Perdido'&&window._saveAtividade) window._saveAtividade('ti-x',`${l.nome} marcado como perdido`);

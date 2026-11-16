@@ -145,7 +145,7 @@ function _renderTableImediato(){
       return `<tr class="dl-row${distribMode&&isSel?' lead-check-row sel':''}" onclick="${distribMode?`toggleLeadSelect(${l.id})`:`openLeadDetalhe(${l.id})`}">
         <td><div class="dl-lead">${distribMode?`<input type="checkbox" ${isSel?'checked':''} onclick="event.stopPropagation()" onchange="toggleLeadSelect(${l.id})" style="accent-color:var(--g);width:14px;height:14px">`:''}${_dnAvatar(null,l.nome,l.id)}<div style="min-width:0"><div class="dl-nome">${esc(l.nome)}</div><div class="dl-tel">${esc(formatTelefone(l.tel)||'sem telefone')}</div></div></div></td>
         <td><span class="dl-tipo"><i style="background:${COR_TIPO[l.tipo]||'#64748b'}"></i>${esc(l.tipo||'—')}</span></td>
-        <td class="dl-cred">${l.credito?fmtR(l.credito):'—'}</td>
+        <td class="dl-cred">${l.credito?fmtRC(l.credito):'—'}</td>
         <td class="dn-muted">${esc(l.origem||'—')}</td>
         <td><span class="dl-resp">${r?_dnAvatar(r,r.nome,r.id):''}${esc(String(rNome).split(' ')[0])}</span></td>
         <td><span class="dn-chip ${_DN_CHIP[l.etapa]||'b'}">${esc(etapaLabel(l.etapa))}</span></td>
@@ -163,7 +163,7 @@ function _renderTableImediato(){
       <td><div style="display:flex;align-items:center;gap:8px">${distribMode?`<input type="checkbox" ${isSel?'checked':''} onchange="toggleLeadSelect(${l.id})" style="accent-color:var(--g);width:14px;height:14px">`:''}<span style="font-weight:600">${esc(l.nome)}</span></div></td>
       <td style="color:var(--tm)">${esc(formatTelefone(l.tel)||'—')}</td>
       <td><span class="tag ${TMAP[l.tipo]||'ts3'}">${esc(l.tipo)}</span></td>
-      <td style="font-weight:700;color:var(--g)">${fmtR(l.credito)}</td>
+      <td style="font-weight:700;color:var(--g)">${fmtRC(l.credito)}</td>
       <td><span class="ob">${esc(l.origem||'—')}</span></td>
       <td style="font-size:12px;color:var(--tm)">${esc(_nomeResponsavel(l,porId))}</td>
       <td><span class="sb ${ES[si]||'s0'}">${esc(etapaLabel(l.etapa))}</span></td>
@@ -250,7 +250,7 @@ async function _salvarNovoLead(nome,tel,resp){
   if(window._saveAtividade)window._saveAtividade('ti-user-plus',`Novo lead: ${nome} → ${resp.nome}`);
   if(lead.etapa==='Fechado / Convertido'){
     // o banco registra a venda e o lance automático
-    if(window._saveAtividade)window._saveAtividade('ti-circle-check',`${nome} fechado — ${fmtR(lead.credito)}`);
+    if(window._saveAtividade)window._saveAtividade('ti-circle-check',`${nome} fechado — ${fmtRC(lead.credito)}`);
     _atualizarAposVenda();
     setTimeout(()=>showCelebra(resp.nome,lead.credito),100);
   }

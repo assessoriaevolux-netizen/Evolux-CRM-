@@ -52,7 +52,7 @@ function rankAtualizarSidebar(){
   if(vleadme){
     const v=vleadme.value;
     const meus=leads.filter(l=>l.responsavelId===me.id&&l.etapa!=='Fechado / Convertido'&&l.etapa!=='Perdido');
-    vleadme.innerHTML='<option value="">Selecionar lead (opcional)...</option>'+meus.map(l=>`<option value="${l.id}">${esc(l.nome)}${l.credito?' — '+fmtR(l.credito):''}</option>`).join('');
+    vleadme.innerHTML='<option value="">Selecionar lead (opcional)...</option>'+meus.map(l=>`<option value="${l.id}">${esc(l.nome)}${l.credito?' — '+fmtRC(l.credito):''}</option>`).join('');
     vleadme.value=v;
   }
   const candidatos=_candidatosVenda().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
@@ -132,7 +132,7 @@ function renderRanking(){
               <td style="color:var(--tm)">${eq?esc(eq.nome):'—'}</td>
               <td style="color:var(--tm)">${sup?esc(sup.nome):'—'}</td>
               <td>${u.vendas}</td>
-              <td class="rt-green">${fmtR(u.credito)}</td>
+              <td class="rt-green">${fmtRC(u.credito)}</td>
             </tr>`;
           }).join('')}</tbody></table></div>`;
     }
@@ -154,7 +154,7 @@ function renderRanking(){
           <div class="podio-av ${sz}">${_fotoOuInicial(u)}</div>
           <div class="podio-nome">${esc(u.nome)}</div>
           <div class="podio-sub">${esc(eqU?eqU.nome:getHierLabel(u))}</div>
-          <div class="podio-val">${fmtR(u.credito)}</div>
+          <div class="podio-val">${fmtRC(u.credito)}</div>
           <div class="podio-base ${bc}"></div>
         </div>`;
       }).join('')}</div>
@@ -194,7 +194,7 @@ function renderRanking(){
             </div>
             ${eqU?`<div style="font-size:11px;color:var(--tm);margin-top:2px">📋 ${esc(eqU.nome)}</div>`:''}
             <div class="rank-vals">
-              <div class="rank-val-item"><div class="rank-val-label">💰 Vendas</div><div class="rank-val-num green">${fmtR(u.credito)}</div></div>
+              <div class="rank-val-item"><div class="rank-val-label">💰 Vendas</div><div class="rank-val-num green">${fmtRC(u.credito)}</div></div>
               <div class="rank-val-item"><div class="rank-val-label">🎯 Meta</div><div class="rank-val-num ${meta?(atingiu?'green':'red'):''}">${meta?fmtR(meta):'Sem meta'}</div></div>
             </div>
             <div class="rank-bar-outer"><div class="rank-bar-inner ${atingiu?'atingiu':'nao-atingiu'}" style="width:${Math.min(pct,100)}%"></div></div>
@@ -228,7 +228,7 @@ function rankCarregarLeadsVendedor(){
   leads.filter(l=>l.responsavelId===uid&&l.etapa!=='Fechado / Convertido'&&l.etapa!=='Perdido').forEach(l=>{
     const opt=document.createElement('option');
     opt.value=l.id;
-    opt.textContent=`${l.nome}${l.credito?' — '+fmtR(l.credito):''}`;
+    opt.textContent=`${l.nome}${l.credito?' — '+fmtRC(l.credito):''}`;
     vlead.appendChild(opt);
   });
 }
@@ -305,7 +305,7 @@ async function _removerUltimaVendaDe(u){
   if(error){showToast('Não foi possível consultar as vendas: '+error.message,'ti-alert-triangle','#dc2626');return;}
   if(!v){showToast(`${u.nome} não tem vendas registradas.`,'ti-info-circle');return;}
   const quando=v.data_fechamento?String(v.data_fechamento).slice(0,10).split('-').reverse().join('/'):'';
-  showConfirm(`Remover a última venda de ${u.nome}: ${fmtR(v.valor_credito||0)}${v.cliente_nome?` (${v.cliente_nome})`:''}${quando?` em ${quando}`:''}?${v.lead_id?' O lead volta para Negociação.':''}`,async function(){
+  showConfirm(`Remover a última venda de ${u.nome}: ${fmtRC(v.valor_credito||0)}${v.cliente_nome?` (${v.cliente_nome})`:''}${quando?` em ${quando}`:''}?${v.lead_id?' O lead volta para Negociação.':''}`,async function(){
     const r=await window._excluirVenda(v.id);
     if(r.error){showToast('Não foi possível remover: '+r.error.message,'ti-alert-triangle','#dc2626');return;}
     const me=getMe();
@@ -471,7 +471,7 @@ function renderTV(){
         ${avHtml(u,'tv-pod-av',size)}
         <div class="tv-pod-name">${esc(u.nome)}</div>
         <div class="tv-pod-role">${esc(getHierLabel(u))}${eqU?' · '+esc(eqU.nome):''}</div>
-        <div class="tv-pod-val">${fmtR(u.credito)}</div>
+        <div class="tv-pod-val">${fmtRC(u.credito)}</div>
         <div class="tv-pod-sales">${u.vendas} venda${u.vendas!==1?'s':''}</div>
       </div>`;
     }).join('')}</div>`;
@@ -490,7 +490,7 @@ function renderTV(){
       </div>
       <div class="tv-val-block">
         <div class="tv-val-lbl">Total vendido</div>
-        <div class="tv-sc">${fmtR(u.credito)}</div>
+        <div class="tv-sc">${fmtRC(u.credito)}</div>
       </div>
     </div>`;
   };

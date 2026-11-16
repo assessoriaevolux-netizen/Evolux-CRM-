@@ -127,7 +127,7 @@ function mvFiltrar(){
         <div style="font-weight:700;font-size:14px;color:var(--tx)">${esc(v._clienteNome)}${v.lead_id?'':' <span style="font-size:10px;font-weight:600;color:var(--tm)">(venda manual)</span>'}</div>
         <div style="font-size:12px;color:var(--tm);margin-top:2px">${varias&&!minha ? esc(v._vendedorNome)+' · ' : ''}${dataFmt}</div>
       </div>
-      <div style="font-size:17px;font-weight:800;color:var(--g);white-space:nowrap">${fmtR(v.valor_credito||0)}</div>
+      <div style="font-size:17px;font-weight:800;color:var(--g);white-space:nowrap">${fmtRC(v.valor_credito||0)}</div>
       ${(podeEditar||podeExcluir) ? `<div style="display:flex;gap:6px;flex-shrink:0">
         ${podeEditar?`<button onclick="mvEditarVenda('${esc(v.id)}')" title="Editar" style="width:32px;height:32px;border:1px solid var(--c2);background:var(--c0);border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--tm)"><i class="ti ti-pencil" style="font-size:14px"></i></button>`:''}
         ${podeExcluir?`<button onclick="mvExcluirVenda('${esc(v.id)}')" title="Excluir" style="width:32px;height:32px;border:1px solid rgba(220,38,38,.25);background:rgba(220,38,38,.06);border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#dc2626"><i class="ti ti-trash" style="font-size:14px"></i></button>`:''}
@@ -154,7 +154,7 @@ function mvEditarVenda(vendaId){
       </div>
       <div class="field" style="margin-bottom:14px">
         <label style="font-size:12px;font-weight:600;color:var(--tm);display:block;margin-bottom:6px">Valor do crédito</label>
-        <input type="text" id="mve-valor" class="fi" value="${esc(fmtR(v.valor_credito||0))}" oninput="mvMaskValor(this)" placeholder="R$ 0,00">
+        <input type="text" id="mve-valor" class="fi" value="${esc(fmtRC(v.valor_credito||0))}" oninput="mvMaskValor(this)" placeholder="R$ 0,00">
       </div>
       <div class="field" style="margin-bottom:20px">
         <label style="font-size:12px;font-weight:600;color:var(--tm);display:block;margin-bottom:6px">Data da venda</label>
@@ -198,7 +198,7 @@ function mvExcluirVenda(vendaId){
   if(!can('vendas_delete')){ showToast('Você não tem permissão para excluir vendas.','ti-lock'); return; }
   const v = _mvVendasCache.find(x => String(x.id) === String(vendaId));
   if(!v){ showToast('Venda não encontrada. Recarregue a aba.','ti-alert-triangle','#d97706'); return; }
-  showConfirm(`Excluir a venda de ${v._clienteNome} (${fmtR(v.valor_credito||0)})?${v.lead_id?' O lead volta para a etapa de Negociação.':''}`, function(){
+  showConfirm(`Excluir a venda de ${v._clienteNome} (${fmtRC(v.valor_credito||0)})?${v.lead_id?' O lead volta para a etapa de Negociação.':''}`, function(){
     _mvExcluirVendaExec(vendaId);
   });
 }

@@ -198,7 +198,7 @@ function renderDashNovo(){
   const tabela=`<div class="dn-card dn-leads"><h3><i class="ti ti-users"></i>Últimos leads${can('leads_view')?`<button class="dn-mais" onclick="showTab('leads')">Ver todos</button>`:''}</h3>
     ${ult.length?`<div class="dn-tab"><table><thead><tr><th>Lead</th><th>Tipo</th><th>Crédito</th><th>Origem</th><th>Etapa</th><th>Chegou</th></tr></thead><tbody>${ult.map(({l,d},i)=>`<tr class="dn-lnk" onclick="openLeadDetalhe(${l.id})">
       <td><div class="dn-pessoa">${_dnAvatar(null,l.nome,i+1)}<div>${esc(l.nome)}<small>${esc(l.tel?formatTelefone(l.tel):'sem telefone')}</small></div></div></td>
-      <td>${esc(l.tipo||'—')}</td><td class="dn-num" style="font-weight:600">${l.credito?fmtR(l.credito):'—'}</td><td class="dn-muted">${esc(l.origem||'—')}</td>
+      <td>${esc(l.tipo||'—')}</td><td class="dn-num" style="font-weight:600">${l.credito?fmtRC(l.credito):'—'}</td><td class="dn-muted">${esc(l.origem||'—')}</td>
       <td><span class="dn-chip ${_DN_CHIP[l.etapa]||'b'}">${esc(etapaLabel(l.etapa))}</span></td><td class="dn-muted">${_dnChegou(d)}</td></tr>`).join('')}</tbody></table></div>`
     :'<div class="dn-vazio">Nenhum lead ainda.</div>'}</div>`;
   // Ranking

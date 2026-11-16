@@ -244,7 +244,7 @@ function renderKanbanColuna(etapa,i,f,vis,ctx){
         <div class="kcard-n">${esc(l.nome)}</div>
         <div class="kcard-i">${esc(formatTelefone(l.tel)||'—')}${resp?` · <span style="color:var(--b)">${esc(resp.nome.split(' ')[0])}</span>`:''}</div>
         ${l.atendimento?`<div style="font-size:10px;color:var(--tm);margin-bottom:4px">${ATD_LABEL[l.atendimento]||''}</div>`:''}
-        <div class="kcard-b"><span class="tag ${TMAP[l.tipo]||'ts3'}">${esc(l.tipo)}</span><span class="kcard-v">${fmtR(l.credito)}</span></div>
+        <div class="kcard-b"><span class="tag ${TMAP[l.tipo]||'ts3'}">${esc(l.tipo)}</span><span class="kcard-v">${fmtRC(l.credito)}</span></div>
         ${podeDrag?`<button class="kcard-mover" onclick="event.stopPropagation();kanbanMover(${l.id})"><i class="ti ti-arrows-right-left"></i>Mover</button>`:''}
       </div>`;
     }).join('')}
@@ -360,7 +360,7 @@ function openLeadDetalhe(id){
   document.getElementById('ld-nome').value=l.nome;
   document.getElementById('ld-tel').value=formatTelefone(l.tel)||'';
   _garantirOpcao(document.getElementById('ld-tipo'),l.tipo);
-  document.getElementById('ld-credito').value=l.credito?l.credito.toLocaleString('pt-BR'):'';
+  document.getElementById('ld-credito').value=l.credito?fmtC(l.credito):'';
   const ldEtapa=document.getElementById('ld-etapa');
   ldEtapa.innerHTML=ETAPAS.map(e=>`<option value="${esc(e)}"${e===l.etapa?' selected':''}>${esc(etapaLabel(e))}</option>`).join('');
   _garantirOpcao(document.getElementById('ld-origem'),l.origem||'');
