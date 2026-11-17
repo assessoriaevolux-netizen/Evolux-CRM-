@@ -204,8 +204,8 @@ const PERM_LIVRE=new Set(['whatsapp_view','whatsapp_send','whatsapp_bulk']);
 const PERM_IA=new Set(['ia_view','ia_manage']);
 function iaLiberada(){const e=window.empresa;return !!e&&String(e.plano||'').toLowerCase()==='master';}
 window.iaLiberada=iaLiberada;
-// Projeto Indicador: também só no plano Master (Pro e Básico não têm)
-function indicadorLiberado(){return iaLiberada();}
+// Projeto Indicador: planos Master e Pro (Básico não tem)
+function indicadorLiberado(){const e=window.empresa;const p=String((e&&e.plano)||'').toLowerCase();return !!e&&(p==='master'||p==='pro');}
 window.indicadorLiberado=indicadorLiberado;
 // Pode fazer X? (gestor e plataforma podem tudo; o resto segue o cargo)
 function can(perm,u){
