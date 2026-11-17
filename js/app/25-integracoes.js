@@ -180,7 +180,7 @@ function integCardPagina(p){
       <div class="field integ2-rodizio" id="${id}-rod"${modo==='escolhidos'?'':' hidden'}><label>Participam do rodízio</label>
         <div class="integ2-chips">${candidatos.map(u=>`<label class="integ2-chip"><input type="checkbox" value="${esc(u.sb_id)}"${rod.includes(u.sb_id)?' checked':''}>${esc(u.nome)}</label>`).join('')||'<span class="integ2-mini">Ninguém além do gestor.</span>'}</div></div>
       <div class="g2">
-        <div class="field"><label>Etapa inicial</label><select class="fi" id="${id}-etapa">${ETAPAS.slice(0,5).map(e=>`<option value="${esc(e)}"${e===(p.etapa_inicial||'Novo lead')?' selected':''}>${esc(etapaLabel(e))}</option>`).join('')}</select></div>
+        <div class="field"><label>Etapa inicial</label><select class="fi" id="${id}-etapa">${etapasAbertas().map(e=>`<option value="${esc(e)}"${e===(p.etapa_inicial||'Novo lead')?' selected':''}>${esc(etapaLabel(e))}</option>`).join('')}</select></div>
         <div class="field"><label>Tipo quando o formulário não diz</label><select class="fi" id="${id}-tipo"><option value="">Descobrir pelas respostas</option>${['Imóvel','Automóvel','Moto','Serviço'].map(t=>`<option${t===p.tipo_padrao?' selected':''}>${t}</option>`).join('')}</select></div>
       </div>
       <div class="cfg-toggle-row"${iaLiberada()?'':' hidden'}><div><div class="cfg-toggle-label">IA faz o primeiro contato pelo WhatsApp</div><div class="cfg-toggle-sub">Assim que o lead chega, a IA de primeiro atendimento manda a mensagem inicial (precisa estar ligada na aba IA).</div></div>

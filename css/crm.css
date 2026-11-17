@@ -123,7 +123,7 @@ input,select,textarea,button{font-family:inherit}
 
 /* ── KANBAN ──────────────────────────────────────── */
 .kw{overflow-x:auto;padding-bottom:8px}
-.kanban{display:grid;grid-template-columns:repeat(7,minmax(168px,1fr));gap:10px;min-width:1200px}
+.kanban{display:grid;grid-template-columns:repeat(var(--ncol,7),minmax(168px,1fr));gap:10px;min-width:calc(var(--ncol,7) * 172px)}
 .col{background:var(--w);border:1px solid var(--c2);border-radius:var(--radl);padding:11px;box-shadow:var(--s1);min-height:200px;transition:all .15s}
 .col.drag-over{border:2px dashed var(--g);background:var(--gs)}
 .col-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--c1)}

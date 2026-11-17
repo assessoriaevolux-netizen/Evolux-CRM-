@@ -4,12 +4,48 @@ const ETAPAS=['Novo lead','Primeiro contato','Aguardando resposta','Proposta env
 // Cada empresa pode renomear as etapas (Editar funil); o nome fica salvo em empresas.etapas_labels.
 const ETAPAS_LABEL={'Negociação':'Negociação/Agendamento'};
 const ETAPAS_LABEL_PADRAO={...ETAPAS_LABEL};
+// Funil personalizado por empresa (fica em empresas.etapas_labels._funil):
+// ordem das etapas, etapas novas criadas pela empresa e qual etapa abre o agendamento.
+// As 7 etapas padrão nunca saem do funil (o banco usa algumas delas); "Fechado" e "Perdido" ficam no fim.
+const ETAPAS_BASE=[...ETAPAS];
+const ETAPAS_FIM=['Fechado / Convertido','Perdido'];
+const ETAPA_AGENDA_PADRAO='Negociação';
+let ETAPA_AGENDA=ETAPA_AGENDA_PADRAO;
+const EC_BASE={'Novo lead':'#1a6e3c','Primeiro contato':'#c8870a','Aguardando resposta':'#5b3db0','Proposta enviada':'#1e3a6e','Negociação':'#a06010','Fechado / Convertido':'#22954f','Perdido':'#c0392b'};
+const ES_BASE={'Novo lead':'s0','Primeiro contato':'s1','Aguardando resposta':'s2','Proposta enviada':'s3','Negociação':'s4','Fechado / Convertido':'s5','Perdido':'s6'};
+const EC_EXTRA=['#0e7490','#7c3aed','#be185d','#4d7c0f','#b45309','#475569','#0f766e','#9333ea'];
+const ETAPAS_MAX=15;
+function etapasAbertas(){return ETAPAS.filter(e=>!ETAPAS_FIM.includes(e));}
 function aplicarEtapasLabels(obj){
   Object.keys(ETAPAS_LABEL).forEach(k=>delete ETAPAS_LABEL[k]);
   Object.assign(ETAPAS_LABEL,ETAPAS_LABEL_PADRAO);
+  const cfg=obj&&typeof obj==='object'&&obj._funil&&typeof obj._funil==='object'?obj._funil:null;
+  // ordem: só etapas válidas, sem repetir; as padrão que faltarem entram na posição de sempre
+  let meio=[];
+  if(cfg&&Array.isArray(cfg.ordem)){
+    cfg.ordem.forEach(k=>{
+      if(typeof k!=='string')return;
+      k=k.trim().slice(0,40);
+      if(!k||ETAPAS_FIM.includes(k)||meio.includes(k))return;
+      if(!ETAPAS_BASE.includes(k)&&meio.length>=ETAPAS_MAX-ETAPAS_FIM.length)return;
+      meio.push(k);
+    });
+  }
+  ETAPAS_BASE.filter(e=>!ETAPAS_FIM.includes(e)).forEach((e,i)=>{
+    if(meio.includes(e))return;
+    const depoisDe=ETAPAS_BASE[i-1];
+    const pos=depoisDe?meio.indexOf(depoisDe)+1:0;
+    meio.splice(pos,0,e);
+  });
+  ETAPAS.splice(0,ETAPAS.length,...meio,...ETAPAS_FIM);
+  let extra=0;
+  EC.splice(0,EC.length,...ETAPAS.map(e=>EC_BASE[e]||EC_EXTRA[(extra++)%EC_EXTRA.length]));
+  ES.splice(0,ES.length,...ETAPAS.map(e=>ES_BASE[e]||'s3'));
   if(obj&&typeof obj==='object'){
     ETAPAS.forEach(e=>{const v=obj[e];if(typeof v==='string'&&v.trim())ETAPAS_LABEL[e]=v.trim().slice(0,40);});
   }
+  const ag=cfg&&typeof cfg.agenda==='string'?cfg.agenda:'';
+  ETAPA_AGENDA=etapasAbertas().includes(ag)?ag:ETAPA_AGENDA_PADRAO;
 }
 function etapaLabel(e){return ETAPAS_LABEL[e]||e;}
 const EC=['#1a6e3c','#c8870a','#5b3db0','#1e3a6e','#a06010','#22954f','#c0392b'];

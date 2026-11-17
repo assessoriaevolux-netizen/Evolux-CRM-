@@ -97,7 +97,7 @@ function _iaEditor(tipo){
         <option value="nao"${cfg.anuncios==='nao'?' selected':''}>Só quem escrever “entrevista” ou “currículo”</option>
       </select>
       <div class="integ2-mini">Quem chegou por anúncio nas últimas 24h e ficou sem resposta também é chamado pela IA, uma única vez.</div></div>`:''}
-    ${tipo==='primeiro_atendimento'?`<div class="field"><label>A IA responde leads nestas etapas</label><div class="integ2-chips">${ETAPAS.slice(0,5).map(e=>`<label class="integ2-chip"><input type="checkbox" class="ia-ed-etapa" value="${esc(e)}"${etapas.includes(e)?' checked':''}>${esc(etapaLabel(e))}</label>`).join('')}</div></div>`:''}
+    ${tipo==='primeiro_atendimento'?`<div class="field"><label>A IA responde leads nestas etapas</label><div class="integ2-chips">${etapasAbertas().map(e=>`<label class="integ2-chip"><input type="checkbox" class="ia-ed-etapa" value="${esc(e)}"${etapas.includes(e)?' checked':''}>${esc(etapaLabel(e))}</label>`).join('')}</div></div>`:''}
     ${tipo==='entrevista'?'':`<div class="field"><label>${tipo==='pos_venda'?'Mensagem do pós-venda (modelo aprovado)':'Mensagem inicial para quem preenche formulário do Meta (modelo aprovado)'}</label>
       ${_iaSelModelo(tipo,cfg)}
       ${tipo==='primeiro_atendimento'?'<div class="integ2-mini">Para a IA chamar os leads de formulário, ligue também “IA faz o primeiro contato” na página, em Configurações → Meta.</div>':'<div class="integ2-mini">A Meta só deixa a empresa puxar conversa com modelo aprovado. Quando o cliente responde, a IA continua seguindo o roteiro.</div>'}</div>`}

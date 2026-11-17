@@ -562,6 +562,6 @@ async function moverLeadParaEtapa(l,etapa){
   }
   if(etapa==='Perdido'&&window._saveAtividade) window._saveAtividade('ti-x',`${l.nome} marcado como perdido`);
   if(etapa==='Fechado / Convertido'||old==='Fechado / Convertido') _atualizarAposVenda();
-  if(etapa==='Negociação') setTimeout(()=>openProtocolo(l.id,'','','',''),200);
+  if(etapa===ETAPA_AGENDA) setTimeout(()=>openProtocolo(l.id,'','','',''),200);
   renderDashboard();renderNotifPanel();
 }

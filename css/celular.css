@@ -97,7 +97,7 @@
   .card:has(> table){overflow-x:auto!important;-webkit-overflow-scrolling:touch}
 
   /* Funil: uma coluna ocupa quase a tela, desliza para o lado */
-  .kanban{grid-template-columns:repeat(7,80vw)!important;min-width:0!important}
+  .kanban{grid-template-columns:repeat(var(--ncol,7),80vw)!important;min-width:0!important}
 
   /* Campos com fonte 16px: o iPhone não dá zoom ao tocar */
   input.fi,select.fi,textarea.fi,input.tfield,select.tfield,.modal-box input,.modal-box select,.modal-box textarea{font-size:16px}

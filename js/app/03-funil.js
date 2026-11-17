@@ -304,33 +304,95 @@ function _renderKanbanImediato(){
     if(b) b.push(l);
   }
   document.getElementById('funil-total').textContent=totalFiltrado;
+  el.style.setProperty('--ncol',ETAPAS.length);
   el.innerHTML=ETAPAS.map((etapa,i)=>renderKanbanColuna(etapa,i,f,vis,ctx)).join('');
 }
-// ─── EDITAR FUNIL (só o nome exibido de cada etapa; o banco guarda por empresa) ──
+// ─── EDITAR FUNIL (por empresa: nome, ordem, etapas novas e etapa do agendamento) ──
+// As etapas padrão não podem ser excluídas (o banco usa algumas delas). "Fechado" e "Perdido" ficam no fim.
+let _efRows=[];let _efNovo=0;
+const _efId=r=>r.key||r.tmp;
 function openEditarFunil(){
   if(!can('funil_edit')){showToast('Você não tem permissão para editar o funil.','ti-lock');return;}
-  const list=document.getElementById('funil-etapas-list');
-  list.innerHTML=ETAPAS.map((e,i)=>`
-    <div style="display:flex;align-items:center;gap:8px">
-      <span class="cdot" style="background:${EC[i]};flex-shrink:0"></span>
-      <input type="text" class="fi" value="${esc(etapaLabel(e))}" id="ef-${i}" maxlength="40" placeholder="${esc(ETAPAS_LABEL_PADRAO[e]||e)}" style="flex:1">
-    </div>`).join('')+`<div style="font-size:11.5px;color:var(--tm);margin-top:6px">Muda só o nome que aparece. Os leads continuam nas mesmas etapas.</div>`;
+  _efRows=ETAPAS.map(e=>({key:e,nome:etapaLabel(e),extra:!ETAPAS_BASE.includes(e),fim:ETAPAS_FIM.includes(e)}));
+  _efRows.agenda=ETAPA_AGENDA;
+  _efRender();
   document.getElementById('modal-editar-funil').classList.add('open');
+}
+function _efLerInputs(){
+  _efRows.forEach((r,i)=>{const inp=document.getElementById(`ef-${i}`);if(inp)r.nome=inp.value;});
+  const ag=document.getElementById('ef-agenda');if(ag)_efRows.agenda=ag.value;
+}
+function _efRender(){
+  const list=document.getElementById('funil-etapas-list');
+  const meio=_efRows.filter(r=>!r.fim).length;
+  let extra=0;
+  const cor=r=>EC_BASE[r.key]||EC_EXTRA[(extra++)%EC_EXTRA.length];
+  const btn=(ic,tit,fn,off)=>`<button type="button" class="btn bg bsm" title="${tit}" ${off?'disabled':''} style="padding:5px 7px${off?';opacity:.35':''}" onclick="${fn}"><i class="ti ${ic}"></i></button>`;
+  const abertas=_efRows.filter(r=>!r.fim);
+  list.innerHTML=_efRows.map((r,i)=>`
+    <div style="display:flex;align-items:center;gap:6px">
+      <span class="cdot" style="background:${cor(r)};flex-shrink:0"></span>
+      <input type="text" class="fi" value="${esc(r.nome)}" id="ef-${i}" maxlength="40" placeholder="${esc(r.extra?'Nome da etapa':(ETAPAS_LABEL_PADRAO[r.key]||r.key))}" style="flex:1;min-width:0">
+      <div style="width:104px;flex-shrink:0;display:flex;gap:4px;justify-content:flex-start">${r.fim?`<span style="font-size:11px;color:var(--tm);align-self:center">fica no fim</span>`:
+        btn('ti-arrow-up','Subir',`_efMover(${i},-1)`,i===0)+btn('ti-arrow-down','Descer',`_efMover(${i},1)`,i>=meio-1)+
+        (r.extra?btn('ti-trash','Excluir etapa',`_efExcluir(${i})`):'')}</div>
+    </div>`).join('')+`
+    <button type="button" class="add-col-btn" style="margin-top:4px" onclick="_efAdicionar()" ${_efRows.length>=ETAPAS_MAX?'disabled':''}><i class="ti ti-plus"></i>Adicionar etapa</button>
+    <div class="field" style="margin-top:8px"><label>Etapa que abre o agendamento</label>
+      <select class="fi" id="ef-agenda">${abertas.map(r=>`<option value="${esc(_efId(r))}"${_efId(r)===_efRows.agenda?' selected':''}>${esc(r.nome.trim()||'(sem nome)')}</option>`).join('')}</select></div>
+    <div style="font-size:11.5px;color:var(--tm);margin-top:2px">Ao mover um lead para essa etapa, abre o protocolo de agendamento. As mudanças valem só para a sua empresa. Os leads continuam nas mesmas etapas.</div>`;
+}
+function _efMover(i,d){
+  _efLerInputs();
+  const j=i+d;
+  if(j<0||!_efRows[j]||_efRows[j].fim||_efRows[i].fim)return;
+  [_efRows[i],_efRows[j]]=[_efRows[j],_efRows[i]];
+  _efRender();
+}
+function _efAdicionar(){
+  _efLerInputs();
+  if(_efRows.length>=ETAPAS_MAX){showToast(`O funil pode ter até ${ETAPAS_MAX} etapas.`,'ti-alert-triangle','#d97706');return;}
+  const pos=_efRows.findIndex(r=>r.fim);
+  _efRows.splice(pos<0?_efRows.length:pos,0,{key:null,tmp:'__nova'+(++_efNovo),nome:'',extra:true,fim:false});
+  _efRender();
+  const inp=document.getElementById(`ef-${pos<0?_efRows.length-1:pos}`);if(inp)inp.focus();
+}
+function _efExcluir(i){
+  _efLerInputs();
+  const r=_efRows[i];
+  if(!r||!r.extra)return;
+  const n=r.key?leads.filter(l=>l.etapa===r.key).length:0;
+  if(n){showToast(`Essa etapa tem ${n} lead${n>1?'s':''}. Mova ${n>1?'eles':'ele'} para outra etapa antes de excluir.`,'ti-alert-triangle','#d97706');return;}
+  if(_efId(r)===_efRows.agenda)_efRows.agenda=ETAPA_AGENDA_PADRAO;
+  _efRows.splice(i,1);
+  _efRender();
 }
 function closeEditarFunil(){document.getElementById('modal-editar-funil').classList.remove('open');}
 async function salvarEditarFunil(){
+  _efLerInputs();
   const labels={};
-  for(let i=0;i<ETAPAS.length;i++){
-    const inp=document.getElementById(`ef-${i}`);
-    const v=(inp?inp.value:'').trim();
+  const usadas=new Set(_efRows.filter(r=>r.key).map(r=>r.key.toLowerCase()));
+  for(const r of _efRows){
+    const v=(r.nome||'').trim().slice(0,40);
     if(!v){showToast('O nome da etapa não pode ficar vazio.','ti-alert-triangle','#d97706');return;}
-    if(v!==(ETAPAS_LABEL_PADRAO[ETAPAS[i]]||ETAPAS[i])) labels[ETAPAS[i]]=v.slice(0,40);
+    if(!r.key){
+      // etapa nova: o nome de agora vira a chave gravada nos leads (renomear depois muda só o nome exibido)
+      let k=v,n=2;
+      while(usadas.has(k.toLowerCase())||k.startsWith('_')){k=`${v.slice(0,36)} ${n++}`;}
+      if(_efRows.agenda===r.tmp)_efRows.agenda=k;
+      r.key=k;usadas.add(k.toLowerCase());
+    }
+    if(r.extra||v!==(ETAPAS_LABEL_PADRAO[r.key]||r.key)) labels[r.key]=v;
   }
+  const ordem=_efRows.filter(r=>!r.fim).map(r=>r.key);
+  const agenda=ordem.includes(_efRows.agenda)?_efRows.agenda:ETAPA_AGENDA_PADRAO;
+  const padrao=ETAPAS_BASE.filter(e=>!ETAPAS_FIM.includes(e));
+  if(ordem.join('|')!==padrao.join('|')||agenda!==ETAPA_AGENDA_PADRAO) labels._funil={ordem,agenda};
   const {error}=await window._rpc('crm_salvar_etapas',{p_labels:labels});
   if(error){showToast('Não foi possível salvar: '+error.message,'ti-alert-triangle','#dc2626');return;}
   aplicarEtapasLabels(labels);
   closeEditarFunil();
-  showToast('Nomes das etapas salvos.','ti-check');
+  showToast('Funil salvo.','ti-check');
   renderKanban();renderDashboard();populateSelects();
 }
 
