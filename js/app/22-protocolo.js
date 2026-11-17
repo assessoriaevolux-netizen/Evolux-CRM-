@@ -42,7 +42,7 @@ function openProtocolo(leadId, data, horaIni, horaFim, obs){
         :`<div style="width:56px;height:56px;border-radius:10px;background:linear-gradient(135deg,#15803d,#1db954);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;border:2px solid #1db954">👤</div>`}
       <div style="flex:1;min-width:0">
         <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:-.01em">${esc(accNomeVal||resp.nome)}</div>
-        <div style="font-size:10px;font-weight:600;color:#4ade80;text-transform:uppercase;letter-spacing:.08em;margin-top:2px">Consultor de Crédito</div>
+        <div style="font-size:10px;font-weight:600;color:#4ade80;text-transform:uppercase;letter-spacing:.08em;margin-top:2px">Consultor</div>
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:7px">
           ${instaFmt?`<span style="font-size:11px;color:rgba(255,255,255,.75);display:flex;align-items:center;gap:4px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><rect x="2" y="2" width="20" height="20" rx="5.5" stroke="#e1306c" stroke-width="2"/><circle cx="12" cy="12" r="4.5" stroke="#e1306c" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.2" fill="#e1306c"/></svg>${esc(instaFmt)}</span>`:''}
           ${accWhatsapp?`<span style="font-size:11px;color:rgba(255,255,255,.75);display:flex;align-items:center;gap:4px"><svg width="11" height="11" viewBox="0 0 24 24"><path fill="#25d366" d="M12 2C6.48 2 2 6.48 2 12c0 1.85.5 3.58 1.37 5.07L2 22l5.1-1.34A9.93 9.93 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm4.93 13.57c-.21.58-1.22 1.11-1.68 1.18-.43.06-.97.09-1.56-.1-.36-.11-.82-.27-1.41-.52-2.47-1.07-4.08-3.56-4.21-3.73-.12-.17-.99-1.32-.99-2.52s.63-1.79.85-2.04c.22-.25.48-.31.64-.31l.46.01c.15 0 .35-.06.54.41l.76 1.91c.06.15.03.32-.05.46l-.34.45c-.1.12-.2.25-.09.48.12.23.52.86 1.12 1.39.77.69 1.42.9 1.62.99.2.09.32.07.44-.04l.49-.58c.13-.16.25-.12.42-.07l1.9.89c.18.08.3.13.33.2.03.07.03.42-.18 1z"/></svg>${esc(accWhatsapp)}</span>`:''}
@@ -183,7 +183,7 @@ function _renderProtocoloPDF(proto,lead,consultor,dataFmt,horaIni,horaFim,obs){
       doc.setFont('helvetica','bold');doc.setFontSize(16);doc.setTextColor(255,255,255);
       doc.text(consultor.nome||'Consultor',tx,22);
       doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(74,222,128);
-      doc.text('CONSULTOR DE CRÉDITO',tx,30);
+      doc.text('CONSULTOR',tx,30);
       const contatos=[consultor.whatsapp,consultor.instaFmt].filter(Boolean).join('   ·   ');
       if(contatos){
         doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(180,220,200);
@@ -193,7 +193,7 @@ function _renderProtocoloPDF(proto,lead,consultor,dataFmt,horaIni,horaFim,obs){
       doc.setFont('helvetica','bold');doc.setFontSize(16);doc.setTextColor(255,255,255);
       doc.text(consultor.nome||'Consultor',mg,22);
       doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(74,222,128);
-      doc.text('CONSULTOR DE CRÉDITO',mg,30);
+      doc.text('CONSULTOR',mg,30);
       const contatos=[consultor.whatsapp,consultor.instaFmt].filter(Boolean).join('   ·   ');
       if(contatos){
         doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(180,220,200);
