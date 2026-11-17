@@ -507,7 +507,7 @@ function downloadSimPDF(comDados){
         :`<div class="consultor-foto-ph">👤</div>`}
       <div style="flex:1">
         <div class="consultor-nome">${esc(accNomeVal||'Consultor Evolux')}</div>
-        <div class="consultor-cargo">Consultor de Crédito</div>
+        <div class="consultor-cargo">Consultor</div>
         <div class="consultor-contatos">
           ${insta?`<span class="consultor-contato"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;margin-right:4px"><rect x="2" y="2" width="20" height="20" rx="5.5" stroke="#e1306c" stroke-width="2"/><circle cx="12" cy="12" r="4.5" stroke="#e1306c" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.2" fill="#e1306c"/></svg>${esc(insta)}</span>`:''}
           ${wa?`<span class="consultor-contato"><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><path fill="#25d366" d="M12 2C6.48 2 2 6.48 2 12c0 1.85.5 3.58 1.37 5.07L2 22l5.1-1.34A9.93 9.93 0 0012 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm4.93 13.57c-.21.58-1.22 1.11-1.68 1.18-.43.06-.97.09-1.56-.1-.36-.11-.82-.27-1.41-.52-2.47-1.07-4.08-3.56-4.21-3.73-.12-.17-.99-1.32-.99-2.52s.63-1.79.85-2.04c.22-.25.48-.31.64-.31l.46.01c.15 0 .35-.06.54.41l.76 1.91c.06.15.03.32-.05.46l-.34.45c-.1.12-.2.25-.09.48.12.23.52.86 1.12 1.39.77.69 1.42.9 1.62.99.2.09.32.07.44-.04l.49-.58c.13-.16.25-.12.42-.07l1.9.89c.18.08.3.13.33.2.03.07.03.42-.18 1z"/></svg>${esc(wa)}</span>`:''}
