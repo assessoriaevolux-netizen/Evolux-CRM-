@@ -262,10 +262,10 @@ function calcSim(parcelaOverride){
     } else if(manual1v&&prazo>1){
       // Tem entrada mas não tem demais → calcula demais pelo total
       primeiraParcela=manual1v;
-      parcelaCons=Math.round((totalBruto-primeiraParcela)/(prazo-1));
+      parcelaCons=Math.round(((totalBruto-primeiraParcela)/(prazo-1))*100)/100;
     } else {
       // Nenhuma das duas → distribui igualmente
-      parcelaCons=Math.round(totalBruto/prazo);
+      parcelaCons=Math.round((totalBruto/prazo)*100)/100;
     }
   } else if(linhaAtual&&linhaAtual.demaisParcelas&&!parcelaOverride){
     primeiraParcela=linhaAtual.primeiraParcela||null;
@@ -304,28 +304,28 @@ function calcSim(parcelaOverride){
     <div class="res-grid">
       <div class="rc2 c">
         <div class="rct g"><i class="ti ti-circle-check"></i>Crédito — ${esc(adminNome)}${esc(catLabel)}</div>
-        <div class="rcrow"><span class="rcl">Crédito contratado</span><span class="rcv" style="color:var(--g);font-size:15px;font-weight:700">${fmtR(valor)}</span></div>
-        ${primeiraParcela&&primeiraParcela!==parcelaCons?`<div class="rcrow" style="background:var(--ys);border-radius:6px;padding:6px 8px;margin:4px 0"><span class="rcl" style="font-weight:700">1ª Parcela <span style="font-size:10px;color:var(--y)">(entrada diferenciada)</span></span><span class="rcv" style="color:var(--y);font-weight:700;font-size:15px">${fmtR(primeiraParcela)}</span></div>`:''}
-        <div class="rcrow"><span class="rcl">Parcelas mensais <span style="font-size:10px;color:var(--tm)">${usouModoManual?'(manual)':usouTabelaReal?'(tabela oficial)':'(estimado)'}</span></span><span class="rcv" style="color:var(--g);font-weight:700;font-size:15px">${fmtR(parcelaCons)}</span></div>
+        <div class="rcrow"><span class="rcl">Crédito contratado</span><span class="rcv" style="color:var(--g);font-size:15px;font-weight:700">${fmtRC(valor)}</span></div>
+        ${primeiraParcela&&primeiraParcela!==parcelaCons?`<div class="rcrow" style="background:var(--ys);border-radius:6px;padding:6px 8px;margin:4px 0"><span class="rcl" style="font-weight:700">1ª Parcela <span style="font-size:10px;color:var(--y)">(entrada diferenciada)</span></span><span class="rcv" style="color:var(--y);font-weight:700;font-size:15px">${fmtRC(primeiraParcela)}</span></div>`:''}
+        <div class="rcrow"><span class="rcl">Parcelas mensais <span style="font-size:10px;color:var(--tm)">${usouModoManual?'(manual)':usouTabelaReal?'(tabela oficial)':'(estimado)'}</span></span><span class="rcv" style="color:var(--g);font-weight:700;font-size:15px">${fmtRC(parcelaCons)}</span></div>
         <div class="rcrow"><span class="rcl">Prazo</span><span class="rcv">${prazo} meses</span></div>
-        ${taxaCons>0?`<div class="rcrow"><span class="rcl">Taxa adm. total</span><span class="rcv">${taxaCons}% = ${fmtR(totalAdm)}</span></div>`:''}
-        <div class="rcrow" style="margin-top:7px;padding-top:7px;border-top:1px solid var(--gb)"><span class="rcl"><b>Total pago</b></span><span class="rcv" style="font-size:14px;font-weight:700">${fmtR(totalConsReal)}</span></div>
+        ${taxaCons>0?`<div class="rcrow"><span class="rcl">Taxa adm. total</span><span class="rcv">${taxaCons}% = ${fmtRC(totalAdm)}</span></div>`:''}
+        <div class="rcrow" style="margin-top:7px;padding-top:7px;border-top:1px solid var(--gb)"><span class="rcl"><b>Total pago</b></span><span class="rcv" style="font-size:14px;font-weight:700">${fmtRC(totalConsReal)}</span></div>
       </div>
       <div class="rc2 f">
         <div class="rct r"><i class="ti ti-circle-x"></i>Financiamento — Banco</div>
-        <div class="rcrow"><span class="rcl">Valor do bem</span><span class="rcv">${fmtR(valor)}</span></div>
-        <div class="rcrow" style="background:var(--rs,rgba(220,50,50,.08));border-radius:6px;padding:6px 8px;margin:4px 0"><span class="rcl" style="color:var(--r);font-weight:700">Entrada obrigatória (30%)</span><span class="rcv" style="color:var(--r);font-weight:700;font-size:15px">${fmtR(entradaFin)}</span></div>
-        <div class="rcrow"><span class="rcl">Valor financiado (70%)</span><span class="rcv">${fmtR(valorFinanciado)}</span></div>
-        <div class="rcrow"><span class="rcl">Parcela/mês</span><span class="rcv" style="color:var(--r);font-weight:700;font-size:15px">${fmtR(parcelaFin)}</span></div>
+        <div class="rcrow"><span class="rcl">Valor do bem</span><span class="rcv">${fmtRC(valor)}</span></div>
+        <div class="rcrow" style="background:var(--rs,rgba(220,50,50,.08));border-radius:6px;padding:6px 8px;margin:4px 0"><span class="rcl" style="color:var(--r);font-weight:700">Entrada obrigatória (30%)</span><span class="rcv" style="color:var(--r);font-weight:700;font-size:15px">${fmtRC(entradaFin)}</span></div>
+        <div class="rcrow"><span class="rcl">Valor financiado (70%)</span><span class="rcv">${fmtRC(valorFinanciado)}</span></div>
+        <div class="rcrow"><span class="rcl">Parcela/mês</span><span class="rcv" style="color:var(--r);font-weight:700;font-size:15px">${fmtRC(parcelaFin)}</span></div>
         <div class="rcrow"><span class="rcl">Prazo</span><span class="rcv">${prazoFin} meses</span></div>
         <div class="rcrow"><span class="rcl">Taxa de juros</span><span class="rcv">${taxaAnual}% a.m.</span></div>
-        <div class="rcrow" style="margin-top:7px;padding-top:7px;border-top:1px solid var(--rb)"><span class="rcl"><b>Total pago</b></span><span class="rcv" style="font-size:14px;font-weight:700">${fmtR(totalFin)}</span></div>
+        <div class="rcrow" style="margin-top:7px;padding-top:7px;border-top:1px solid var(--rb)"><span class="rcl"><b>Total pago</b></span><span class="rcv" style="font-size:14px;font-weight:700">${fmtRC(totalFin)}</span></div>
       </div>
     </div>
     <div class="eco-box">
       <div class="eco-lbl">💰 Economia com o crédito</div>
-      <div class="eco-val">${fmtR(Math.max(economia,0))}</div>
-      <div class="eco-sub">${pct}% mais barato que o financiamento · o cliente paga ${fmtR(Math.max(economia,0))} a menos no total</div>
+      <div class="eco-val">${fmtRC(Math.max(economia,0))}</div>
+      <div class="eco-sub">${pct}% mais barato que o financiamento · o cliente paga ${fmtRC(Math.max(economia,0))} a menos no total</div>
     </div>
     <button class="conv-btn" onclick="convertToLead(document.getElementById('sNome').value,document.getElementById('sTipo').value,${valor})">
       <i class="ti ti-user-plus"></i>Converter este cliente em lead no CRM
