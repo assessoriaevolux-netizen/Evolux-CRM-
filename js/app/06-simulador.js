@@ -318,7 +318,7 @@ function calcSim(parcelaOverride){
         <div class="rcrow"><span class="rcl">Valor financiado (70%)</span><span class="rcv">${fmtRC(valorFinanciado)}</span></div>
         <div class="rcrow"><span class="rcl">Parcela/mês</span><span class="rcv" style="color:var(--r);font-weight:700;font-size:15px">${fmtRC(parcelaFin)}</span></div>
         <div class="rcrow"><span class="rcl">Prazo</span><span class="rcv">${prazoFin} meses</span></div>
-        <div class="rcrow"><span class="rcl">Taxa de juros</span><span class="rcv">${taxaAnual}% a.m.</span></div>
+        <div class="rcrow"><span class="rcl">Taxa de juros</span><span class="rcv">${taxaAnual}% a.m. · ${(Math.pow(1+taxaAnual/100,12)-1)*100<10?((Math.pow(1+taxaAnual/100,12)-1)*100).toFixed(2):((Math.pow(1+taxaAnual/100,12)-1)*100).toFixed(1)}% a.a.</span></div>
         <div class="rcrow" style="margin-top:7px;padding-top:7px;border-top:1px solid var(--rb)"><span class="rcl"><b>Total pago</b></span><span class="rcv" style="font-size:14px;font-weight:700">${fmtRC(totalFin)}</span></div>
       </div>
     </div>
