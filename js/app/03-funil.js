@@ -502,6 +502,8 @@ async function saveLeadDetalhe(){
     if(l.etapa==='Fechado / Convertido'){
       const r=users.find(u=>u.id===l.responsavelId);
       setTimeout(()=>showCelebra(r?r.nome:'Vendedor',l.credito),100);
+      // Dispara evento de conversão no Meta Pixel (se configurado)
+      if(window._metaPixelConversao) window._metaPixelConversao(l);
     }
     if(antes.etapa==='Fechado / Convertido'||l.etapa==='Fechado / Convertido') _atualizarAposVenda();
   } else if(l.etapa==='Fechado / Convertido'&&(antes.credito!==l.credito||antes.responsavelId!==l.responsavelId)) _atualizarAposVenda();
