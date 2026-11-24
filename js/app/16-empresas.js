@@ -21,6 +21,7 @@ async function renderEmpresas(){
       <div style="width:48px;height:48px;border-radius:10px;background:var(--gs);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--g);flex-shrink:0">${esc((e.nome||'?').charAt(0))}</div>
       <div style="flex:1;min-width:160px">
         <div style="font-weight:700;font-size:14px">${esc(e.nome)}</div>
+        <div style="font-size:11px;color:var(--tm);margin-top:1px;font-family:monospace;opacity:.7;user-select:all" title="ID da empresa">${esc(e.id)}</div>
         <div style="font-size:12px;color:var(--tm);margin-top:2px">Plano: <strong>${esc(e.plano||'básico')}</strong> · ${ativo?'<span style="color:var(--g)">● Ativa</span>':'<span style="color:#dc2626">● Plano suspenso — a equipe só consegue consultar, nada é gravado</span>'}</div>
         ${e.obs?`<div style="font-size:11.5px;color:var(--tm);margin-top:4px">${esc(e.obs)}</div>`:''}
       </div>
